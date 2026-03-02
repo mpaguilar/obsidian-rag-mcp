@@ -31,3 +31,4 @@ node_modules/
 # Agent files
 _agent/
 thoughts/
+.mindmodel/

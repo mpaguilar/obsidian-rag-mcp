@@ -1,0 +1,367 @@
+"""Tests for LLM providers module."""
+
+from datetime import date
+from unittest.mock import Mock, patch
+
+import pytest
+
+
+class TestOpenAIEmbeddingProvider:
+    """Test cases for OpenAIEmbeddingProvider."""
+
+    def test_init_with_api_key(self):
+        """Test initialization with explicit API key."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        with patch("openai.OpenAI") as mock_openai:
+            provider = OpenAIEmbeddingProvider(api_key="test-key")
+            assert provider.model == "text-embedding-3-small"
+            mock_openai.assert_called_once_with(api_key="test-key")
+
+    def test_init_with_env_var(self, monkeypatch):
+        """Test initialization with API key from environment variable."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        monkeypatch.setenv("OPENAI_API_KEY", "env-key")
+
+        with patch("openai.OpenAI") as mock_openai:
+            provider = OpenAIEmbeddingProvider()
+            mock_openai.assert_called_once_with(api_key="env-key")
+
+    def test_init_without_api_key_raises_error(self, monkeypatch):
+        """Test that initialization fails without API key."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+        with patch("openai.OpenAI"):
+            with pytest.raises(ValueError, match="API key is required"):
+                OpenAIEmbeddingProvider()
+
+    def test_init_with_custom_model(self):
+        """Test initialization with custom model."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        with patch("openai.OpenAI"):
+            provider = OpenAIEmbeddingProvider(
+                api_key="test-key", model="text-embedding-3-large"
+            )
+            assert provider.model == "text-embedding-3-large"
+            assert provider.get_dimension() == 3072
+
+    def test_init_with_base_url(self):
+        """Test initialization with custom base URL."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        with patch("openai.OpenAI") as mock_openai:
+            provider = OpenAIEmbeddingProvider(
+                api_key="test-key",
+                base_url="https://custom.openai.api.com/v1",
+            )
+            mock_openai.assert_called_once_with(
+                api_key="test-key",
+                base_url="https://custom.openai.api.com/v1",
+            )
+
+    def test_generate_embedding(self):
+        """Test generating embedding."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        mock_response = Mock()
+        mock_response.data = [Mock(embedding=[0.1, 0.2, 0.3])]
+
+        mock_client = Mock()
+        mock_client.embeddings.create.return_value = mock_response
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider = OpenAIEmbeddingProvider(api_key="test-key")
+            result = provider.generate_embedding("test text")
+
+            assert result == [0.1, 0.2, 0.3]
+            mock_client.embeddings.create.assert_called_once_with(
+                input="test text",
+                model="text-embedding-3-small",
+            )
+
+    def test_generate_embedding_error(self):
+        """Test handling embedding generation error."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider, EmbeddingError
+
+        mock_client = Mock()
+        mock_client.embeddings.create.side_effect = Exception("API error")
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider = OpenAIEmbeddingProvider(api_key="test-key")
+
+            with pytest.raises(EmbeddingError):
+                provider.generate_embedding("test text")
+
+    def test_get_dimension_default(self):
+        """Test getting default dimension."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        with patch("openai.OpenAI"):
+            provider = OpenAIEmbeddingProvider(api_key="test-key")
+            assert provider.get_dimension() == 1536
+
+    def test_get_dimension_large_model(self):
+        """Test getting dimension for large model."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        with patch("openai.OpenAI"):
+            provider = OpenAIEmbeddingProvider(
+                api_key="test-key", model="text-embedding-3-large"
+            )
+            assert provider.get_dimension() == 3072
+
+    def test_get_dimension_unknown_model(self):
+        """Test getting dimension for unknown model."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        with patch("openai.OpenAI"):
+            provider = OpenAIEmbeddingProvider(
+                api_key="test-key", model="unknown-model"
+            )
+            assert provider.get_dimension() == 1536  # Default
+
+
+class TestOpenAIChatProvider:
+    """Test cases for OpenAIChatProvider."""
+
+    def test_init_with_api_key(self):
+        """Test initialization with explicit API key."""
+        from obsidian_rag.llm.providers import OpenAIChatProvider
+
+        with patch("openai.OpenAI") as mock_openai:
+            provider = OpenAIChatProvider(api_key="test-key")
+            assert provider.model == "gpt-4"
+            assert provider.temperature == 0.7
+            mock_openai.assert_called_once_with(api_key="test-key")
+
+    def test_init_with_custom_params(self):
+        """Test initialization with custom parameters."""
+        from obsidian_rag.llm.providers import OpenAIChatProvider
+
+        with patch("openai.OpenAI"):
+            provider = OpenAIChatProvider(
+                api_key="test-key",
+                model="gpt-3.5-turbo",
+                temperature=0.5,
+                max_tokens=1000,
+            )
+            assert provider.model == "gpt-3.5-turbo"
+            assert provider.temperature == 0.5
+            assert provider.max_tokens == 1000
+
+    def test_init_without_api_key_raises_error(self, monkeypatch):
+        """Test that initialization fails without API key."""
+        from obsidian_rag.llm.providers import OpenAIChatProvider
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+        with patch("openai.OpenAI"):
+            with pytest.raises(ValueError, match="API key is required"):
+                OpenAIChatProvider()
+
+    def test_chat(self):
+        """Test chat completion."""
+        from obsidian_rag.llm.providers import OpenAIChatProvider
+
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content="Hello!"))]
+
+        mock_client = Mock()
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider = OpenAIChatProvider(api_key="test-key")
+            messages = [{"role": "user", "content": "Hi"}]
+            result = provider.chat(messages)
+
+            assert result == "Hello!"
+            mock_client.chat.completions.create.assert_called_once()
+
+    def test_chat_with_max_tokens_override(self):
+        """Test chat with max_tokens override in kwargs."""
+        from obsidian_rag.llm.providers import OpenAIChatProvider
+
+        mock_response = Mock()
+        mock_response.choices = [Mock(message=Mock(content="Response"))]
+
+        mock_client = Mock()
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider = OpenAIChatProvider(api_key="test-key", max_tokens=500)
+            messages = [{"role": "user", "content": "Hi"}]
+            provider.chat(messages, max_tokens=200)
+
+            call_kwargs = mock_client.chat.completions.create.call_args[1]
+            assert call_kwargs["max_tokens"] == 200
+
+    def test_chat_error(self):
+        """Test handling chat error."""
+        from obsidian_rag.llm.providers import OpenAIChatProvider, ChatError
+
+        mock_client = Mock()
+        mock_client.chat.completions.create.side_effect = Exception("API error")
+
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider = OpenAIChatProvider(api_key="test-key")
+            messages = [{"role": "user", "content": "Hi"}]
+
+            with pytest.raises(ChatError):
+                provider.chat(messages)
+
+
+class TestSentenceTransformersEmbeddingProvider:
+    """Test cases for SentenceTransformersEmbeddingProvider."""
+
+    def test_init_default(self):
+        """Test initialization with default model."""
+        from obsidian_rag.llm.providers import (
+            SentenceTransformersEmbeddingProvider,
+        )
+
+        mock_model = Mock()
+        mock_model.get_sentence_embedding_dimension.return_value = 384
+
+        with patch(
+            "sentence_transformers.SentenceTransformer", return_value=mock_model
+        ):
+            provider = SentenceTransformersEmbeddingProvider()
+            assert provider.model_name == "all-MiniLM-L6-v2"
+            assert provider.get_dimension() == 384
+
+    def test_init_with_custom_model(self):
+        """Test initialization with custom model."""
+        from obsidian_rag.llm.providers import (
+            SentenceTransformersEmbeddingProvider,
+        )
+
+        mock_model = Mock()
+        mock_model.get_sentence_embedding_dimension.return_value = 512
+
+        with patch(
+            "sentence_transformers.SentenceTransformer", return_value=mock_model
+        ) as mock_st:
+            provider = SentenceTransformersEmbeddingProvider(
+                model="sentence-transformers/all-mpnet-base-v2",
+                device="cpu",
+            )
+            assert provider.model_name == "sentence-transformers/all-mpnet-base-v2"
+            mock_st.assert_called_once_with(
+                "sentence-transformers/all-mpnet-base-v2",
+                device="cpu",
+            )
+
+    def test_init_without_package_raises_error(self):
+        """Test that initialization fails without sentence-transformers package."""
+        from obsidian_rag.llm.providers import (
+            SentenceTransformersEmbeddingProvider,
+        )
+
+        with patch(
+            "sentence_transformers.SentenceTransformer",
+            side_effect=ImportError("No module named 'sentence_transformers'"),
+        ):
+            with pytest.raises(ImportError, match="sentence-transformers package"):
+                SentenceTransformersEmbeddingProvider()
+
+    def test_generate_embedding(self):
+        """Test generating embedding."""
+        from obsidian_rag.llm.providers import (
+            SentenceTransformersEmbeddingProvider,
+        )
+        import numpy as np
+
+        mock_model = Mock()
+        mock_model.encode.return_value = np.array([0.1, 0.2, 0.3])
+
+        with patch(
+            "sentence_transformers.SentenceTransformer", return_value=mock_model
+        ):
+            provider = SentenceTransformersEmbeddingProvider()
+            result = provider.generate_embedding("test text")
+
+            assert result == [0.1, 0.2, 0.3]
+            mock_model.encode.assert_called_once_with("test text")
+
+    def test_generate_embedding_error(self):
+        """Test handling embedding generation error."""
+        from obsidian_rag.llm.providers import (
+            SentenceTransformersEmbeddingProvider,
+            EmbeddingError,
+        )
+
+        mock_model = Mock()
+        mock_model.encode.side_effect = Exception("Model error")
+
+        with patch(
+            "sentence_transformers.SentenceTransformer", return_value=mock_model
+        ):
+            provider = SentenceTransformersEmbeddingProvider()
+
+            with pytest.raises(EmbeddingError):
+                provider.generate_embedding("test text")
+
+
+class TestProviderFactoryWithRealProviders:
+    """Test ProviderFactory with real provider classes."""
+
+    def test_create_openai_embedding_provider_with_key(self):
+        """Test creating OpenAI embedding provider with API key."""
+        from obsidian_rag.llm.base import ProviderFactory
+
+        with patch("openai.OpenAI"):
+            provider = ProviderFactory.create_embedding_provider(
+                "openai", api_key="test-key"
+            )
+            from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+            assert isinstance(provider, OpenAIEmbeddingProvider)
+
+    def test_create_sentence_transformers_provider(self):
+        """Test creating sentence-transformers embedding provider."""
+        from obsidian_rag.llm.base import ProviderFactory
+
+        mock_model = Mock()
+        mock_model.get_sentence_embedding_dimension.return_value = 384
+
+        with patch(
+            "sentence_transformers.SentenceTransformer", return_value=mock_model
+        ):
+            provider = ProviderFactory.create_embedding_provider(
+                "sentence-transformers"
+            )
+            from obsidian_rag.llm.providers import (
+                SentenceTransformersEmbeddingProvider,
+            )
+
+            assert isinstance(provider, SentenceTransformersEmbeddingProvider)
+
+    def test_create_openai_chat_provider_with_key(self):
+        """Test creating OpenAI chat provider with API key."""
+        from obsidian_rag.llm.base import ProviderFactory
+
+        with patch("openai.OpenAI"):
+            provider = ProviderFactory.create_chat_provider(
+                "openai", api_key="test-key"
+            )
+            from obsidian_rag.llm.providers import OpenAIChatProvider
+
+            assert isinstance(provider, OpenAIChatProvider)
+
+    def test_create_unknown_embedding_provider_raises_error(self):
+        """Test creating unknown embedding provider raises error."""
+        from obsidian_rag.llm.base import ProviderFactory
+
+        with pytest.raises(ValueError, match="Unknown embedding provider"):
+            ProviderFactory.create_embedding_provider("unknown-provider")
+
+    def test_create_unknown_chat_provider_raises_error(self):
+        """Test creating unknown chat provider raises error."""
+        from obsidian_rag.llm.base import ProviderFactory
+
+        with pytest.raises(ValueError, match="Unknown chat provider"):
+            ProviderFactory.create_chat_provider("unknown-provider")

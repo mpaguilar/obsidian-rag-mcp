@@ -1,0 +1,369 @@
+"""Task parsing from markdown content."""
+
+import logging
+import re
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+from dateutil.rrule import rrulestr
+
+from obsidian_rag.database.models import TaskPriority, TaskStatus
+
+log = logging.getLogger(__name__)
+
+# Pattern to match task lines: - [ ] task text or - [x] task text
+TASK_PATTERN = re.compile(
+    r"^(\s*)- \[([ x/-])\]\s*(.*?)$",
+    re.MULTILINE,
+)
+
+# Pattern to match inline tags: #tag (alphanumeric and hyphens/underscores)
+TAG_PATTERN = re.compile(r"#([a-zA-Z0-9_-]+)")
+
+# Pattern to match key:: value metadata
+METADATA_PATTERN = re.compile(
+    r"\[?([a-zA-Z_]+)::\s*([^\]]+)\]?",
+)
+
+
+@dataclass
+class ParsedTask:
+    """Represents a parsed task with all metadata.
+
+    Attributes:
+        status: Task status (not_completed, completed, in_progress, cancelled).
+        description: Clean task description without metadata.
+        tags: List of tags extracted from the task.
+        repeat: Recurrence pattern string.
+        scheduled: Scheduled date for the task.
+        due: Due date for the task.
+        completion: Completion date for the task.
+        priority: Task priority level.
+        custom_metadata: Additional key-value metadata.
+        raw_text: Original task line.
+
+    """
+
+    status: str
+    description: str
+    tags: list[str] | None = None
+    repeat: str | None = None
+    scheduled: datetime | None = None
+    due: datetime | None = None
+    completion: datetime | None = None
+    priority: str = TaskPriority.NORMAL.value
+    custom_metadata: dict[str, Any] | None = None
+    raw_text: str = ""
+
+
+def _map_checkbox_status(checkbox: str) -> str:
+    """Map checkbox character to task status.
+
+    Args:
+        checkbox: The checkbox character ([ ], [x], [/], [-]).
+
+    Returns:
+        The corresponding TaskStatus value.
+
+    """
+    status_map = {
+        " ": TaskStatus.NOT_COMPLETED.value,
+        "x": TaskStatus.COMPLETED.value,
+        "/": TaskStatus.IN_PROGRESS.value,
+        "-": TaskStatus.CANCELLED.value,
+    }
+    return status_map.get(checkbox, TaskStatus.NOT_COMPLETED.value)
+
+
+def _map_priority(value: str) -> str:
+    """Map priority string to TaskPriority value.
+
+    Args:
+        value: The priority string from the task.
+
+    Returns:
+        The corresponding TaskPriority value.
+
+    """
+    priority_map = {
+        "highest": TaskPriority.HIGHEST.value,
+        "high": TaskPriority.HIGH.value,
+        "normal": TaskPriority.NORMAL.value,
+        "low": TaskPriority.LOW.value,
+        "lowest": TaskPriority.LOWEST.value,
+    }
+    normalized = value.lower().strip()
+    return priority_map.get(normalized, TaskPriority.NORMAL.value)
+
+
+def _parse_date(date_str: str) -> datetime | None:
+    """Parse a date string into a datetime object.
+
+    Args:
+        date_str: The date string to parse.
+
+    Returns:
+        datetime object or None if parsing fails.
+
+    Notes:
+        Tries multiple date formats:
+        - YYYY-MM-DD
+        - YYYY/MM/DD
+        - DD-MM-YYYY
+        - DD/MM/YYYY
+
+    """
+    date_str = date_str.strip()
+    formats = [
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%d-%m-%Y",
+        "%d/%m/%Y",
+    ]
+
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str, fmt)  # noqa: DTZ007
+        except ValueError:
+            continue
+
+    return None
+
+
+def _obsidian_to_rrule(pattern: str) -> str | None:
+    """Convert Obsidian recurrence pattern to rrule format.
+
+    Args:
+        pattern: The recurrence pattern (e.g., "every day", "every 2 weeks").
+
+    Returns:
+        rrule string or None if conversion fails.
+
+    Examples:
+        >>> _obsidian_to_rrule("every day")
+        'FREQ=DAILY'
+        >>> _obsidian_to_rrule("every 2 weeks")
+        'FREQ=WEEKLY;INTERVAL=2'
+
+    """
+    pattern = pattern.lower().strip()
+
+    # Simple mappings for common patterns
+    mappings = {
+        "every day": "FREQ=DAILY",
+        "daily": "FREQ=DAILY",
+        "every week": "FREQ=WEEKLY",
+        "weekly": "FREQ=WEEKLY",
+        "every month": "FREQ=MONTHLY",
+        "monthly": "FREQ=MONTHLY",
+        "every year": "FREQ=YEARLY",
+        "yearly": "FREQ=YEARLY",
+        "annually": "FREQ=YEARLY",
+    }
+
+    if pattern in mappings:
+        return mappings[pattern]
+
+    # Try to parse "every N units" patterns
+    match = re.match(r"every\s+(\d+)\s*(day|week|month|year)s?", pattern)
+    if match:
+        count = match.group(1)
+        unit = match.group(2).upper()
+        freq_map = {
+            "DAY": "DAILY",
+            "WEEK": "WEEKLY",
+            "MONTH": "MONTHLY",
+            "YEAR": "YEARLY",
+        }
+        freq = freq_map.get(unit, unit + "LY")
+        return f"FREQ={freq};INTERVAL={count}"
+
+    return None
+
+
+def _validate_rrule(pattern: str) -> bool:
+    """Validate if a string is a valid rrule.
+
+    Args:
+        pattern: The recurrence pattern to validate.
+
+    Returns:
+        True if valid, False otherwise.
+
+    """
+    try:
+        rrulestr(pattern)
+        return True
+    except Exception:
+        return False
+
+
+def _process_repeat_value(value: str, standard_fields: dict[str, Any]) -> None:
+    """Process repeat metadata value."""
+    rrule_pattern = _obsidian_to_rrule(value)
+    if rrule_pattern and _validate_rrule(rrule_pattern):
+        standard_fields["repeat"] = rrule_pattern
+    else:
+        standard_fields["repeat"] = value
+
+
+def _process_standard_field(
+    key_lower: str,
+    value: str,
+    standard_fields: dict[str, Any],
+) -> bool:
+    """Process standard metadata fields. Returns True if processed."""
+    date_fields = {"scheduled", "due", "completion"}
+
+    if key_lower in date_fields:
+        standard_fields[key_lower] = _parse_date(value)
+        return True
+    if key_lower == "priority":
+        standard_fields["priority"] = _map_priority(value)
+        return True
+    if key_lower == "repeat":
+        _process_repeat_value(value, standard_fields)
+        return True
+    return False
+
+
+def _process_metadata_key(
+    key: str,
+    value: str,
+    standard_fields: dict[str, Any],
+    custom_metadata: dict[str, Any],
+) -> None:
+    """Process a single metadata key-value pair."""
+    key_lower = key.lower()
+
+    if not _process_standard_field(key_lower, value, standard_fields):
+        custom_metadata[key] = value
+
+
+def _extract_task_metadata(task_text: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Extract metadata from task text.
+
+    Args:
+        task_text: The raw task text with metadata.
+
+    Returns:
+        Tuple of (standard_fields, custom_metadata).
+        standard_fields contains: scheduled, due, completion, priority, repeat
+
+    """
+    custom_metadata: dict[str, Any] = {}
+    standard_fields: dict[str, Any] = {
+        "scheduled": None,
+        "due": None,
+        "completion": None,
+        "priority": TaskPriority.NORMAL.value,
+        "repeat": None,
+    }
+
+    for key, value in METADATA_PATTERN.findall(task_text):
+        _process_metadata_key(
+            key.strip(), value.strip(), standard_fields, custom_metadata
+        )
+
+    return standard_fields, custom_metadata
+
+
+def _clean_task_description(task_text: str) -> str:
+    """Remove metadata and tags from task text.
+
+    Args:
+        task_text: The raw task text.
+
+    Returns:
+        Clean description without metadata.
+
+    """
+    description = METADATA_PATTERN.sub("", task_text)
+    description = TAG_PATTERN.sub("", description)
+    return " ".join(description.split())
+
+
+def parse_task_line(line: str) -> ParsedTask | None:
+    """Parse a single task line and extract metadata.
+
+    Args:
+        line: The task line from markdown.
+
+    Returns:
+        ParsedTask object or None if not a valid task line.
+
+    """
+    _msg = f"Parsing task line: {line[:50]}"
+    log.debug(_msg)
+
+    match = TASK_PATTERN.match(line)
+    if not match:
+        return None
+
+    checkbox = match.group(2)
+    task_text = match.group(3)
+
+    status = _map_checkbox_status(checkbox)
+
+    # Extract inline tags
+    tags = TAG_PATTERN.findall(task_text)
+    tags = list(tags) if tags else None
+
+    # Extract metadata
+    standard_fields, custom_metadata = _extract_task_metadata(task_text)
+
+    # Clean description
+    description = _clean_task_description(task_text)
+
+    parsed = ParsedTask(
+        status=status,
+        description=description,
+        tags=tags,
+        repeat=standard_fields["repeat"],
+        scheduled=standard_fields["scheduled"],
+        due=standard_fields["due"],
+        completion=standard_fields["completion"],
+        priority=standard_fields["priority"],
+        custom_metadata=custom_metadata if custom_metadata else None,
+        raw_text=line.strip(),
+    )
+
+    _msg = f"Successfully parsed task: status={status}, priority={standard_fields['priority']}"
+    log.debug(_msg)
+    return parsed
+
+
+def parse_tasks_from_content(content: str) -> list[tuple[int, ParsedTask]]:
+    """Parse all tasks from markdown content.
+
+    Args:
+        content: The markdown content to parse.
+
+    Returns:
+        List of tuples (line_number, ParsedTask).
+
+    Notes:
+        Maximum of 10,000 tasks per document. Additional tasks are skipped.
+
+    """
+    _msg = "Parsing tasks from content"
+    log.debug(_msg)
+
+    tasks = []
+    lines = content.split("\n")
+    max_tasks = 10000
+
+    for line_number, line in enumerate(lines, start=1):
+        if len(tasks) >= max_tasks:
+            _msg = f"Reached maximum task limit ({max_tasks}), skipping remaining tasks"
+            log.warning(_msg)
+            break
+
+        task = parse_task_line(line)
+        if task:
+            tasks.append((line_number, task))
+
+    _msg = f"Found {len(tasks)} tasks in content"
+    log.debug(_msg)
+    return tasks

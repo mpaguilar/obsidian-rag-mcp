@@ -22,11 +22,14 @@
 * `pathlib` for file operations
 * `pytest` for unit testing
 * `httpx` for web-related calls, unless a specific library is offered
+* `litellm` for LLM connectivity
+* `langchain` for LLM functions not covered by `litellm`
 
-# Variable conventions
+ # Variable conventions
 
 * **always** use type-hints for all arguments and return values
 * Correct type-hints are **critical**
+* **`Any` type restrictions**: Only use `Any` for arguments and parameters that can truly accept any type, or when required by a third-party library interface. **Never** use `Any` as a shortcut to avoid proper typing—use specific types, `Union`, `Optional`, or `object` instead.
 * Use named arguments when calling functions when possible.
 
 # General formatting

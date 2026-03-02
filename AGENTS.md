@@ -1,5 +1,66 @@
-# Project
+# Project: Obsidian RAG
 
-This project has not yet been started
+A Python library for ingesting and querying Obsidian markdown documents with vector embeddings and task extraction capabilities.
+
+## Overview
+
+This project provides a CLI tool and library for:
+- Ingesting Obsidian markdown documents into PostgreSQL with pg_vector support
+- Extracting and managing tasks from markdown content
+- Performing semantic search on documents using vector embeddings
+- Supporting configurable LLM providers for embeddings and analysis
+
+## Project Structure
+
+```
+obsidian_rag/                    # Main package
+├── __init__.py
+├── cli.py                       # CLI entry point
+├── config.py                    # Configuration management
+├── database/                    # Database layer
+│   ├── __init__.py
+│   ├── engine.py                # Database connection
+│   └── models.py                # SQLAlchemy models
+├── llm/                         # LLM provider layer
+│   ├── __init__.py
+│   ├── base.py                  # Base provider classes
+│   └── providers.py             # Provider implementations
+└── parsing/                     # Document parsing
+    ├── __init__.py
+    ├── frontmatter.py           # FrontMatter extraction
+    ├── scanner.py               # File scanning
+    └── tasks.py                 # Task parsing
+```
+
+## Requirements
+
+- Python 3.12+
+- PostgreSQL with pg_vector extension
+- See `pyproject.toml` for Python dependencies
+
+## CLI Commands
+
+- `obsidian-rag ingest <path>` - Ingest documents from vault path
+- `obsidian-rag query <search>` - Semantic search documents
+- `obsidian-rag tasks [options]` - Query tasks
+
+## Configuration
+
+Configuration sources (precedence: highest to lowest):
+1. CLI flags (e.g., `--embedding-provider openai`)
+2. Environment variables (e.g., `OBSIDIAN_RAG_EMBEDDING_PROVIDER=openai`)
+3. Config file (YAML format)
+4. Default values
+
+Config file locations (searched in order):
+1. `$PWD/.obsidian-rag.yaml` - Project-specific config
+2. `$XDG_CONFIG_HOME/obsidian-rag/config.yaml` - User config
+
+## Development
+
+- All code must pass ruff linting
+- 100% test coverage required on core modules (excluding external providers)
+- All functions require type hints and docstrings
+- McCabe complexity max: 5
 
 > **Technical Implementation Details**: For architecture patterns, HTMX/SSE implementation specifics, and testing patterns, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
