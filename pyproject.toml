@@ -1,0 +1,44 @@
+[project]
+name = "obsidian-rag"
+version = "0.0.1"
+description = "Edits and refines resumes"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+
+[dependency-groups]
+dev = [
+    "bandit[baseline,toml]>=1.8.6",
+    "coverage>=7.10.3",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=6.2.1",
+    "ruff>=0.12.8",
+]
+
+[tool.ruff]
+include = ["obsidian_rag/**/*.py"]
+exclude = ["temporal-samples-python"]
+
+[tool.ruff.lint]
+select = [
+    "A002",   # Argument shadows python built-in
+    "ANN201", # Missing return type annotation
+    "ANN001", # Missing type annotation for argument
+    "ARG001", # Unused function argument
+    "ARG002", # Unused method argument
+    "F841",   # Unused local variable
+    "RUF006", # Store reference to asyncio.create_task return
+    "TC002",  # Move third-party import into type-checking block
+    "FAST",   # FastAPI-specific errors
+    "D417",   # Missing argument description in docstring
+    "C",      # McCabe complexity check
+    "PLR0913" # Too many arguments
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**/*" = ["ANN", "D", "I", "DTZ", "COM812", "PERF401", "PLC0415", "ARG001", "PLR0913", "INP001", "E501"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 5

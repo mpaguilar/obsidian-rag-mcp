@@ -1,0 +1,33 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# nodejs and npm
+node_modules/
+
+# caches and config
+.vscode/
+.mypy_cache/
+.pytest_cache/
+
+# utilities
+.env
+.coverage
+
+# Virtual environments
+.venv
+
+# Work dirs/files
+.coverage
+.git-commit-msg
+
+# Agent files
+_agent/
+thoughts/
