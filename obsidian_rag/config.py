@@ -57,6 +57,14 @@ DEFAULT_CONFIG = {
         "level": "INFO",
         "format": "text",
     },
+    "mcp": {
+        "host": "0.0.0.0",
+        "port": 8000,
+        "token": None,
+        "cors_origins": ["*"],
+        "enable_health_check": True,
+        "stateless_http": False,
+    },
 }
 
 
@@ -218,15 +226,15 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
 
     """
 
-    def get_field_value(self, _field: Any, _field_name: str) -> tuple[Any, str, bool]:
+    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:  # noqa: ARG002
         """Get field value from YAML config.
 
         Note: This method is required by the base class but we implement
         __call__ instead for the full dictionary approach.
 
         Args:
-            _field: The field being requested (unused).
-            _field_name: The name of the field (unused).
+            field: The field being requested (unused).
+            field_name: The name of the field (unused).
 
         Returns:
             A tuple of (None, "", False) indicating no value.
@@ -332,6 +340,36 @@ class LoggingConfig(BaseModel):
     format: str = "text"
 
 
+class MCPConfig(BaseModel):
+    """Configuration for MCP server.
+
+    Attributes:
+        host: Bind address for the MCP server.
+        port: HTTP port for the MCP server.
+        token: Bearer token for authentication (required).
+        cors_origins: List of allowed CORS origins.
+        enable_health_check: Enable health check endpoint.
+        stateless_http: Enable stateless mode for horizontal scaling.
+
+    """
+
+    host: str = "0.0.0.0"
+    port: int = 8000
+    token: str | None = None
+    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    enable_health_check: bool = True
+    stateless_http: bool = False
+
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, v: int) -> int:
+        """Validate port is in valid range."""
+        if v < 1 or v > 65535:
+            _msg = f"Port must be between 1 and 65535, got {v}"
+            raise ValueError(_msg)
+        return v
+
+
 class Settings(BaseSettings):
     """Application settings with layered configuration.
 
@@ -353,6 +391,7 @@ class Settings(BaseSettings):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     ingestion: IngestionConfig = Field(default_factory=IngestionConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
 
     def __init__(self, verbose: bool = False, **kwargs) -> None:  # type: ignore[no-untyped-def]
         """Initialize settings with merged configuration.

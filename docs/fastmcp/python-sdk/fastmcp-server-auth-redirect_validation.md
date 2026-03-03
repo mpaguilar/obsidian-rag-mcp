@@ -1,0 +1,63 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# redirect_validation
+
+# `fastmcp.server.auth.redirect_validation`
+
+Utilities for validating client redirect URIs in OAuth flows.
+
+This module provides secure redirect URI validation with wildcard support,
+protecting against userinfo-based bypass attacks like [http://localhost@evil.com](http://localhost@evil.com).
+
+## Functions
+
+### `matches_allowed_pattern` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/redirect_validation.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+matches_allowed_pattern(uri: str, pattern: str) -> bool
+```
+
+Securely check if a URI matches an allowed pattern with wildcard support.
+
+This function parses both the URI and pattern as URLs, comparing each
+component separately to prevent bypass attacks like userinfo injection.
+
+Patterns support wildcards:
+
+* [http://localhost](http://localhost):\* matches any localhost port
+* [http://127.0.0.1](http://127.0.0.1):\* matches any 127.0.0.1 port
+* https\://*.example.com/* matches any subdomain of example.com
+* [https://app.example.com/auth/](https://app.example.com/auth/)\* matches any path under /auth/
+
+Security: Rejects URIs with userinfo (user:pass\@host) which could bypass
+naive string matching (e.g., [http://localhost@evil.com](http://localhost@evil.com)).
+
+**Args:**
+
+* `uri`: The redirect URI to validate
+* `pattern`: The allowed pattern (may contain wildcards)
+
+**Returns:**
+
+* True if the URI matches the pattern
+
+### `validate_redirect_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/redirect_validation.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+validate_redirect_uri(redirect_uri: str | AnyUrl | None, allowed_patterns: list[str] | None) -> bool
+```
+
+Validate a redirect URI against allowed patterns.
+
+**Args:**
+
+* `redirect_uri`: The redirect URI to validate
+* `allowed_patterns`: List of allowed patterns. If None, all URIs are allowed (for DCR compatibility).
+  If empty list, no URIs are allowed.
+  To restrict to localhost only, explicitly pass DEFAULT\_LOCALHOST\_PATTERNS.
+
+**Returns:**
+
+* True if the redirect URI is allowed

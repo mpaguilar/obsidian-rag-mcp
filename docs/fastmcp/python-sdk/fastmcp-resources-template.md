@@ -1,0 +1,224 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# template
+
+# `fastmcp.resources.template`
+
+Resource template functionality.
+
+## Functions
+
+### `extract_query_params` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+extract_query_params(uri_template: str) -> set[str]
+```
+
+Extract query parameter names from RFC 6570 `{?param1,param2}` syntax.
+
+### `build_regex` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+build_regex(template: str) -> re.Pattern
+```
+
+Build regex pattern for URI template, handling RFC 6570 syntax.
+
+Supports:
+
+* `{var}` - simple path parameter
+* `{var*}` - wildcard path parameter (captures multiple segments)
+* `{?var1,var2}` - query parameters (ignored in path matching)
+
+### `match_uri_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None
+```
+
+Match URI against template and extract both path and query parameters.
+
+Supports RFC 6570 URI templates:
+
+* Path params: `{var}`, `{var*}`
+* Query params: `{?var1,var2}`
+
+## Classes
+
+### `ResourceTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+A template for dynamically creating resources.
+
+**Methods:**
+
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L130" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+from_function(fn: Callable[..., Any], uri_template: str, name: str | None = None, version: str | int | None = None, title: str | None = None, description: str | None = None, icons: list[Icon] | None = None, mime_type: str | None = None, tags: set[str] | None = None, annotations: Annotations | None = None, meta: dict[str, Any] | None = None, task: bool | TaskConfig | None = None, auth: AuthCheck | list[AuthCheck] | None = None) -> FunctionResourceTemplate
+```
+
+#### `set_default_mime_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+set_default_mime_type(cls, mime_type: str | None) -> str
+```
+
+Set default MIME type if not provided.
+
+#### `matches` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L169" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+matches(self, uri: str) -> dict[str, Any] | None
+```
+
+Check if URI matches template and extract parameters.
+
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L173" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
+```
+
+Read the resource content.
+
+#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L179" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+convert_result(self, raw_value: Any) -> ResourceResult
+```
+
+Convert a raw result to ResourceResult.
+
+This is used in two contexts:
+
+1. In \_read() to convert user function return values to ResourceResult
+2. In tasks\_result\_handler() to convert Docket task results to ResourceResult
+
+Handles ResourceResult passthrough and converts raw values using
+ResourceResult's normalization.
+
+#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L243" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+create_resource(self, uri: str, params: dict[str, Any]) -> Resource
+```
+
+Create a resource from the template with the given parameters.
+
+The base implementation does not support background tasks.
+Use FunctionResourceTemplate for task support.
+
+#### `to_mcp_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L254" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+to_mcp_template(self, **overrides: Any) -> SDKResourceTemplate
+```
+
+Convert the resource template to an SDKResourceTemplate.
+
+#### `from_mcp_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L274" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+from_mcp_template(cls, mcp_template: SDKResourceTemplate) -> ResourceTemplate
+```
+
+Creates a FastMCP ResourceTemplate from a raw MCP ResourceTemplate object.
+
+#### `key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L287" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+key(self) -> str
+```
+
+The globally unique lookup key for this template.
+
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L292" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+register_with_docket(self, docket: Docket) -> None
+```
+
+Register this template with docket for background execution.
+
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+add_to_docket(self, docket: Docket, params: dict[str, Any], **kwargs: Any) -> Execution
+```
+
+Schedule this template for background execution via docket.
+
+**Args:**
+
+* `docket`: The Docket instance
+* `params`: Template parameters
+* `fn_key`: Function lookup key in Docket registry (defaults to self.key)
+* `task_key`: Redis storage key for the result
+* `**kwargs`: Additional kwargs passed to docket.add()
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L321" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `FunctionResourceTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L328" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+A template for dynamically creating resources.
+
+**Methods:**
+
+#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L374" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+create_resource(self, uri: str, params: dict[str, Any]) -> Resource
+```
+
+Create a resource from the template with the given parameters.
+
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L393" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
+```
+
+Read the resource content.
+
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L424" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+register_with_docket(self, docket: Docket) -> None
+```
+
+Register this template with docket for background execution.
+
+FunctionResourceTemplate registers the underlying function, which has the
+user's Depends parameters for docket to resolve.
+
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L434" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+add_to_docket(self, docket: Docket, params: dict[str, Any], **kwargs: Any) -> Execution
+```
+
+Schedule this template for background execution via docket.
+
+FunctionResourceTemplate splats the params dict since .fn expects \*\*kwargs.
+
+**Args:**
+
+* `docket`: The Docket instance
+* `params`: Template parameters
+* `fn_key`: Function lookup key in Docket registry (defaults to self.key)
+* `task_key`: Redis storage key for the result
+* `**kwargs`: Additional kwargs passed to docket.add()
+
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/resources/template.py#L460" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+from_function(cls, fn: Callable[..., Any], uri_template: str, name: str | None = None, version: str | int | None = None, title: str | None = None, description: str | None = None, icons: list[Icon] | None = None, mime_type: str | None = None, tags: set[str] | None = None, annotations: Annotations | None = None, meta: dict[str, Any] | None = None, task: bool | TaskConfig | None = None, auth: AuthCheck | list[AuthCheck] | None = None) -> FunctionResourceTemplate
+```
+
+Create a template from a function.

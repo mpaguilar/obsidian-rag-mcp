@@ -1,0 +1,43 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# settings
+
+# `fastmcp.settings`
+
+## Classes
+
+### `DocketSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/settings.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Docket worker configuration.
+
+### `Settings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/settings.py#L117" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+FastMCP settings.
+
+**Methods:**
+
+#### `get_setting` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/settings.py#L129" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_setting(self, attr: str) -> Any
+```
+
+Get a setting. If the setting contains one or more `__`, it will be
+treated as a nested setting.
+
+#### `set_setting` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/settings.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+set_setting(self, attr: str, value: Any) -> None
+```
+
+Set a setting. If the setting contains one or more `__`, it will be
+treated as a nested setting.
+
+#### `normalize_log_level` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/settings.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+normalize_log_level(cls, v)
+```

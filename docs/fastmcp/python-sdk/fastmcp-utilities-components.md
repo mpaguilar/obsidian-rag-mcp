@@ -1,0 +1,140 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# components
+
+# `fastmcp.utilities.components`
+
+## Functions
+
+### `get_fastmcp_metadata` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_fastmcp_metadata(meta: dict[str, Any] | None) -> FastMCPMeta
+```
+
+Extract FastMCP metadata from a component's meta dict.
+
+Handles both the current `fastmcp` namespace and the legacy `_fastmcp`
+namespace for compatibility with older FastMCP servers.
+
+## Classes
+
+### `FastMCPMeta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L20" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+### `FastMCPComponent` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Base class for FastMCP tools, prompts, resources, and resource templates.
+
+**Methods:**
+
+#### `make_key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+make_key(cls, identifier: str) -> str
+```
+
+Construct the lookup key for this component type.
+
+**Args:**
+
+* `identifier`: The raw identifier (name for tools/prompts, uri for resources)
+
+**Returns:**
+
+* A prefixed key like "tool:name" or "resource:uri"
+
+#### `key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L126" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+key(self) -> str
+```
+
+The globally unique lookup key for this component.
+
+Format: "{key_prefix}:{identifier}@{version}" or "{key_prefix}:{identifier}@"
+e.g. "tool:my\_tool\@v2", "tool:my\_tool@", "resource:file://x.txt@"
+
+The @ suffix is ALWAYS present to enable unambiguous parsing of keys
+(URIs may contain @ characters, so we always include the delimiter).
+
+Subclasses should override this to use their specific identifier.
+Base implementation uses name.
+
+#### `get_meta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L141" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_meta(self) -> dict[str, Any]
+```
+
+Get the meta information about the component.
+
+Returns a dict that always includes a `fastmcp` key containing:
+
+* `tags`: sorted list of component tags
+* `version`: component version (only if set)
+
+Internal keys (prefixed with `_`) are stripped from the fastmcp namespace.
+
+#### `enable` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L189" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+enable(self) -> None
+```
+
+Removed in 3.0. Use server.enable(keys=\[...]) instead.
+
+#### `disable` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+disable(self) -> None
+```
+
+Removed in 3.0. Use server.disable(keys=\[...]) instead.
+
+#### `copy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L203" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+copy(self) -> Self
+```
+
+Create a copy of the component.
+
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L207" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+register_with_docket(self, docket: Docket) -> None
+```
+
+Register this component with docket for background execution.
+
+No-ops if task\_config.mode is "forbidden". Subclasses override to
+register their callable (self.run, self.read, self.render, or self.fn).
+
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L215" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+add_to_docket(self, docket: Docket, *args: Any, **kwargs: Any) -> Execution
+```
+
+Schedule this component for background execution via docket.
+
+Subclasses override this to handle their specific calling conventions:
+
+* Tool: add\_to\_docket(docket, arguments: dict, \*\*kwargs)
+* Resource: add\_to\_docket(docket, \*\*kwargs)
+* ResourceTemplate: add\_to\_docket(docket, params: dict, \*\*kwargs)
+* Prompt: add\_to\_docket(docket, arguments: dict | None, \*\*kwargs)
+
+The \*\*kwargs are passed through to docket.add() (e.g., key=task\_key).
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/components.py#L237" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_span_attributes(self) -> dict[str, Any]
+```
+
+Return span attributes for telemetry.
+
+Subclasses should call super() and merge their specific attributes.

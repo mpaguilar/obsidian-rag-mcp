@@ -268,3 +268,46 @@ Always run quality checks before committing to ensure code standards are met.
 1. Fix the underlying issue
 2. Refactor the code to comply with the rule
 3. Do not suppress the rule with noqa
+
+# Third-Party Library Documentation
+
+When using third-party libraries with substantial documentation, download the documentation to a local directory for offline reference and version consistency.
+
+## FastMCP Documentation
+
+FastMCP v3.0.0 documentation is downloaded from https://gofastmcp.com/ and stored in:
+- Location: `./docs/fastmcp/`
+- Version: 3.0.0
+- Key files:
+  - `quickstart.md` - Quick start guide
+  - `changelog.md` - Version changelog
+  - `updates.md` - Documentation updates
+  - `getting-started/` - Getting started guides
+  - `servers/` - Server implementation guides
+  - `clients/` - Client implementation guides
+  - `deployment/` - Deployment guides
+  - `integrations/` - Integration examples
+  - `patterns/` - Design patterns
+  - `python-sdk/` - Python SDK reference
+  - `cli/` - CLI documentation
+  - `apps/` - Application examples
+  - `development/` - Development guides
+
+This ensures consistent reference documentation even if the upstream site changes.
+
+# Output Formatting Standards
+
+## Task Output
+
+**NEVER use emojis** in task output or status indicators. This applies to:
+- CLI output
+- MCP tool responses
+- API responses
+- Log messages
+
+Use plain text representations instead:
+- Status: "completed", "not_completed", "in_progress", "cancelled"
+- Priority: "highest", "high", "normal", "low", "lowest"
+- Indicators: Text labels or ASCII characters only
+
+Rationale: Emojis cause rendering issues in various terminals, logging systems, and client applications. They also create accessibility concerns and inconsistent display across platforms.

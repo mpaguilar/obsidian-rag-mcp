@@ -1,0 +1,275 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# proxy
+
+# `fastmcp.server.providers.proxy`
+
+ProxyProvider for proxying to remote MCP servers.
+
+This module provides the `ProxyProvider` class that proxies components from
+a remote MCP server via a client factory. It also provides proxy component
+classes that forward execution to remote servers.
+
+## Functions
+
+### `default_proxy_roots_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L723" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+default_proxy_roots_handler(context: RequestContext[ClientSession, LifespanContextT]) -> RootsList
+```
+
+Forward list roots request from remote server to proxy's connected clients.
+
+### `default_proxy_sampling_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L731" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+default_proxy_sampling_handler(messages: list[mcp.types.SamplingMessage], params: mcp.types.CreateMessageRequestParams, context: RequestContext[ClientSession, LifespanContextT]) -> mcp.types.CreateMessageResult
+```
+
+Forward sampling request from remote server to proxy's connected clients.
+
+### `default_proxy_elicitation_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L754" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+default_proxy_elicitation_handler(message: str, response_type: type, params: mcp.types.ElicitRequestParams, context: RequestContext[ClientSession, LifespanContextT]) -> ElicitResult
+```
+
+Forward elicitation request from remote server to proxy's connected clients.
+
+### `default_proxy_log_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L776" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+default_proxy_log_handler(message: LogMessage) -> None
+```
+
+Forward log notification from remote server to proxy's connected clients.
+
+### `default_proxy_progress_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L784" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+default_proxy_progress_handler(progress: float, total: float | None, message: str | None) -> None
+```
+
+Forward progress notification from remote server to proxy's connected clients.
+
+## Classes
+
+### `ProxyTool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+A Tool that represents and executes a tool on a remote server.
+
+**Methods:**
+
+#### `model_copy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+model_copy(self, **kwargs: Any) -> ProxyTool
+```
+
+Override to preserve \_backend\_name when name changes.
+
+#### `from_mcp_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+from_mcp_tool(cls, client_factory: ClientFactoryT, mcp_tool: mcp.types.Tool) -> ProxyTool
+```
+
+Factory method to create a ProxyTool from a raw MCP tool schema.
+
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+run(self, arguments: dict[str, Any], context: Context | None = None) -> ToolResult
+```
+
+Executes the tool by making a call through the client.
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `ProxyResource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L173" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+A Resource that represents and reads a resource from a remote server.
+
+**Methods:**
+
+#### `model_copy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+model_copy(self, **kwargs: Any) -> ProxyResource
+```
+
+Override to preserve \_backend\_uri when uri changes.
+
+#### `from_mcp_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L208" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+from_mcp_resource(cls, client_factory: ClientFactoryT, mcp_resource: mcp.types.Resource) -> ProxyResource
+```
+
+Factory method to create a ProxyResource from a raw MCP resource schema.
+
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+read(self) -> ResourceResult
+```
+
+Read the resource content from the remote server.
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L273" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `ProxyTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L280" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+A ResourceTemplate that represents and creates resources from a remote server template.
+
+**Methods:**
+
+#### `model_copy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L297" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+model_copy(self, **kwargs: Any) -> ProxyTemplate
+```
+
+Override to preserve \_backend\_uri\_template when uri\_template changes.
+
+#### `from_mcp_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L307" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+from_mcp_template(cls, client_factory: ClientFactoryT, mcp_template: mcp.types.ResourceTemplate) -> ProxyTemplate
+```
+
+Factory method to create a ProxyTemplate from a raw MCP template schema.
+
+#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L326" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+create_resource(self, uri: str, params: dict[str, Any], context: Context | None = None) -> ProxyResource
+```
+
+Create a resource from the template by calling the remote server.
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L388" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `ProxyPrompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L395" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+A Prompt that represents and renders a prompt from a remote server.
+
+**Methods:**
+
+#### `model_copy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L412" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+model_copy(self, **kwargs: Any) -> ProxyPrompt
+```
+
+Override to preserve \_backend\_name when name changes.
+
+#### `from_mcp_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L422" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+from_mcp_prompt(cls, client_factory: ClientFactoryT, mcp_prompt: mcp.types.Prompt) -> ProxyPrompt
+```
+
+Factory method to create a ProxyPrompt from a raw MCP prompt schema.
+
+#### `render` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L446" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+render(self, arguments: dict[str, Any]) -> PromptResult
+```
+
+Render the prompt by making a call through the client.
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L468" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `ProxyProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L480" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Provider that proxies to a remote MCP server via a client factory.
+
+This provider fetches components from a remote server and returns Proxy\*
+component instances that forward execution to the remote server.
+
+All components returned by this provider have task\_config.mode="forbidden"
+because tasks cannot be executed through a proxy.
+
+**Methods:**
+
+#### `get_tasks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L605" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_tasks(self) -> Sequence[FastMCPComponent]
+```
+
+Return empty list since proxy components don't support tasks.
+
+Override the base implementation to avoid calling list\_tools() during
+server lifespan initialization, which would open the client before any
+context is set. All Proxy\* components have task\_config.mode="forbidden".
+
+### `FastMCPProxy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L676" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+A FastMCP server that acts as a proxy to a remote MCP-compliant server.
+
+This is a convenience wrapper that creates a FastMCP server with a
+ProxyProvider. For more control, use FastMCP with add\_provider(ProxyProvider(...)).
+
+### `ProxyClient` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L848" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
+
+Supports forwarding roots, sampling, elicitation, logging, and progress.
+
+### `StatefulProxyClient` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L881" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+A proxy client that provides a stateful client factory for the proxy server.
+
+The stateful proxy client bound its copy to the server session.
+And it will be disconnected when the session is exited.
+
+This is useful to proxy a stateful mcp server such as the Playwright MCP server.
+Note that it is essential to ensure that the proxy server itself is also stateful.
+
+Because session reuse means the receive-loop task inherits a stale
+`request_ctx` ContextVar snapshot, the default proxy handlers are
+replaced with versions that restore the ContextVar before forwarding.
+`ProxyTool.run` stashes the current `RequestContext` in
+`_proxy_rc_ref` before each backend call, and the handlers consult
+it to detect (and correct) staleness.
+
+**Methods:**
+
+#### `clear` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L932" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+clear(self)
+```
+
+Clear all cached clients and force disconnect them.
+
+#### `new_stateful` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/proxy.py#L938" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+new_stateful(self) -> Client[ClientTransportT]
+```
+
+Create a new stateful proxy client instance with the same configuration.
+
+Use this method as the client factory for stateful proxy server.

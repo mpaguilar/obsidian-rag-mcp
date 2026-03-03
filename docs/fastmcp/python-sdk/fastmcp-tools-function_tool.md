@@ -1,0 +1,99 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# function_tool
+
+# `fastmcp.tools.function_tool`
+
+Standalone @tool decorator for FastMCP.
+
+## Functions
+
+### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L375" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+tool(name_or_fn: str | Callable[..., Any] | None = None) -> Any
+```
+
+Standalone decorator to mark a function as an MCP tool.
+
+Returns the original function with metadata attached. Register with a server
+using mcp.add\_tool().
+
+## Classes
+
+### `DecoratedTool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Protocol for functions decorated with @tool.
+
+### `ToolMeta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L65" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Metadata attached to functions by the @tool decorator.
+
+### `FunctionTool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L87" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+**Methods:**
+
+#### `to_mcp_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L91" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+to_mcp_tool(self, **overrides: Any) -> mcp.types.Tool
+```
+
+Convert the FastMCP tool to an MCP tool.
+
+Extends the base implementation to add task execution mode if enabled.
+
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+from_function(cls, fn: Callable[..., Any]) -> FunctionTool
+```
+
+Create a FunctionTool from a function.
+
+**Args:**
+
+* `fn`: The function to wrap
+* `metadata`: ToolMeta object with all configuration. If provided,
+  individual parameters must not be passed.
+* `name, title, etc.`: Individual parameters for backwards compatibility.
+  Cannot be used together with metadata parameter.
+
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L253" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+run(self, arguments: dict[str, Any]) -> ToolResult
+```
+
+Run the tool with arguments.
+
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+register_with_docket(self, docket: Docket) -> None
+```
+
+Register this tool with docket for background execution.
+
+FunctionTool registers the underlying function, which has the user's
+Depends parameters for docket to resolve.
+
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L308" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+add_to_docket(self, docket: Docket, arguments: dict[str, Any], **kwargs: Any) -> Execution
+```
+
+Schedule this tool for background execution via docket.
+
+FunctionTool splats the arguments dict since .fn expects \*\*kwargs.
+
+**Args:**
+
+* `docket`: The Docket instance
+* `arguments`: Tool arguments
+* `fn_key`: Function lookup key in Docket registry (defaults to self.key)
+* `task_key`: Redis storage key for the result
+* `**kwargs`: Additional kwargs passed to docket.add()

@@ -1,0 +1,215 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# fastmcp_provider
+
+# `fastmcp.server.providers.fastmcp_provider`
+
+FastMCPProvider for wrapping FastMCP servers as providers.
+
+This module provides the `FastMCPProvider` class that wraps a FastMCP server
+and exposes its components through the Provider interface.
+
+It also provides FastMCPProvider\* component classes that delegate execution to
+the wrapped server's middleware, ensuring middleware runs when components are
+executed.
+
+## Classes
+
+### `FastMCPProviderTool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Tool that delegates execution to a wrapped server's middleware.
+
+When `run()` is called, this tool invokes the wrapped server's
+`_call_tool_middleware()` method, ensuring the server's middleware
+chain is executed.
+
+**Methods:**
+
+#### `wrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+wrap(cls, server: Any, tool: Tool) -> FastMCPProviderTool
+```
+
+Wrap a Tool to delegate execution to the server's middleware.
+
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L129" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+run(self, arguments: dict[str, Any]) -> ToolResult
+```
+
+Delegate to child server's call\_tool() without task\_meta.
+
+This is called when the tool is used within a TransformedTool
+forwarding function or other contexts where task\_meta is not available.
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L148" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `FastMCPProviderResource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L155" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Resource that delegates reading to a wrapped server's read\_resource().
+
+When `read()` is called, this resource invokes the wrapped server's
+`read_resource()` method, ensuring the server's middleware chain is executed.
+
+**Methods:**
+
+#### `wrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+wrap(cls, server: Any, resource: Resource) -> FastMCPProviderResource
+```
+
+Wrap a Resource to delegate reading to the server's middleware.
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L219" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `FastMCPProviderPrompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Prompt that delegates rendering to a wrapped server's render\_prompt().
+
+When `render()` is called, this prompt invokes the wrapped server's
+`render_prompt()` method, ensuring the server's middleware chain is executed.
+
+**Methods:**
+
+#### `wrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L247" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+wrap(cls, server: Any, prompt: Prompt) -> FastMCPProviderPrompt
+```
+
+Wrap a Prompt to delegate rendering to the server's middleware.
+
+#### `render` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+render(self, arguments: dict[str, Any] | None = None) -> PromptResult
+```
+
+Delegate to child server's render\_prompt() without task\_meta.
+
+This is called when the prompt is used within a transformed context
+or other contexts where task\_meta is not available.
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L317" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `FastMCPProviderResourceTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L324" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Resource template that creates FastMCPProviderResources.
+
+When `create_resource()` is called, this template creates a
+FastMCPProviderResource that will invoke the wrapped server's middleware
+when read.
+
+**Methods:**
+
+#### `wrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L346" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+wrap(cls, server: Any, template: ResourceTemplate) -> FastMCPProviderResourceTemplate
+```
+
+Wrap a ResourceTemplate to create FastMCPProviderResources.
+
+#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L367" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+create_resource(self, uri: str, params: dict[str, Any]) -> Resource
+```
+
+Create a FastMCPProviderResource for the given URI.
+
+The `uri` is the external/transformed URI (e.g., with namespace prefix).
+We use `_original_uri_template` with `params` to construct the internal
+URI that the nested server understands.
+
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L417" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
+```
+
+Read the resource content for background task execution.
+
+Reads the resource via the wrapped server and returns the ResourceResult.
+This method is called by Docket during background task execution.
+
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L438" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+register_with_docket(self, docket: Docket) -> None
+```
+
+No-op: the child's actual template is registered via get\_tasks().
+
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L441" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+add_to_docket(self, docket: Docket, params: dict[str, Any], **kwargs: Any) -> Execution
+```
+
+Schedule this template for background execution via docket.
+
+The child's FunctionResourceTemplate.fn is registered (via get\_tasks),
+and it expects splatted \*\*kwargs, so we splat params here.
+
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L460" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_span_attributes(self) -> dict[str, Any]
+```
+
+### `FastMCPProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L472" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Provider that wraps a FastMCP server.
+
+This provider enables mounting one FastMCP server onto another, exposing
+the mounted server's tools, resources, and prompts through the parent
+server.
+
+Components returned by this provider are wrapped in FastMCPProvider\*
+classes that delegate execution to the wrapped server's middleware chain.
+This ensures middleware runs when components are executed.
+
+**Methods:**
+
+#### `get_tasks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L637" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+get_tasks(self) -> Sequence[FastMCPComponent]
+```
+
+Return task-eligible components from the mounted server.
+
+Returns the child's ACTUAL components (not wrapped) so their actual
+functions get registered with Docket. Gets components with child
+server's transforms applied, then applies this provider's transforms
+for correct registration keys.
+
+#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/providers/fastmcp_provider.py#L678" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+lifespan(self) -> AsyncIterator[None]
+```
+
+Start the mounted server's user lifespan.
+
+This starts only the wrapped server's user-defined lifespan, NOT its
+full \_lifespan\_manager() (which includes Docket). The parent server's
+Docket handles all background tasks.

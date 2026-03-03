@@ -1,0 +1,91 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# tests
+
+# `fastmcp.utilities.tests`
+
+## Functions
+
+### `temporary_settings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+temporary_settings(**kwargs: Any)
+```
+
+Temporarily override FastMCP setting values.
+
+**Args:**
+
+* `**kwargs`: The settings to override, including nested settings.
+
+### `run_server_in_process` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+run_server_in_process(server_fn: Callable[..., None], *args: Any, **kwargs: Any) -> Generator[str, None, None]
+```
+
+Context manager that runs a FastMCP server in a separate process and
+returns the server URL. When the context manager is exited, the server process is killed.
+
+**Args:**
+
+* `server_fn`: The function that runs a FastMCP server. FastMCP servers are
+  not pickleable, so we need a function that creates and runs one.
+* `*args`: Arguments to pass to the server function.
+* `provide_host_and_port`: Whether to provide the host and port to the server function as kwargs.
+* `host`: Host to bind the server to (default: "127.0.0.1").
+* `port`: Port to bind the server to (default: find available port).
+* `**kwargs`: Keyword arguments to pass to the server function.
+
+**Returns:**
+
+* The server URL.
+
+### `run_server_async` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L143" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+run_server_async(server: FastMCP, port: int | None = None, transport: Literal['http', 'streamable-http', 'sse'] = 'http', path: str = '/mcp', host: str = '127.0.0.1') -> AsyncGenerator[str, None]
+```
+
+Start a FastMCP server as an asyncio task for in-process async testing.
+
+This is the recommended way to test FastMCP servers. It runs the server
+as an async task in the same process, eliminating subprocess coordination,
+sleeps, and cleanup issues.
+
+**Args:**
+
+* `server`: FastMCP server instance
+* `port`: Port to bind to (default: find available port)
+* `transport`: Transport type ("http", "streamable-http", or "sse")
+* `path`: URL path for the server (default: "/mcp")
+* `host`: Host to bind to (default: "127.0.0.1")
+
+## Classes
+
+### `HeadlessOAuth` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L225" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+OAuth provider that bypasses browser interaction for testing.
+
+This simulates the complete OAuth flow programmatically by making HTTP requests
+instead of opening a browser and running a callback server. Useful for automated testing.
+
+**Methods:**
+
+#### `redirect_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L238" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+redirect_handler(self, authorization_url: str) -> None
+```
+
+Make HTTP request to authorization URL and store response for callback handler.
+
+#### `callback_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L244" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+callback_handler(self) -> tuple[str, str | None]
+```
+
+Parse stored response and return (auth\_code, state).

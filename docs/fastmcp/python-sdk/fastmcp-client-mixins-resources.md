@@ -1,0 +1,166 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# resources
+
+# `fastmcp.client.mixins.resources`
+
+Resource-related methods for FastMCP Client.
+
+## Classes
+
+### `ClientResourcesMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Mixin providing resource-related methods for Client.
+
+**Methods:**
+
+#### `list_resources_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L33" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+list_resources_mcp(self: Client) -> mcp.types.ListResourcesResult
+```
+
+Send a resources/list request and return the complete MCP protocol result.
+
+**Args:**
+
+* `cursor`: Optional pagination cursor from a previous request's nextCursor.
+
+**Returns:**
+
+* mcp.types.ListResourcesResult: The complete response object from the protocol,
+  containing the list of resources and any additional metadata.
+
+**Raises:**
+
+* `RuntimeError`: If called while the client is not connected.
+* `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+#### `list_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+list_resources(self: Client) -> list[mcp.types.Resource]
+```
+
+Retrieve all resources available on the server.
+
+This method automatically fetches all pages if the server paginates results,
+returning the complete list. For manual pagination control (e.g., to handle
+large result sets incrementally), use list\_resources\_mcp() with the cursor parameter.
+
+**Returns:**
+
+* list\[mcp.types.Resource]: A list of all Resource objects.
+
+**Raises:**
+
+* `RuntimeError`: If called while the client is not connected.
+* `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+#### `list_resource_templates_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+list_resource_templates_mcp(self: Client) -> mcp.types.ListResourceTemplatesResult
+```
+
+Send a resources/listResourceTemplates request and return the complete MCP protocol result.
+
+**Args:**
+
+* `cursor`: Optional pagination cursor from a previous request's nextCursor.
+
+**Returns:**
+
+* mcp.types.ListResourceTemplatesResult: The complete response object from the protocol,
+  containing the list of resource templates and any additional metadata.
+
+**Raises:**
+
+* `RuntimeError`: If called while the client is not connected.
+* `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+#### `list_resource_templates` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+list_resource_templates(self: Client) -> list[mcp.types.ResourceTemplate]
+```
+
+Retrieve all resource templates available on the server.
+
+This method automatically fetches all pages if the server paginates results,
+returning the complete list. For manual pagination control (e.g., to handle
+large result sets incrementally), use list\_resource\_templates\_mcp() with the
+cursor parameter.
+
+**Returns:**
+
+* list\[mcp.types.ResourceTemplate]: A list of all ResourceTemplate objects.
+
+**Raises:**
+
+* `RuntimeError`: If called while the client is not connected.
+* `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+#### `read_resource_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L149" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+read_resource_mcp(self: Client, uri: AnyUrl | str, meta: dict[str, Any] | None = None) -> mcp.types.ReadResourceResult
+```
+
+Send a resources/read request and return the complete MCP protocol result.
+
+**Args:**
+
+* `uri`: The URI of the resource to read. Can be a string or an AnyUrl object.
+* `meta`: Request metadata (e.g., for SEP-1686 tasks). Defaults to None.
+
+**Returns:**
+
+* mcp.types.ReadResourceResult: The complete response object from the protocol,
+  containing the resource contents and any additional metadata.
+
+**Raises:**
+
+* `RuntimeError`: If called while the client is not connected.
+* `McpError`: If the request results in a TimeoutError | JSONRPCError
+
+#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+read_resource(self: Client, uri: AnyUrl | str) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]
+```
+
+#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L215" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+read_resource(self: Client, uri: AnyUrl | str) -> ResourceTask
+```
+
+#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/client/mixins/resources.py#L226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+read_resource(self: Client, uri: AnyUrl | str) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents] | ResourceTask
+```
+
+Read the contents of a resource or resolved template.
+
+**Args:**
+
+* `uri`: The URI of the resource to read. Can be a string or an AnyUrl object.
+* `version`: Specific version to read. If None, reads highest version.
+* `meta`: Optional request-level metadata.
+* `task`: If True, execute as background task (SEP-1686). Defaults to False.
+* `task_id`: Optional client-provided task ID (auto-generated if not provided).
+* `ttl`: Time to keep results available in milliseconds (default 60s).
+
+**Returns:**
+
+* list\[mcp.types.TextResourceContents | mcp.types.BlobResourceContents] | ResourceTask:
+  A list of content objects if task=False, or a ResourceTask object if task=True.
+
+**Raises:**
+
+* `RuntimeError`: If called while the client is not connected.
+* `McpError`: If the request results in a TimeoutError | JSONRPCError

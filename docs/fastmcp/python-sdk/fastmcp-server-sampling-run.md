@@ -1,0 +1,186 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# run
+
+# `fastmcp.server.sampling.run`
+
+Sampling types and helper functions for FastMCP servers.
+
+## Functions
+
+### `determine_handler_mode` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+determine_handler_mode(context: Context, needs_tools: bool) -> bool
+```
+
+Determine whether to use fallback handler or client for sampling.
+
+**Args:**
+
+* `context`: The MCP context.
+* `needs_tools`: Whether the sampling request requires tool support.
+
+**Returns:**
+
+* True if fallback handler should be used, False to use client.
+
+**Raises:**
+
+* `ValueError`: If client lacks required capability and no fallback configured.
+
+### `call_sampling_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L191" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+call_sampling_handler(context: Context, messages: list[SamplingMessage]) -> CreateMessageResult | CreateMessageResultWithTools
+```
+
+Make LLM call using the fallback handler.
+
+Note: This function expects the caller (sample\_step) to have validated that
+sampling\_handler is set via determine\_handler\_mode(). The checks below are
+safeguards against internal misuse.
+
+### `execute_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L242" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+execute_tools(tool_calls: list[ToolUseContent], tool_map: dict[str, SamplingTool], mask_error_details: bool = False, tool_concurrency: int | None = None) -> list[ToolResultContent]
+```
+
+Execute tool calls and return results.
+
+**Args:**
+
+* `tool_calls`: List of tool use requests from the LLM.
+* `tool_map`: Mapping from tool name to SamplingTool.
+* `mask_error_details`: If True, mask detailed error messages from tool execution.
+  When masked, only generic error messages are returned to the LLM.
+  Tools can explicitly raise ToolError to bypass masking when they want
+  to provide specific error messages to the LLM.
+* `tool_concurrency`: Controls parallel execution of tools:
+* None (default): Sequential execution (one at a time)
+* 0: Unlimited parallel execution
+* N > 0: Execute at most N tools concurrently
+  If any tool has sequential=True, all tools execute sequentially
+  regardless of this setting.
+
+**Returns:**
+
+* List of tool result content blocks in the same order as tool\_calls.
+
+### `prepare_messages` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L352" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+prepare_messages(messages: str | Sequence[str | SamplingMessage]) -> list[SamplingMessage]
+```
+
+Convert various message formats to a list of SamplingMessage objects.
+
+### `prepare_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L371" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+prepare_tools(tools: Sequence[SamplingTool | FunctionTool | TransformedTool | Callable[..., Any]] | None) -> list[SamplingTool] | None
+```
+
+Convert tools to SamplingTool objects.
+
+Accepts SamplingTool instances, FunctionTool instances, TransformedTool instances,
+or plain callable functions. FunctionTool and TransformedTool are converted using
+from\_callable\_tool(), while plain functions use from\_function().
+
+**Args:**
+
+* `tools`: Sequence of tools to prepare. Can be SamplingTool, FunctionTool,
+  TransformedTool, or plain callable functions.
+
+**Returns:**
+
+* List of SamplingTool instances, or None if tools is None.
+
+### `extract_tool_calls` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L407" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+extract_tool_calls(response: CreateMessageResult | CreateMessageResultWithTools) -> list[ToolUseContent]
+```
+
+Extract tool calls from a response.
+
+### `create_final_response_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L419" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+create_final_response_tool(result_type: type) -> SamplingTool
+```
+
+Create a synthetic 'final\_response' tool for structured output.
+
+This tool is used to capture structured responses from the LLM.
+The tool's schema is derived from the result\_type.
+
+### `sample_step_impl` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L455" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+sample_step_impl(context: Context, messages: str | Sequence[str | SamplingMessage]) -> SampleStep
+```
+
+Implementation of Context.sample\_step().
+
+Make a single LLM sampling call. This is a stateless function that makes
+exactly one LLM call and optionally executes any requested tools.
+
+### `sample_impl` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L572" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+sample_impl(context: Context, messages: str | Sequence[str | SamplingMessage]) -> SamplingResult[ResultT]
+```
+
+Implementation of Context.sample().
+
+Send a sampling request to the client and await the response. This method
+runs to completion automatically, executing a tool loop until the LLM
+provides a final text response.
+
+## Classes
+
+### `SamplingResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Result of a sampling operation.
+
+**Attributes:**
+
+* `text`: The text representation of the result (raw text or JSON for structured).
+* `result`: The typed result (str for text, parsed object for structured output).
+* `history`: All messages exchanged during sampling.
+
+### `SampleStep` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L69" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Result of a single sampling call.
+
+Represents what the LLM returned in this step plus the message history.
+
+**Methods:**
+
+#### `is_tool_use` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L79" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+is_tool_use(self) -> bool
+```
+
+True if the LLM is requesting tool execution.
+
+#### `text` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+text(self) -> str | None
+```
+
+Extract text from the response, if available.
+
+#### `tool_calls` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/sampling/run.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+tool_calls(self) -> list[ToolUseContent]
+```
+
+Get the list of tool calls from the response.

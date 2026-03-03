@@ -1,0 +1,97 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# function_prompt
+
+# `fastmcp.prompts.function_prompt`
+
+Standalone @prompt decorator for FastMCP.
+
+## Functions
+
+### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L398" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+prompt(name_or_fn: str | Callable[..., Any] | None = None) -> Any
+```
+
+Standalone decorator to mark a function as an MCP prompt.
+
+Returns the original function with metadata attached. Register with a server
+using mcp.add\_prompt().
+
+## Classes
+
+### `DecoratedPrompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L49" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Protocol for functions decorated with @prompt.
+
+### `PromptMeta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L58" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Metadata attached to functions by the @prompt decorator.
+
+### `FunctionPrompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+A prompt that is a function.
+
+**Methods:**
+
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+from_function(cls, fn: Callable[..., Any]) -> FunctionPrompt
+```
+
+Create a Prompt from a function.
+
+**Args:**
+
+* `fn`: The function to wrap
+* `metadata`: PromptMeta object with all configuration. If provided,
+  individual parameters must not be passed.
+* `name, title, etc.`: Individual parameters for backwards compatibility.
+  Cannot be used together with metadata parameter.
+
+The function can return:
+
+* str: wrapped as single user Message
+* list\[Message | str]: converted to list\[Message]
+* PromptResult: used directly
+
+#### `render` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L281" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+render(self, arguments: dict[str, Any] | None = None) -> PromptResult
+```
+
+Render the prompt with arguments.
+
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L331" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+register_with_docket(self, docket: Docket) -> None
+```
+
+Register this prompt with docket for background execution.
+
+FunctionPrompt registers the underlying function, which has the user's
+Depends parameters for docket to resolve.
+
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/prompts/function_prompt.py#L341" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+add_to_docket(self, docket: Docket, arguments: dict[str, Any] | None, **kwargs: Any) -> Execution
+```
+
+Schedule this prompt for background execution via docket.
+
+FunctionPrompt splats the arguments dict since .fn expects \*\*kwargs.
+
+**Args:**
+
+* `docket`: The Docket instance
+* `arguments`: Prompt arguments
+* `fn_key`: Function lookup key in Docket registry (defaults to self.key)
+* `task_key`: Redis storage key for the result
+* `**kwargs`: Additional kwargs passed to docket.add()

@@ -232,6 +232,93 @@ python -m pytest tests/ --cov=obsidian_rag --cov-branch --cov-report=term-missin
 ruff check obsidian_rag/ tests/
 ```
 
+### 6. MCP Server Layer (`mcp_server/`)
+
+The MCP (Model Context Protocol) server provides remote access to Obsidian RAG functionality via HTTP transport.
+
+#### Server (`server.py`)
+
+FastMCP server configuration with:
+- HTTP transport for remote access
+- Bearer token authentication via `BearerTokenAuth`
+- CORS middleware for browser-based clients
+- Health check endpoint at `/health`
+- Five read-only tools for querying tasks and documents
+
+**Server Creation:**
+```python
+mcp = create_mcp_server(settings)
+app = create_http_app(settings)  # ASGI app with CORS
+```
+
+**Running the Server:**
+```bash
+python -m obsidian_rag.mcp_server
+# or
+uvicorn obsidian_rag.mcp_server.server:create_http_app --factory
+```
+
+#### Tools (`tools/`)
+
+All tools are read-only and use SQLAlchemy `select()` operations only:
+
+**Task Tools:**
+- `get_incomplete_tasks`: Query tasks with status not_completed, in_progress, optionally cancelled
+- `get_tasks_due_this_week`: Query tasks due within next 7 days
+- `get_tasks_by_tag`: Query tasks by tag (matches task or document level, case-insensitive)
+- `get_completed_tasks`: Query completed tasks with optional date filter
+
+**Document Tools:**
+- `query_documents`: Semantic search using vector similarity (cosine distance)
+
+**Pagination Pattern:**
+- `limit`: Default 20, maximum 100
+- `offset`: Starting position for results
+- Response includes: `total_count`, `has_more`, `next_offset`
+
+#### Models (`models.py`)
+
+Pydantic models for request/response validation:
+
+**Task Models:**
+- `TaskResponse`: Single task with document info
+- `TaskListResponse`: Paginated task list
+
+**Document Models:**
+- `DocumentResponse`: Single document with similarity score
+- `DocumentListResponse`: Paginated document list
+
+**Health Model:**
+- `HealthResponse`: Health check status
+
+#### Authentication
+
+Bearer token authentication using `BearerTokenAuth`:
+- Token configured via `OBSIDIAN_RAG_MCP_TOKEN` env var or `mcp.token` config
+- All endpoints require valid Bearer token (401 for invalid/missing)
+- No per-tool permission granularity (all-or-nothing access)
+
+#### Configuration
+
+MCP-specific configuration (`MCPConfig`):
+- `host`: Bind address (default: "0.0.0.0")
+- `port`: HTTP port (default: 8000)
+- `token`: Bearer token for authentication (required)
+- `cors_origins`: Allowed CORS origins (default: ["*"])
+- `enable_health_check`: Enable `/health` endpoint (default: true)
+- `stateless_http`: Stateless mode for horizontal scaling (default: false)
+
+#### Docker Support
+
+Dockerfile with configurable build scope:
+- `INSTALL_MODE=full`: Install all dependencies including optional
+- `INSTALL_MODE=mcp-only`: Install only MCP-related dependencies (default)
+
+```bash
+docker build -t obsidian-rag-mcp .
+docker run -p 8000:8000 -e OBSIDIAN_RAG_MCP_TOKEN=secret obsidian-rag-mcp
+```
+
 ## Dependencies
 
 **Core Dependencies:**
@@ -242,6 +329,8 @@ ruff check obsidian_rag/ tests/
 - `python-dateutil` - Date parsing and recurrence rules
 - `pydantic` / `pydantic-settings` - Configuration validation
 - `httpx` - HTTP client for web-related calls
+- `fastmcp` - MCP server framework
+- `starlette` - ASGI middleware (CORS)
 
 **Optional Dependencies:**
 - `litellm` - Provider-agnostic LLM connectivity (for OpenAI support)

@@ -1,0 +1,62 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://gofastmcp.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# google
+
+# `fastmcp.server.auth.providers.google`
+
+Google OAuth provider for FastMCP.
+
+This module provides a complete Google OAuth integration that's ready to use
+with just a client ID and client secret. It handles all the complexity of
+Google's OAuth flow, token validation, and user management.
+
+Example:
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.google import GoogleProvider
+
+# Simple Google OAuth protection
+auth = GoogleProvider(
+    client_id="your-google-client-id.apps.googleusercontent.com",
+    client_secret="your-google-client-secret"
+)
+
+mcp = FastMCP("My Protected Server", auth=auth)
+```
+
+## Classes
+
+### `GoogleTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Token verifier for Google OAuth tokens.
+
+Google OAuth tokens are opaque (not JWTs), so we verify them
+by calling Google's tokeninfo API to check if they're valid and get user info.
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python  theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify Google OAuth token by calling Google's tokeninfo API.
+
+### `GoogleProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Complete Google OAuth provider for FastMCP.
+
+This provider makes it trivial to add Google OAuth protection to any
+FastMCP server. Just provide your Google OAuth app credentials and
+a base URL, and you're ready to go.
+
+Features:
+
+* Transparent OAuth proxy to Google
+* Automatic token validation via Google's tokeninfo API
+* User information extraction from Google APIs
+* Minimal configuration required
