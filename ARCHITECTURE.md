@@ -8,6 +8,22 @@ The Obsidian RAG system is a Python library designed to ingest, store, and query
 
 ### 1. Database Layer (`database/`)
 
+#### ArrayType TypeDecorator
+
+The `ArrayType` class in `models.py` provides cross-database compatibility for PostgreSQL arrays:
+- Uses `postgresql.ARRAY` type when connected to PostgreSQL (production)
+- Falls back to `JSON` type for other databases (e.g., SQLite for testing)
+- Used for `tags` columns in both Document and Task models
+- Ensures schema-model alignment regardless of database backend
+
+#### Vector Index
+
+The `content_vector` column uses HNSW (Hierarchical Navigable Small World) index for fast similarity search:
+- **Index type**: HNSW with `vector_cosine_ops` operator class
+- **Dimension limit**: Both HNSW and IVFFLAT have a 2000 dimension limit in pgvector
+- **Configuration**: `database.vector_dimension` setting (default: 1536)
+- **Validation**: Configuration validates that `vector_dimension ≤ 2000`
+
 #### Models (`models.py`)
 
 **documents table:**
@@ -15,7 +31,7 @@ The Obsidian RAG system is a Python library designed to ingest, store, and query
 - `file_path` (TEXT, UNIQUE, indexed)
 - `file_name` (TEXT, indexed)
 - `content` (TEXT)
-- `content_vector` (VECTOR(1536) - configurable dimension)
+- `content_vector` (VECTOR(N) - configurable dimension, default 1536)
 - `checksum_md5` (CHAR(32))
 - `created_at_fs` (TIMESTAMP) - filesystem creation date
 - `modified_at_fs` (TIMESTAMP) - filesystem modification date
@@ -80,13 +96,16 @@ Database connection management using SQLAlchemy with:
 
 **Supported Providers:**
 - OpenAI (embeddings, analysis, chat) - uses `litellm`
+- OpenRouter (embeddings, chat) - uses `litellm` with `openrouter/` prefix
 - HuggingFace (local embeddings) - uses `langchain.embeddings.HuggingFaceEmbeddings`
 - Extensible design for additional providers
 
 **Library Usage:**
-- `litellm`: Provider-agnostic LLM connectivity for OpenAI endpoints
+- `litellm`: Provider-agnostic LLM connectivity for OpenAI and OpenRouter endpoints
   - `OpenAIEmbeddingProvider`: Uses `litellm.embedding()`
   - `OpenAIChatProvider`: Uses `litellm.completion()`
+  - `OpenRouterEmbeddingProvider`: Uses `litellm.embedding()` with `openrouter/` prefix
+  - `OpenRouterChatProvider`: Uses `litellm.completion()` with `openrouter/` prefix
 - `langchain`: Local embedding models via HuggingFace
   - `HuggingFaceEmbeddingProvider`: Uses `HuggingFaceEmbeddings`
 
@@ -116,6 +135,8 @@ Layered configuration system:
 - Environment variable interpolation: `${VAR}` or `${VAR:-default}`
 - Nested configuration merging
 - Pydantic validation
+- **Vector dimension validation**: Enforces maximum of 2000 dimensions (pgvector limit)
+- **Cross-validation**: Validates embedding provider dimension matches `database.vector_dimension`
 
 ### 5. CLI Layer (`cli.py`)
 
@@ -184,10 +205,32 @@ CLI Query → Config → LLM Provider → Vector Generation → Database Search 
 
 ## Testing Architecture
 
-- pytest with 100% coverage requirement on all modules
+- pytest with branch coverage
 - Tests in top-level `tests/` directory mirroring source structure
 - Mock-based unit tests for database and LLM operations
 - All provider classes tested with mocked dependencies
+
+### Coverage Status
+
+| Module | Coverage | Notes |
+|--------|----------|-------|
+| `config.py` | 100% | Complete coverage |
+| `parsing/` | 100% | All parsing modules fully covered |
+| `database/engine.py` | 100% | Complete coverage |
+| `database/models.py` | 95% | PostgreSQL-specific code paths |
+| `llm/base.py` | 95% | Abstract methods (by design) |
+| `llm/providers.py` | 99% | Defensive branches |
+| `cli.py` | 79% | Integration tests require database setup |
+
+### Running Tests
+
+```bash
+# Run all tests with coverage
+python -m pytest tests/ --cov=obsidian_rag --cov-branch --cov-report=term-missing
+
+# Run ruff checks
+ruff check obsidian_rag/ tests/
+```
 
 ## Dependencies
 

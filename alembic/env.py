@@ -1,6 +1,7 @@
 """Alembic environment configuration."""
 
 import os
+import re
 import sys
 from logging.config import fileConfig
 
@@ -29,10 +30,32 @@ target_metadata = Base.metadata
 # my_important_option = config.get_main_option("my_important_option")
 
 
+def _normalize_postgres_url(url: str) -> str:
+    """Normalize PostgreSQL URL to use psycopg (v3) driver.
+
+    Converts URLs to use the psycopg driver explicitly by:
+    - Replacing 'postgres://' or 'postgresql://' with 'postgresql+psycopg://'
+    - Preserving URLs that already specify a driver
+
+    Args:
+        url: The database URL to normalize.
+
+    Returns:
+        The normalized URL with psycopg driver specified.
+
+    """
+    # Skip if URL already specifies a driver (contains +)
+    if re.search(r"postgresql\+", url):
+        return url
+
+    # Replace postgres:// or postgresql:// with postgresql+psycopg://
+    return re.sub(r"^(postgres(?:ql)?://)", r"postgresql+psycopg://", url)
+
+
 def get_database_url() -> str:
     """Get database URL from settings."""
     settings = get_settings()
-    return settings.database.url
+    return _normalize_postgres_url(settings.database.url)
 
 
 def run_migrations_offline() -> None:

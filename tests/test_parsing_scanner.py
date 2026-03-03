@@ -137,6 +137,15 @@ class TestReadFileContent:
         result = _read_file_content(file_path)
         assert result is None
 
+    def test_handles_generic_exception(self, tmp_path):
+        """Test handling generic exception when reading file."""
+        file_path = tmp_path / "test.md"
+        file_path.write_text("content")
+
+        with patch("pathlib.Path.read_text", side_effect=OSError("Generic OS error")):
+            result = _read_file_content(file_path)
+            assert result is None
+
 
 class TestReadFileWithMetadata:
     """Test cases for read_file_with_metadata function."""

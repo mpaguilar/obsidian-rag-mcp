@@ -45,7 +45,13 @@ createdb obsidian_rag
 2. Enable the pg_vector extension:
 
 ```sql
-psql -d obsidian_rag -c "CREATE EXTENSION IF NOT EXISTS pgvector;"
+psql -d obsidian_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+3. Run database migrations (create tables):
+
+```bash
+alembic upgrade head
 ```
 
 ## Usage
@@ -249,6 +255,92 @@ endpoints:
     model: sentence-transformers/all-MiniLM-L6-v2
 ```
 
+### OpenRouter (Cloud - Multiple Providers)
+
+Requires `litellm` package:
+
+```bash
+pip install litellm
+```
+
+OpenRouter provides access to models from multiple providers through a single API.
+
+**Important:** When using `qwen/qwen3-embedding-8b`, you must set `database.vector_dimension: 4096` in your config.
+
+Configuration:
+
+```yaml
+# Example with qwen/qwen3-embedding-8b (4096 dimensions)
+database:
+  url: postgresql://localhost/obsidian_rag
+  vector_dimension: 4096  # Required for qwen3-embedding-8b
+
+endpoints:
+  embedding:
+    provider: openrouter
+    model: qwen/qwen3-embedding-8b
+    api_key: ${OPENROUTER_API_KEY}
+    base_url: https://openrouter.ai/api/v1
+
+  chat:
+    provider: openrouter
+    model: anthropic/claude-3-opus  # or openai/gpt-4, google/gemini-pro, etc.
+    api_key: ${OPENROUTER_API_KEY}
+    base_url: https://openrouter.ai/api/v1
+    temperature: 0.7
+```
+
+**Model Format:** OpenRouter uses `provider/model` format (e.g., `qwen/qwen3-embedding-8b`, `anthropic/claude-3-opus`).
+
+## Vector Dimension Limits
+
+PostgreSQL's pgvector extension has a **2000 dimension limit** for indexed vector columns (both HNSW and IVFFLAT indexes). This affects which embedding models you can use.
+
+### Compatible Models (≤ 2000 dimensions)
+
+These models work with pgvector indexes and provide fast similarity search:
+
+| Provider | Model | Dimensions | Compatible |
+|----------|-------|------------|------------|
+| OpenAI | text-embedding-3-small | 1536 | ✓ |
+| OpenAI | text-embedding-ada-002 | 1536 | ✓ |
+| HuggingFace | all-MiniLM-L6-v2 | 384 | ✓ |
+| HuggingFace | all-MiniLM-L12-v2 | 384 | ✓ |
+| HuggingFace | all-mpnet-base-v2 | 768 | ✓ |
+| HuggingFace | paraphrase-multilingual-MiniLM-L12-v2 | 384 | ✓ |
+
+### Incompatible Models (> 2000 dimensions)
+
+These models **cannot** be used with pgvector indexes:
+
+| Provider | Model | Dimensions | Issue |
+|----------|-------|------------|-------|
+| OpenAI | text-embedding-3-large | 3072 | Exceeds limit |
+| OpenRouter | qwen/qwen3-embedding-8b | 4096 | Exceeds limit |
+
+**Note:** Using an incompatible model will result in a configuration error at startup. You must choose a model with ≤ 2000 dimensions.
+
+### Configuration Validation
+
+The system validates your configuration at startup:
+
+1. **Dimension limit check:** `database.vector_dimension` must be ≤ 2000
+2. **Provider-dimension matching:** The embedding model's output dimension must match `database.vector_dimension`
+
+Example error for exceeding dimension limit:
+```
+ValueError: vector_dimension must be <= 2000 for pgvector index compatibility.
+Compatible models: text-embedding-3-small (1536), text-embedding-ada-002 (1536), ...
+Got: 4096
+```
+
+Example error for dimension mismatch:
+```
+ValueError: Embedding dimension mismatch: model 'text-embedding-3-small' produces
+1536-dimensional embeddings, but database.vector_dimension is set to 768.
+Please set database.vector_dimension to 1536 in your configuration.
+```
+
 ## Document Features
 
 ### Frontmatter Support
@@ -342,6 +434,29 @@ pytest --cov=obsidian_rag --cov-branch --cov-report=term-missing
 # Run specific test file
 pytest tests/test_cli.py
 ```
+
+### Database Migrations
+
+This project uses Alembic for database schema migrations.
+
+```bash
+# Create a new migration (after modifying models.py)
+alembic revision --autogenerate -m "Description of changes"
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Apply specific migration
+alembic upgrade +1
+
+# Downgrade one migration
+alembic downgrade -1
+
+# View current migration version
+alembic current
+```
+
+**Note:** Always review auto-generated migrations before applying them.
 
 ### Code Quality
 

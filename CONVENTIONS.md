@@ -16,6 +16,12 @@
 * If a file is in `.gitignore`, it should stay out of the repository
 * This applies to directories like `_agent/`, `.venv/`, `__pycache__/`, etc.
 
+# Configuration Management
+
+* **DO NOT create configuration files in the worktree.** A properly configured config file already exists in the home directory.
+* If changes to configuration are needed, ask first before creating or modifying any config files.
+* This ensures consistent configuration across all work sessions and prevents configuration drift.
+
 # Preferred libraries
 
 * `click` for command line parsing.
@@ -221,8 +227,9 @@ The following ruff rules are enforced via configuration in `pyproject.toml`. All
 ## Enabled Rules
 
 * **A002** - Argument shadows a Python built-in (e.g., naming a parameter `id` or `list`)
-* **ANN201** - Missing return type annotation on public functions
 * **ANN001** - Missing type annotation for function arguments
+* **ANN201** - Missing return type annotation on public functions
+* **ANN401** - Disallow use of `typing.Any` type
 * **ARG001** - Unused function argument
 * **ARG002** - Unused method argument (self/cls excluded)
 * **F841** - Unused local variable

@@ -138,3 +138,46 @@ class TestProviderFactory:
         # When API key is not provided, ValueError should be raised
         with pytest.raises(ValueError, match="API key is required"):
             ProviderFactory.create_chat_provider("openai")
+
+    def test_create_openrouter_embedding_provider(self):
+        """Test creating OpenRouter embedding provider."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.embedding"):
+                provider = ProviderFactory.create_embedding_provider(
+                    "openrouter",
+                    api_key="test-key",
+                )
+
+        assert isinstance(provider, OpenRouterEmbeddingProvider)
+        assert provider.model == "qwen/qwen3-embedding-8b"
+        assert provider.get_dimension() == 4096
+
+    def test_create_openrouter_embedding_provider_no_api_key(self):
+        """Test creating OpenRouter embedding provider without API key."""
+        # When API key is not provided, ValueError should be raised
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(ValueError, match="API key is required"):
+                ProviderFactory.create_embedding_provider("openrouter")
+
+    def test_create_openrouter_chat_provider(self):
+        """Test creating OpenRouter chat provider."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.completion"):
+                provider = ProviderFactory.create_chat_provider(
+                    "openrouter",
+                    api_key="test-key",
+                )
+
+        assert isinstance(provider, OpenRouterChatProvider)
+        assert provider.model == "anthropic/claude-3-opus"
+
+    def test_create_openrouter_chat_provider_no_api_key(self):
+        """Test creating OpenRouter chat provider without API key."""
+        # When API key is not provided, ValueError should be raised
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(ValueError, match="API key is required"):
+                ProviderFactory.create_chat_provider("openrouter")

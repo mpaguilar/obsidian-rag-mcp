@@ -10,6 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from obsidian_rag.config import get_settings
+
 # revision identifiers, used by Alembic.
 revision = "001"
 down_revision = None
@@ -17,7 +19,7 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade():
+def upgrade() -> None:
     """Create initial schema with documents and tasks tables."""
     # Create pgvector extension
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
@@ -31,7 +33,7 @@ def upgrade():
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column(
             "content_vector",
-            sa.Text(),  # Vector type, handled by pgvector - will be altered after
+            sa.Text(),  # Created as TEXT, will be altered to VECTOR type below
             nullable=True,
         ),
         sa.Column("checksum_md5", sa.String(length=32), nullable=False),
@@ -73,18 +75,27 @@ def upgrade():
     )
     op.create_index("ix_tasks_document_id", "tasks", ["document_id"])
 
-    # Create vector index for documents
+    # Alter content_vector column to VECTOR type with configurable dimension
+    settings = get_settings()
+    dimension = settings.database.vector_dimension
     op.execute(
-        "CREATE INDEX ix_documents_content_vector ON documents USING ivfflat (content_vector vector_cosine_ops)"
+        f"ALTER TABLE documents ALTER COLUMN content_vector TYPE vector({dimension}) USING content_vector::vector({dimension})"
+    )
+
+    # Create vector index for documents using HNSW
+    # HNSW and IVFFLAT both have 2000 dimension limits in pgvector
+    op.execute(
+        "CREATE INDEX ix_documents_content_vector ON documents USING hnsw (content_vector vector_cosine_ops)"
     )
 
 
-def downgrade():
-    """Drop tables and extension."""
+def downgrade() -> None:
+    """Drop tables."""
     op.drop_index("ix_tasks_document_id", table_name="tasks")
     op.drop_table("tasks")
     op.drop_index("ix_documents_file_path", table_name="documents")
     op.drop_index("ix_documents_file_name", table_name="documents")
     op.execute("DROP INDEX IF EXISTS ix_documents_content_vector")
     op.drop_table("documents")
-    op.execute("DROP EXTENSION IF EXISTS vector")
+    # Note: We don't drop the vector extension because it requires superuser
+    # privileges. The extension can remain installed without issues.

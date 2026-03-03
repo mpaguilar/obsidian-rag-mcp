@@ -183,3 +183,26 @@ Content.
 
         assert frontmatter == {}
         assert "FrontMatter is not a dictionary" in caplog.text
+
+    def test_normalize_tags_non_string_non_list(self):
+        """Test normalizing tags that are neither string nor list."""
+        from obsidian_rag.parsing.frontmatter import normalize_tags
+
+        # Pass an integer as tags (edge case)
+        result = normalize_tags(123)
+        assert result == ["123"]
+
+    def test_normalize_tags_boolean(self):
+        """Test normalizing boolean tags (edge case)."""
+        from obsidian_rag.parsing.frontmatter import normalize_tags
+
+        # Boolean values should be converted to strings
+        result = normalize_tags(True)
+        assert result == ["True"]
+
+    def test_normalize_tags_integer_in_list(self):
+        """Test normalizing list with integer values."""
+        from obsidian_rag.parsing.frontmatter import normalize_tags
+
+        result = normalize_tags([1, 2, 3])
+        assert result == ["1", "2", "3"]

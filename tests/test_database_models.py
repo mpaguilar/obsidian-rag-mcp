@@ -248,3 +248,93 @@ class TestTask:
         assert result.due.year == 2024
         assert result.priority == TaskPriority.HIGH.value
         assert result.custom_metadata == {"project": "test"}
+
+
+class TestArrayType:
+    """Test cases for ArrayType TypeDecorator."""
+
+    def test_array_type_loads_postgresql_dialect(self):
+        """Test ArrayType loads PG_ARRAY for PostgreSQL dialect."""
+        from sqlalchemy.dialects.postgresql import dialect as pg_dialect
+
+        from obsidian_rag.database.models import ArrayType
+
+        array_type = ArrayType()
+        impl = array_type.load_dialect_impl(pg_dialect())
+
+        # Should use PostgreSQL ARRAY type (class name may vary by driver)
+        assert "ARRAY" in impl.__class__.__name__
+
+    def test_array_type_loads_non_postgresql_dialect(self):
+        """Test ArrayType falls back to JSON for non-PostgreSQL dialect."""
+        from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
+
+        from obsidian_rag.database.models import ArrayType
+
+        array_type = ArrayType()
+        impl = array_type.load_dialect_impl(sqlite_dialect())
+
+        # Should fallback to JSON for SQLite (class name may vary by dialect)
+        class_name = impl.__class__.__name__
+        assert "JSON" in class_name or "Json" in class_name
+
+
+class TestPgvectorExtension:
+    """Test cases for pgvector extension creation."""
+
+    def test_pgvector_extension_not_created_for_sqlite(self, caplog):
+        """Test that pgvector extension is not created for SQLite."""
+        from sqlalchemy import create_engine, text
+
+        from obsidian_rag.database.models import Base
+
+        # Create SQLite engine
+        engine = create_engine("sqlite:///:memory:")
+
+        # The before_create event should not raise for SQLite
+        # and should not try to create the extension
+        Base.metadata.create_all(engine)
+
+        # Verify tables were created
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+            tables = [row[0] for row in result]
+            assert "documents" in tables
+            assert "tasks" in tables
+
+        engine.dispose()
+
+    def test_document_repr(self):
+        """Test Document __repr__ method."""
+        from obsidian_rag.database.models import Document
+
+        doc = Document(
+            file_path="/test/file.md",
+            file_name="file.md",
+            content="Test",
+            checksum_md5="abc123",
+            created_at_fs=datetime.now(),
+            modified_at_fs=datetime.now(),
+        )
+        repr_str = repr(doc)
+
+        assert "Document" in repr_str
+        assert "/test/file.md" in repr_str
+
+    def test_task_repr(self):
+        """Test Task __repr__ method."""
+        from obsidian_rag.database.models import Task
+
+        task = Task(
+            document_id=uuid.uuid4(),
+            line_number=1,
+            raw_text="- [ ] Test task",
+            status="not_completed",
+            description="Test task description",
+        )
+        repr_str = repr(task)
+
+        assert "Task" in repr_str
+        assert "not_completed" in repr_str

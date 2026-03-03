@@ -113,3 +113,47 @@ class TestDatabaseManager:
 
         # Should not raise
         manager.close()
+
+
+class TestNormalizePostgresUrl:
+    """Test cases for _normalize_postgres_url function."""
+
+    def test_normalize_postgres_url_adds_driver(self):
+        """Test that postgres URL gets psycopg driver added."""
+        from obsidian_rag.database.engine import _normalize_postgres_url
+
+        result = _normalize_postgres_url("postgresql://localhost/db")
+        assert result == "postgresql+psycopg://localhost/db"
+
+    def test_normalize_postgres_url_preserves_existing_driver(self):
+        """Test that URL with existing driver is preserved."""
+        from obsidian_rag.database.engine import _normalize_postgres_url
+
+        # URL already has a driver specified
+        result = _normalize_postgres_url("postgresql+psycopg://localhost/db")
+        assert result == "postgresql+psycopg://localhost/db"
+
+    def test_normalize_postgres_url_short_form(self):
+        """Test that postgres:// short form is normalized."""
+        from obsidian_rag.database.engine import _normalize_postgres_url
+
+        result = _normalize_postgres_url("postgres://localhost/db")
+        assert result == "postgresql+psycopg://localhost/db"
+
+    def test_normalize_postgres_url_logs_debug(self, caplog):
+        """Test that URL normalization logs debug messages."""
+        from obsidian_rag.database.engine import _normalize_postgres_url
+
+        with caplog.at_level("DEBUG", logger="obsidian_rag.database.engine"):
+            _normalize_postgres_url("postgresql://localhost/db")
+
+        assert "Normalizing database URL" in caplog.text
+
+    def test_normalize_postgres_url_with_existing_driver_logs_debug(self, caplog):
+        """Test that URL with existing driver logs skip message."""
+        from obsidian_rag.database.engine import _normalize_postgres_url
+
+        with caplog.at_level("DEBUG", logger="obsidian_rag.database.engine"):
+            _normalize_postgres_url("postgresql+psycopg://localhost/db")
+
+        assert "URL already has driver specified" in caplog.text

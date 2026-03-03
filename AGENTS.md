@@ -8,7 +8,7 @@ This project provides a CLI tool and library for:
 - Ingesting Obsidian markdown documents into PostgreSQL with pg_vector support
 - Extracting and managing tasks from markdown content
 - Performing semantic search on documents using vector embeddings
-- Supporting configurable LLM providers for embeddings and analysis
+- Supporting configurable LLM providers (OpenAI, OpenRouter, HuggingFace) for embeddings and analysis
 
 ## Project Structure
 
@@ -56,11 +56,34 @@ Config file locations (searched in order):
 1. `$PWD/.obsidian-rag.yaml` - Project-specific config
 2. `$XDG_CONFIG_HOME/obsidian-rag/config.yaml` - User config
 
+### Key Configuration Options
+
+- `database.vector_dimension`: Vector embedding dimension (default: 1536, max: 2000)
+  - Must match the output dimension of your embedding model
+  - pgvector HNSW index has a 2000 dimension limit
+  - Compatible models: text-embedding-3-small (1536), all-MiniLM-L6-v2 (384), etc.
+- `endpoints.embedding.provider`: LLM provider for embeddings ('openai', 'openrouter', 'huggingface')
+- `endpoints.chat.provider`: LLM provider for chat/analysis ('openai', 'openrouter')
+
 ## Development
 
 - All code must pass ruff linting
-- 100% test coverage required on core modules (excluding external providers)
+- 100% test coverage on core modules (config, parsing, database engine)
+- 95%+ coverage on modules with platform-specific code (database models, llm providers)
 - All functions require type hints and docstrings
 - McCabe complexity max: 5
+- All source files under 1000 lines
+
+## Testing
+
+Run tests with coverage:
+```bash
+python -m pytest tests/ --cov=obsidian_rag --cov-branch --cov-report=term-missing
+```
+
+Run ruff checks:
+```bash
+ruff check obsidian_rag/ tests/
+```
 
 > **Technical Implementation Details**: For architecture patterns, HTMX/SSE implementation specifics, and testing patterns, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).

@@ -448,3 +448,348 @@ class TestHuggingFaceEmbeddingProvider:
                 provider = HuggingFaceEmbeddingProvider(model="unknown-model")
 
         assert provider._dimension == 384  # Default dimension
+
+
+class TestOpenRouterEmbeddingProvider:
+    """Test cases for OpenRouterEmbeddingProvider."""
+
+    def test_init_with_api_key(self):
+        """Test initialization with explicit API key."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = OpenRouterEmbeddingProvider(api_key="test-key")
+
+        assert provider.api_key == "test-key"
+        assert provider.model == "qwen/qwen3-embedding-8b"
+        assert provider._dimension == 4096
+        assert provider.base_url == "https://openrouter.ai/api/v1"
+
+    def test_init_without_api_key_uses_env_var(self):
+        """Test initialization uses OPENROUTER_API_KEY env var when api_key not provided."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch.dict("os.environ", {"OPENROUTER_API_KEY": "env-key"}):
+                provider = OpenRouterEmbeddingProvider()
+
+        assert provider.api_key == "env-key"
+
+    def test_init_without_api_key_raises_error(self):
+        """Test initialization raises ValueError when no API key available."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch.dict("os.environ", {}, clear=True):
+                with pytest.raises(ValueError, match="API key is required"):
+                    OpenRouterEmbeddingProvider()
+
+    def test_init_with_custom_model(self):
+        """Test initialization with custom model name."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = OpenRouterEmbeddingProvider(
+                api_key="test-key",
+                model="openai/text-embedding-3-small",
+            )
+
+        assert provider.model == "openai/text-embedding-3-small"
+        assert provider._dimension == 4096  # Falls back to default
+
+    def test_init_with_custom_base_url(self):
+        """Test initialization with custom base URL."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = OpenRouterEmbeddingProvider(
+                api_key="test-key",
+                base_url="https://custom.openrouter.api.com",
+            )
+
+        assert provider.base_url == "https://custom.openrouter.api.com"
+
+    def test_get_dimension(self):
+        """Test get_dimension returns correct dimension."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = OpenRouterEmbeddingProvider(api_key="test-key")
+
+        assert provider.get_dimension() == 4096
+
+    def test_generate_embedding_success(self):
+        """Test successful embedding generation."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        mock_response = {
+            "data": [{"embedding": [0.1, 0.2, 0.3]}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.embedding", return_value=mock_response):
+                provider = OpenRouterEmbeddingProvider(api_key="test-key")
+                result = provider.generate_embedding("test text")
+
+        assert result == [0.1, 0.2, 0.3]
+
+    def test_generate_embedding_error(self):
+        """Test embedding generation error handling."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.embedding", side_effect=Exception("API Error")):
+                provider = OpenRouterEmbeddingProvider(api_key="test-key")
+
+                with pytest.raises(EmbeddingError, match="API Error"):
+                    provider.generate_embedding("test text")
+
+    def test_generate_embedding_uses_openrouter_prefix(self):
+        """Test that model name is prefixed with openrouter/ for litellm."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        mock_response = {
+            "data": [{"embedding": [0.1, 0.2, 0.3]}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.embedding", return_value=mock_response) as mock_embed:
+                provider = OpenRouterEmbeddingProvider(
+                    api_key="test-key",
+                    model="qwen/qwen3-embedding-8b",
+                )
+                provider.generate_embedding("test text")
+
+        mock_embed.assert_called_once()
+        call_kwargs = mock_embed.call_args.kwargs
+        assert call_kwargs["model"] == "openrouter/qwen/qwen3-embedding-8b"
+        assert call_kwargs["api_base"] == "https://openrouter.ai/api/v1"
+
+    def test_dimension_mapping_qwen3_embedding_8b(self):
+        """Test dimension mapping for qwen/qwen3-embedding-8b."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = OpenRouterEmbeddingProvider(
+                api_key="test-key",
+                model="qwen/qwen3-embedding-8b",
+            )
+
+        assert provider._dimension == 4096
+
+    def test_init_import_error(self):
+        """Test initialization raises ImportError when litellm not installed."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            import builtins
+
+            original_import = builtins.__import__
+
+            def mock_import(name, *args, **kwargs):
+                if name == "litellm":
+                    raise ImportError("No module named 'litellm'")
+                return original_import(name, *args, **kwargs)
+
+            with patch.object(builtins, "__import__", mock_import):
+                with pytest.raises(ImportError, match="litellm package is required"):
+                    OpenRouterEmbeddingProvider(api_key="test-key")
+
+
+class TestOpenRouterChatProvider:
+    """Test cases for OpenRouterChatProvider."""
+
+    def test_init_with_api_key(self):
+        """Test initialization with explicit API key."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = OpenRouterChatProvider(api_key="test-key")
+
+        assert provider.api_key == "test-key"
+        assert provider.model == "anthropic/claude-3-opus"
+        assert provider.temperature == 0.7
+        assert provider.max_tokens is None
+        assert provider.base_url == "https://openrouter.ai/api/v1"
+
+    def test_init_with_custom_params(self):
+        """Test initialization with custom parameters."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = OpenRouterChatProvider(
+                api_key="test-key",
+                model="openai/gpt-4",
+                temperature=0.5,
+                max_tokens=100,
+            )
+
+        assert provider.model == "openai/gpt-4"
+        assert provider.temperature == 0.5
+        assert provider.max_tokens == 100
+
+    def test_init_without_api_key_uses_env_var(self):
+        """Test initialization uses OPENROUTER_API_KEY env var when api_key not provided."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch.dict("os.environ", {"OPENROUTER_API_KEY": "env-key"}):
+                provider = OpenRouterChatProvider()
+
+        assert provider.api_key == "env-key"
+
+    def test_init_without_api_key_raises_error(self):
+        """Test initialization raises ValueError when no API key available."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch.dict("os.environ", {}, clear=True):
+                with pytest.raises(ValueError, match="API key is required"):
+                    OpenRouterChatProvider()
+
+    def test_chat_success(self):
+        """Test successful chat completion."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        mock_response = {
+            "choices": [{"message": {"content": "Test response"}}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.completion", return_value=mock_response):
+                provider = OpenRouterChatProvider(api_key="test-key")
+                messages = [{"role": "user", "content": "Hello"}]
+                result = provider.chat(messages)
+
+        assert result == "Test response"
+
+    def test_chat_with_empty_response(self):
+        """Test chat with empty response content."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        mock_response = {
+            "choices": [{"message": {"content": None}}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.completion", return_value=mock_response):
+                provider = OpenRouterChatProvider(api_key="test-key")
+                messages = [{"role": "user", "content": "Hello"}]
+                result = provider.chat(messages)
+
+        assert result == ""
+
+    def test_chat_error(self):
+        """Test chat error handling."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.completion", side_effect=Exception("API Error")):
+                provider = OpenRouterChatProvider(api_key="test-key")
+                messages = [{"role": "user", "content": "Hello"}]
+
+                with pytest.raises(ChatError, match="API Error"):
+                    provider.chat(messages)
+
+    def test_chat_uses_openrouter_prefix(self):
+        """Test that model name is prefixed with openrouter/ for litellm."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        mock_response = {
+            "choices": [{"message": {"content": "Test"}}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.completion", return_value=mock_response) as mock_chat:
+                provider = OpenRouterChatProvider(
+                    api_key="test-key",
+                    model="anthropic/claude-3-opus",
+                )
+                messages = [{"role": "user", "content": "Hello"}]
+                provider.chat(messages)
+
+        mock_chat.assert_called_once()
+        call_kwargs = mock_chat.call_args.kwargs
+        assert call_kwargs["model"] == "openrouter/anthropic/claude-3-opus"
+        assert call_kwargs["api_base"] == "https://openrouter.ai/api/v1"
+
+    def test_chat_with_custom_temperature(self):
+        """Test chat with custom temperature parameter."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        mock_response = {
+            "choices": [{"message": {"content": "Test"}}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.completion", return_value=mock_response) as mock_chat:
+                provider = OpenRouterChatProvider(
+                    api_key="test-key",
+                    temperature=0.9,
+                )
+                messages = [{"role": "user", "content": "Hello"}]
+                provider.chat(messages, temperature=0.5)
+
+        mock_chat.assert_called_once()
+        call_kwargs = mock_chat.call_args.kwargs
+        assert call_kwargs["temperature"] == 0.5
+
+    def test_chat_with_max_tokens(self):
+        """Test chat with max_tokens parameter."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        mock_response = {
+            "choices": [{"message": {"content": "Test"}}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.completion", return_value=mock_response) as mock_chat:
+                provider = OpenRouterChatProvider(
+                    api_key="test-key",
+                    max_tokens=100,
+                )
+                messages = [{"role": "user", "content": "Hello"}]
+                provider.chat(messages)
+
+        mock_chat.assert_called_once()
+        call_kwargs = mock_chat.call_args.kwargs
+        assert call_kwargs["max_tokens"] == 100
+
+    def test_chat_with_custom_base_url(self):
+        """Test chat with custom base URL."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        mock_response = {
+            "choices": [{"message": {"content": "Test"}}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.completion", return_value=mock_response) as mock_chat:
+                provider = OpenRouterChatProvider(
+                    api_key="test-key",
+                    base_url="https://custom.openrouter.api.com",
+                )
+                messages = [{"role": "user", "content": "Hello"}]
+                provider.chat(messages)
+
+        mock_chat.assert_called_once()
+        call_kwargs = mock_chat.call_args.kwargs
+        assert call_kwargs["api_base"] == "https://custom.openrouter.api.com"
+
+    def test_init_import_error(self):
+        """Test initialization raises ImportError when litellm not installed."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            import builtins
+
+            original_import = builtins.__import__
+
+            def mock_import(name, *args, **kwargs):
+                if name == "litellm":
+                    raise ImportError("No module named 'litellm'")
+                return original_import(name, *args, **kwargs)
+
+            with patch.object(builtins, "__import__", mock_import):
+                with pytest.raises(ImportError, match="litellm package is required"):
+                    OpenRouterChatProvider(api_key="test-key")

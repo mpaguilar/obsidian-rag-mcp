@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "obsidian-rag"
-version = "0.1.1"
+version = "0.2.3"
 description = "CLI tool for ingesting Obsidian markdown documents into PostgreSQL with vector embeddings"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -52,8 +52,9 @@ exclude = ["temporal-samples-python"]
 [tool.ruff.lint]
 select = [
     "A002",   # Argument shadows python built-in
-    "ANN201", # Missing return type annotation
     "ANN001", # Missing type annotation for argument
+    "ANN201", # Missing return type annotation
+    "ANN401", # Disallow use of typing.Any
     "ARG001", # Unused function argument
     "ARG002", # Unused method argument
     "F841",   # Unused local variable

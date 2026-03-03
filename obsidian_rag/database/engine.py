@@ -1,6 +1,7 @@
 """Database engine and session management for obsidian-rag."""
 
 import logging
+import re
 from contextlib import contextmanager
 from typing import Generator
 
@@ -10,6 +11,37 @@ from sqlalchemy.orm import Session, sessionmaker
 from obsidian_rag.database.models import Base
 
 log = logging.getLogger(__name__)
+
+
+def _normalize_postgres_url(url: str) -> str:
+    """Normalize PostgreSQL URL to use psycopg (v3) driver.
+
+    Converts URLs to use the psycopg driver explicitly by:
+    - Replacing 'postgres://' or 'postgresql://' with 'postgresql+psycopg://'
+    - Preserving URLs that already specify a driver
+
+    Args:
+        url: The database URL to normalize.
+
+    Returns:
+        The normalized URL with psycopg driver specified.
+
+    """
+    _msg = f"Normalizing database URL: {url}"
+    log.debug(_msg)
+
+    # Skip if URL already specifies a driver (contains +)
+    if re.search(r"postgresql\+", url):
+        _msg = "URL already has driver specified, skipping normalization"
+        log.debug(_msg)
+        return url
+
+    # Replace postgres:// or postgresql:// with postgresql+psycopg://
+    normalized = re.sub(r"^(postgres(?:ql)?://)", r"postgresql+psycopg://", url)
+
+    _msg = f"Normalized URL: {normalized}"
+    log.debug(_msg)
+    return normalized
 
 
 class DatabaseManager:
@@ -29,9 +61,10 @@ class DatabaseManager:
 
     def __init__(self, database_url: str) -> None:
         """Initialize the database manager with a connection URL."""
-        _msg = f"Initializing DatabaseManager with URL: {database_url}"
+        normalized_url = _normalize_postgres_url(database_url)
+        _msg = f"Initializing DatabaseManager with URL: {normalized_url}"
         log.debug(_msg)
-        self.engine = create_engine(database_url)
+        self.engine = create_engine(normalized_url)
         self.SessionLocal = sessionmaker(
             autocommit=False, autoflush=False, bind=self.engine
         )

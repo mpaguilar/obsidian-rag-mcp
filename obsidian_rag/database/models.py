@@ -8,7 +8,7 @@ import logging
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, List
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -22,14 +22,45 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
     text,
+    TypeDecorator,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ARRAY as PG_ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
-    from sqlalchemy.engine import Connection
+    from sqlalchemy.engine import Connection, Dialect
 
 log = logging.getLogger(__name__)
+
+
+class ArrayType(TypeDecorator[List[str]]):
+    """Platform-independent array type.
+
+    Uses PostgreSQL ARRAY type when available, falls back to JSON for SQLite.
+    This allows testing with SQLite while using proper PostgreSQL arrays in production.
+
+    Attributes:
+        impl: The underlying type implementation (JSON for fallback).
+
+    """
+
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: "Dialect") -> Any:
+        """Load the appropriate implementation for the dialect.
+
+        Args:
+            dialect: The SQLAlchemy dialect in use.
+
+        Returns:
+            The type implementation for the dialect (ARRAY for PostgreSQL, JSON otherwise).
+
+        """
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_ARRAY(Text))
+        return dialect.type_descriptor(JSON())
+
 
 # Vector dimension - configurable, default 1536 for OpenAI embeddings
 VECTOR_DIMENSION = 1536
@@ -101,7 +132,7 @@ class Document(Base):
         DateTime, nullable=False, default=datetime.now
     )
     kind: Mapped[str | None] = mapped_column(Text, nullable=True)
-    tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    tags: Mapped[list[str] | None] = mapped_column(ArrayType, nullable=True)
     frontmatter_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
@@ -153,7 +184,7 @@ class Task(Base):
         default=TaskStatus.NOT_COMPLETED.value,
     )
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    tags: Mapped[list[str] | None] = mapped_column(ArrayType, nullable=True)
     repeat: Mapped[str | None] = mapped_column(Text, nullable=True)
     scheduled: Mapped[datetime | None] = mapped_column(Date, nullable=True)
     due: Mapped[datetime | None] = mapped_column(Date, nullable=True)

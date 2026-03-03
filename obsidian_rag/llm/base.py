@@ -99,7 +99,7 @@ class ProviderFactory:
         """Create an embedding provider instance.
 
         Args:
-            provider_name: Name of the provider ('openai', 'huggingface').
+            provider_name: Name of the provider ('openai', 'huggingface', 'openrouter').
             **config: Provider-specific configuration.
 
         Returns:
@@ -121,6 +121,10 @@ class ProviderFactory:
             from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
 
             return HuggingFaceEmbeddingProvider(**config)
+        elif provider_name == "openrouter":
+            from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+            return OpenRouterEmbeddingProvider(**config)
         else:
             _msg = f"Unknown embedding provider: {provider_name}"
             log.error(_msg)
@@ -134,7 +138,7 @@ class ProviderFactory:
         """Create a chat provider instance.
 
         Args:
-            provider_name: Name of the provider (e.g., 'openai').
+            provider_name: Name of the provider ('openai', 'openrouter').
             **config: Provider-specific configuration.
 
         Returns:
@@ -151,6 +155,10 @@ class ProviderFactory:
             from obsidian_rag.llm.providers import OpenAIChatProvider
 
             return OpenAIChatProvider(**config)
+        elif provider_name == "openrouter":
+            from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+            return OpenRouterChatProvider(**config)
         else:
             _msg = f"Unknown chat provider: {provider_name}"
             log.error(_msg)
