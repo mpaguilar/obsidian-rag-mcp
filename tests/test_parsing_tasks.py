@@ -2,12 +2,15 @@
 
 import pytest
 
+from datetime import date, datetime
+
 from obsidian_rag.database.models import TaskPriority, TaskStatus
 from obsidian_rag.parsing.tasks import (
     _map_checkbox_status,
     _map_priority,
     _obsidian_to_rrule,
     _parse_date,
+    _serialize_custom_metadata,
     parse_task_line,
     parse_tasks_from_content,
 )
@@ -369,3 +372,46 @@ Some other text.
 
         assert len(results) == 10000
         assert "Reached maximum task limit" in caplog.text
+
+
+class TestSerializeCustomMetadata:
+    """Test cases for _serialize_custom_metadata function."""
+
+    def test_returns_none_for_none_input(self):
+        """Test that None input returns None."""
+        result = _serialize_custom_metadata(None)
+        assert result is None
+
+    def test_serializes_date_object(self):
+        """Test that date objects are converted to ISO strings."""
+        metadata = {"custom_date": date(2024, 3, 15)}
+        result = _serialize_custom_metadata(metadata)
+        assert result == {"custom_date": "2024-03-15"}
+
+    def test_serializes_datetime_object(self):
+        """Test that datetime objects are converted to ISO strings."""
+        metadata = {"custom_datetime": datetime(2024, 3, 15, 14, 30, 0)}
+        result = _serialize_custom_metadata(metadata)
+        assert result == {"custom_datetime": "2024-03-15T14:30:00"}
+
+    def test_preserves_non_date_values(self):
+        """Test that non-date values are preserved."""
+        metadata = {"string": "value", "number": 42, "boolean": True}
+        result = _serialize_custom_metadata(metadata)
+        assert result == {"string": "value", "number": 42, "boolean": True}
+
+    def test_handles_mixed_values(self):
+        """Test handling of mixed date and non-date values."""
+        metadata = {
+            "string": "value",
+            "date": date(2024, 3, 15),
+            "number": 42,
+            "datetime": datetime(2024, 3, 15, 14, 30, 0),
+        }
+        result = _serialize_custom_metadata(metadata)
+        assert result == {
+            "string": "value",
+            "date": "2024-03-15",
+            "number": 42,
+            "datetime": "2024-03-15T14:30:00",
+        }

@@ -98,6 +98,23 @@ class DocumentListResponse(BaseModel):
     next_offset: int | None
 
 
+class TagListResponse(BaseModel):
+    """Response model for tag list queries with pagination.
+
+    Attributes:
+        tags: List of unique tag strings.
+        total_count: Total number of unique tags.
+        has_more: Whether more results are available.
+        next_offset: Offset for the next page (or None if no more results).
+
+    """
+
+    tags: list[str]
+    total_count: int
+    has_more: bool
+    next_offset: int | None
+
+
 class HealthResponse(BaseModel):
     """Response model for health check endpoint.
 

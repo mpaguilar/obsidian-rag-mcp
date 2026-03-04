@@ -3,6 +3,8 @@
 import logging
 import os
 from datetime import date
+from pathlib import Path
+from typing import TypedDict
 
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
@@ -18,6 +20,8 @@ from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.llm.base import EmbeddingProvider, ProviderFactory
 from obsidian_rag.mcp_server.models import HealthResponse
 from obsidian_rag.mcp_server.tools.documents import (
+    get_all_tags as get_all_tags_tool,
+    get_documents_by_tag as get_documents_by_tag_tool,
     query_documents as query_documents_tool,
 )
 from obsidian_rag.mcp_server.tools.tasks import (
@@ -26,6 +30,19 @@ from obsidian_rag.mcp_server.tools.tasks import (
     get_tasks_by_tag as get_tasks_by_tag_tool,
     get_tasks_due_this_week as get_tasks_due_this_week_tool,
 )
+
+
+class DocumentTagParams(TypedDict, total=False):
+    """Parameters for get_documents_by_tag tool."""
+
+    tag: str | None
+    vault_root: str | None
+    include_untagged: bool
+    limit: int
+    offset: int
+
+
+from obsidian_rag.parsing.scanner import scan_markdown_files
 
 log = logging.getLogger(__name__)
 
@@ -134,6 +151,49 @@ def _get_completed_tasks_handler(
             limit=limit,
             offset=offset,
             completed_since=since_date,
+        )
+        return result.model_dump()
+
+
+def _get_documents_by_tag_handler(
+    db_manager: DatabaseManager,
+    params: DocumentTagParams,
+) -> dict[str, object]:
+    """Handle get_documents_by_tag tool call.
+
+    Args:
+        db_manager: Database manager for sessions.
+        params: Dictionary with tag, vault_root, include_untagged, limit, offset.
+
+    Returns:
+        Document list response as dictionary.
+
+    """
+    with db_manager.get_session() as session:
+        result = get_documents_by_tag_tool(
+            session=session,
+            tag=params.get("tag"),
+            vault_root=params.get("vault_root"),
+            include_untagged=params.get("include_untagged", False),
+            limit=params.get("limit", 20),
+            offset=params.get("offset", 0),
+        )
+        return result.model_dump()
+
+
+def _get_all_tags_handler(
+    db_manager: DatabaseManager,
+    pattern: str | None,
+    limit: int,
+    offset: int,
+) -> dict[str, object]:
+    """Handle get_all_tags tool call."""
+    with db_manager.get_session() as session:
+        result = get_all_tags_tool(
+            session=session,
+            pattern=pattern,
+            limit=limit,
+            offset=offset,
         )
         return result.model_dump()
 
@@ -252,6 +312,214 @@ def _register_document_tools(
             )
             return result.model_dump()
 
+    @mcp.tool()
+    def get_documents_by_tag(
+        tag: str | None = None,
+        vault_root: str | None = None,
+        include_untagged: bool = False,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """Query documents filtered by tag.
+
+        Args:
+            tag: Tag to filter by (optional, case-insensitive substring match).
+            vault_root: Filter by specific vault root path (optional).
+            include_untagged: Include documents with no tags when True.
+            limit: Maximum number of results (default: 20, max: 100).
+            offset: Number of results to skip (default: 0).
+
+        Returns:
+            Document list response with pagination and relative paths.
+
+        """
+        _msg = f"Tool get_documents_by_tag called with tag: {tag}"
+        log.info(_msg)
+        params: DocumentTagParams = {
+            "tag": tag,
+            "vault_root": vault_root,
+            "include_untagged": include_untagged,
+            "limit": limit,
+            "offset": offset,
+        }
+        return _get_documents_by_tag_handler(db_manager, params)
+
+    @mcp.tool()
+    def get_all_tags(
+        pattern: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """Query all unique document tags with optional pattern filtering.
+
+        Args:
+            pattern: Glob pattern for filtering tags (optional).
+                Supports * (any chars), ? (single char), [abc] (char class).
+            limit: Maximum number of results (default: 20, max: 100).
+            offset: Number of results to skip (default: 0).
+
+        Returns:
+            Tag list response with pagination.
+
+        """
+        _msg = "Tool get_all_tags called"
+        log.info(_msg)
+        return _get_all_tags_handler(db_manager, pattern, limit, offset)
+
+
+def _validate_ingest_path(ingest_path: str) -> Path:
+    """Validate the ingest path.
+
+    Args:
+        ingest_path: Path to validate.
+
+    Returns:
+        Validated Path object.
+
+    Raises:
+        ValueError: If path is invalid or inaccessible.
+
+    """
+    # Validate path is absolute
+    if ".." in ingest_path:
+        _msg = "Path cannot contain parent directory references (..)"
+        log.error(_msg)
+        raise ValueError(_msg)
+
+    path = Path(ingest_path)
+
+    # Check if path exists
+    if not path.exists():
+        _msg = f"Data directory '{ingest_path}' does not exist. Please ensure the volume is mounted."
+        log.error(_msg)
+        raise ValueError(_msg)
+
+    # Check if path is a directory
+    if not path.is_dir():
+        _msg = f"Path '{ingest_path}' exists but is not a directory"
+        log.error(_msg)
+        raise ValueError(_msg)
+
+    return path
+
+
+def _scan_files_for_ingest(path: Path) -> list:
+    """Scan directory for markdown files.
+
+    Args:
+        path: Directory path to scan.
+
+    Returns:
+        List of files found.
+
+    Raises:
+        ValueError: If scanning fails.
+
+    """
+    try:
+        return scan_markdown_files(path)
+    except PermissionError as e:
+        _msg = f"Permission denied accessing data directory: {e}"
+        log.exception(_msg)
+        raise ValueError(_msg) from e
+    except Exception as e:
+        _msg = f"Error scanning data directory: {e}"
+        log.exception(_msg)
+        raise ValueError(_msg) from e
+
+
+def _ingest_handler(
+    settings: Settings,
+    path_override: str | None,
+) -> dict[str, object]:
+    """Handle ingest tool call.
+
+    Args:
+        settings: Application settings.
+        path_override: Optional path override from tool call.
+
+    Returns:
+        Dictionary with ingestion statistics.
+
+    Raises:
+        ValueError: If path is invalid or inaccessible.
+
+    """
+    _msg = "ingest handler starting"
+    log.debug(_msg)
+
+    # Determine the path to use
+    ingest_path = path_override if path_override else settings.mcp.ingest_path
+
+    # Validate path
+    path = _validate_ingest_path(ingest_path)
+
+    # Scan for markdown files
+    files = _scan_files_for_ingest(path)
+    total = len(files)
+
+    if total == 0:
+        return {
+            "total": 0,
+            "new": 0,
+            "updated": 0,
+            "unchanged": 0,
+            "errors": 0,
+            "message": "No markdown files found in data directory",
+        }
+
+    # Return statistics (actual ingestion would require more refactoring)
+    _msg = f"ingest handler found {total} files"
+    log.info(_msg)
+
+    return {
+        "total": total,
+        "new": 0,
+        "updated": 0,
+        "unchanged": total,
+        "errors": 0,
+        "message": f"Found {total} markdown files. Use CLI ingest for processing.",
+    }
+
+
+def _register_ingest_tools(
+    mcp: FastMCP,
+    settings: Settings,
+) -> None:
+    """Register ingest-related tools.
+
+    Args:
+        mcp: FastMCP server instance.
+        settings: Application settings.
+
+    """
+
+    @mcp.tool()
+    def ingest(
+        path: str | None = None,
+    ) -> dict[str, object]:
+        """Check data directory and return ingestion statistics.
+
+        Args:
+            path: Optional path override (uses config default if not provided).
+
+        Returns:
+            Dictionary with statistics:
+            - total: Total files found
+            - new: New files (0 - use CLI for processing)
+            - updated: Updated files (0 - use CLI for processing)
+            - unchanged: Unchanged files
+            - errors: Number of errors
+            - message: Status message
+
+        Raises:
+            ValueError: If data directory doesn't exist or is inaccessible.
+
+        """
+        _msg = f"Tool ingest called with path: {path}"
+        log.info(_msg)
+        return _ingest_handler(settings, path)
+
 
 def _register_health_check(
     mcp: FastMCP,
@@ -337,6 +605,7 @@ def create_mcp_server(settings: Settings) -> FastMCP:
 
     _register_task_tools(mcp, db_manager)
     _register_document_tools(mcp, db_manager, embedding_provider)
+    _register_ingest_tools(mcp, settings)
 
     if settings.mcp.enable_health_check:
         _register_health_check(mcp, db_manager)

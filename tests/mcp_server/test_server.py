@@ -290,8 +290,8 @@ class TestToolRegistration:
 
         _register_document_tools(mock_mcp, mock_db_manager, mock_embedding_provider)
 
-        # Should register 1 document tool
-        mock_mcp.tool.assert_called_once()
+        # Should register 3 document tools (query_documents, get_documents_by_tag, get_all_tags)
+        assert mock_mcp.tool.call_count == 3
 
     def test_register_document_tools_without_provider(self):
         """Test _register_document_tools without embedding provider."""
@@ -302,8 +302,8 @@ class TestToolRegistration:
 
         _register_document_tools(mock_mcp, mock_db_manager, None)
 
-        # Should register 1 document tool
-        mock_mcp.tool.assert_called_once()
+        # Should register 3 document tools (query_documents, get_documents_by_tag, get_all_tags)
+        assert mock_mcp.tool.call_count == 3
 
     def test_register_health_check(self):
         """Test _register_health_check."""

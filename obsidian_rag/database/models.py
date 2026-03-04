@@ -108,6 +108,7 @@ class Document(Base):
         kind: Document kind from FrontMatter.
         tags: Array of tags from FrontMatter.
         frontmatter_json: All other FrontMatter properties as JSON.
+        vault_root: Root path of the vault during ingestion (for relative paths).
         tasks: Related tasks (one-to-many relationship).
 
     """
@@ -135,6 +136,7 @@ class Document(Base):
     kind: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list[str] | None] = mapped_column(ArrayType, nullable=True)
     frontmatter_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    vault_root: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     tasks: Mapped[list["Task"]] = relationship(

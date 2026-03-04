@@ -49,6 +49,7 @@ obsidian_rag/                    # Main package
 
 ## CLI Commands
 
+- `obsidian-rag [--log-level LEVEL] <command>` - Global options include `--log-level` (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 - `obsidian-rag ingest <path>` - Ingest documents from vault path
 - `obsidian-rag query <search>` - Semantic search documents
 - `obsidian-rag tasks [options]` - Query tasks
@@ -81,6 +82,7 @@ Config file locations (searched in order):
 - 95%+ coverage on config (environment variable edge cases)
 - 90%+ coverage on cli (error handling and defensive paths)
 - 72%+ coverage on mcp_server/server (tool bodies require MCP integration)
+- 79%+ coverage on mcp_server/tools/documents (PostgreSQL-specific code paths require integration testing)
 - All functions require type hints and docstrings
 - McCabe complexity max: 5
 - All source files under 1000 lines

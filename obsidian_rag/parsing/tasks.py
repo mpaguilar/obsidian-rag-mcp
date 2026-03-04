@@ -3,7 +3,7 @@
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from dateutil.rrule import rrulestr
@@ -11,6 +11,33 @@ from dateutil.rrule import rrulestr
 from obsidian_rag.database.models import TaskPriority, TaskStatus
 
 log = logging.getLogger(__name__)
+
+
+def _serialize_custom_metadata(
+    metadata: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Serialize custom metadata values for JSON storage.
+
+    Converts date and datetime objects to ISO format strings.
+
+    Args:
+        metadata: Dictionary of custom metadata values.
+
+    Returns:
+        Serialized metadata dictionary or None if input is None.
+
+    """
+    if metadata is None:
+        return None
+
+    result: dict[str, Any] = {}
+    for key, value in metadata.items():
+        if isinstance(value, (date, datetime)):
+            result[key] = value.isoformat()
+        else:
+            result[key] = value
+    return result
+
 
 # Pattern to match task lines: - [ ] task text or - [x] task text
 TASK_PATTERN = re.compile(
@@ -325,7 +352,7 @@ def parse_task_line(line: str) -> ParsedTask | None:
         due=standard_fields["due"],
         completion=standard_fields["completion"],
         priority=standard_fields["priority"],
-        custom_metadata=custom_metadata if custom_metadata else None,
+        custom_metadata=_serialize_custom_metadata(custom_metadata),
         raw_text=line.strip(),
     )
 

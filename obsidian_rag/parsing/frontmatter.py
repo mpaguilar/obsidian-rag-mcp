@@ -2,11 +2,35 @@
 
 import logging
 import re
+from datetime import date, datetime
 from typing import Any
 
 import yaml
 
 log = logging.getLogger(__name__)
+
+
+def _serialize_for_json(obj: object) -> object:
+    """Serialize an object for JSON storage.
+
+    Converts date and datetime objects to ISO format strings.
+    Recursively handles dictionaries and lists.
+
+    Args:
+        obj: The object to serialize.
+
+    Returns:
+        JSON-serializable version of the object.
+
+    """
+    if isinstance(obj, (date, datetime)):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: _serialize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_serialize_for_json(item) for item in obj]
+    return obj
+
 
 # Pattern to match YAML frontmatter: --- at start of file
 FRONTMATTER_PATTERN = re.compile(
@@ -165,6 +189,9 @@ def parse_frontmatter(
 
     # Everything else goes into metadata_json
     metadata = {k: v for k, v in frontmatter.items() if k not in ("kind", "tags")}
+
+    # Serialize metadata to handle date/datetime objects from YAML parsing
+    metadata = _serialize_for_json(metadata)
 
     _msg = f"Parsed FrontMatter: kind={kind}, tags_count={len(tags) if tags else 0}, metadata_keys={len(metadata)}"
     log.debug(_msg)

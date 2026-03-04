@@ -84,6 +84,29 @@
     ```
 * When logging from an exception, use `log.exception`
 
+## Logging Output Stream
+
+**All logging output must go to `stderr`**, not `stdout`.
+
+This is a critical convention that enables proper separation of concerns:
+- **stdout**: For actual program output (JSON data, table results, formatted output)
+- **stderr**: For diagnostic/log messages
+
+**Correct implementation:**
+```python
+handler = logging.StreamHandler(sys.stderr)
+```
+
+**Incorrect implementation:**
+```python
+handler = logging.StreamHandler(sys.stdout)  # DO NOT USE
+```
+
+**Rationale:**
+- Allows stdout to be redirected to files/pipes without losing log visibility
+- Follows Unix convention: stdout for data, stderr for diagnostics
+- Enables clean programmatic use of CLI tools (e.g., `obsidian-rag query "test" > results.json` while still seeing logs)
+
 # Deprecated usage
 * `typing.List` is deprecated, use `list` instead
 * `datetime.datetime.utcnow()` is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: `datetime.datetime.now(datetime.UTC)`

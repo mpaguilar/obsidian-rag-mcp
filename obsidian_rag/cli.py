@@ -31,11 +31,18 @@ def _setup_logging(level: str, format_type: str) -> None:
     """Configure logging.
 
     Args:
-        level: Logging level (DEBUG, INFO, WARNING, ERROR).
+        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
         format_type: Format type ('text' or 'json').
 
+    Raises:
+        SystemExit: If the provided log level is invalid.
+
     """
-    numeric_level = getattr(logging, level.upper(), logging.INFO)
+    numeric_level = getattr(logging, level.upper(), None)
+    if numeric_level is None:
+        _msg = f"Invalid log level '{level}'. Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL"
+        click.echo(f"Error: {_msg}", err=True)
+        sys.exit(1)
 
     if format_type == "json":
         # Simple JSON format
@@ -48,7 +55,7 @@ def _setup_logging(level: str, format_type: str) -> None:
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
 
-    handler = logging.StreamHandler(sys.stdout)
+    handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(formatter)
 
     root_logger = logging.getLogger()
@@ -58,10 +65,20 @@ def _setup_logging(level: str, format_type: str) -> None:
 
 
 @click.group()
-@click.option("--verbose", is_flag=True, help="Enable verbose output.")
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help="Enable verbose output (equivalent to --log-level DEBUG).",
+)
+@click.option(
+    "--log-level",
+    help="Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). Overrides --verbose.",
+)
 @click.option("--config-file", type=click.Path(), help="Path to config file.")
 @click.pass_context
-def cli(ctx: click.Context, verbose: bool, config_file: str | None) -> None:
+def cli(
+    ctx: click.Context, verbose: bool, log_level: str | None, config_file: str | None
+) -> None:
     """Obsidian RAG - CLI tool for ingesting Obsidian documents with vector search."""
     _msg = "Starting obsidian-rag CLI"
     log.debug(_msg)
@@ -73,8 +90,16 @@ def cli(ctx: click.Context, verbose: bool, config_file: str | None) -> None:
 
     # Load settings
     settings_kwargs = {}
-    if verbose:
-        settings_kwargs["logging"] = {"level": "DEBUG"}
+
+    # Determine logging level: --log-level takes precedence over --verbose
+    effective_log_level = None
+    if log_level:
+        effective_log_level = log_level.upper()
+    elif verbose:
+        effective_log_level = "DEBUG"
+
+    if effective_log_level:
+        settings_kwargs["logging"] = {"level": effective_log_level}
 
     settings = get_settings(**settings_kwargs)
 
@@ -540,9 +565,17 @@ def _build_tasks_query(
 
 
 def _format_task_results(results: list) -> str:
-    """Format task results for display."""
+    """Format task results for display.
+
+    Args:
+        results: List of Task objects with joined Document.
+
+    Returns:
+        Formatted string with one task per line.
+
+    """
     lines = [f"Found {len(results)} tasks:\n"]
-    status_emoji = {
+    status_indicator = {
         "completed": "[x]",
         "not_completed": "[ ]",
         "in_progress": "[/]",
@@ -550,16 +583,19 @@ def _format_task_results(results: list) -> str:
     }
 
     for task in results:
-        emoji = status_emoji.get(task.status, "[ ]")
-        lines.append(f"{emoji} {task.description}")
-        lines.append(f"   File: {task.document.file_name}")
+        indicator = status_indicator.get(task.status, "[ ]")
+        # Build optional metadata parts
+        parts = [f"File: {task.document.file_name}"]
         if task.due:
-            lines.append(f"   Due: {task.due}")
+            parts.append(f"Due: {task.due}")
         if task.priority != "normal":
-            lines.append(f"   Priority: {task.priority}")
+            parts.append(f"Priority: {task.priority}")
         if task.tags:
-            lines.append(f"   Tags: {', '.join(task.tags)}")
-        lines.append("")
+            parts.append(f"Tags: {', '.join(task.tags)}")
+
+        # Combine into one line
+        metadata = ", ".join(parts)
+        lines.append(f"{indicator} {task.description} ({metadata})")
 
     return "\n".join(lines)
 

@@ -2,7 +2,10 @@
 
 import pytest
 
+from datetime import date, datetime
+
 from obsidian_rag.parsing.frontmatter import (
+    _serialize_for_json,
     extract_frontmatter,
     normalize_tags,
     parse_frontmatter,
@@ -206,3 +209,81 @@ Content.
 
         result = normalize_tags([1, 2, 3])
         assert result == ["1", "2", "3"]
+
+
+class TestSerializeForJson:
+    """Test cases for _serialize_for_json function."""
+
+    def test_serializes_date_object(self):
+        """Test that date objects are converted to ISO strings."""
+        result = _serialize_for_json(date(2024, 3, 15))
+        assert result == "2024-03-15"
+
+    def test_serializes_datetime_object(self):
+        """Test that datetime objects are converted to ISO strings."""
+        result = _serialize_for_json(datetime(2024, 3, 15, 14, 30, 0))
+        assert result == "2024-03-15T14:30:00"
+
+    def test_serializes_dict_with_dates(self):
+        """Test that dates in dict are serialized."""
+        data = {"created": date(2024, 3, 15), "title": "Test"}
+        result = _serialize_for_json(data)
+        assert result == {"created": "2024-03-15", "title": "Test"}
+
+    def test_serializes_nested_dict_with_dates(self):
+        """Test that dates in nested dict are serialized."""
+        data = {"outer": {"inner": date(2024, 3, 15)}}
+        result = _serialize_for_json(data)
+        assert result == {"outer": {"inner": "2024-03-15"}}
+
+    def test_serializes_list_with_dates(self):
+        """Test that dates in list are serialized."""
+        data = [date(2024, 3, 15), "string", 42]
+        result = _serialize_for_json(data)
+        assert result == ["2024-03-15", "string", 42]
+
+    def test_preserves_simple_values(self):
+        """Test that simple values are preserved."""
+        data = {"string": "value", "number": 42, "boolean": True, "null": None}
+        result = _serialize_for_json(data)
+        assert result == {
+            "string": "value",
+            "number": 42,
+            "boolean": True,
+            "null": None,
+        }
+
+
+class TestParseFrontmatterWithDates:
+    """Test that parse_frontmatter properly serializes dates from YAML."""
+
+    def test_frontmatter_with_date_field(self):
+        """Test parsing frontmatter with a date field."""
+        content = """---
+title: My Document
+date: 2024-03-15
+---
+
+Content here.
+"""
+        kind, tags, metadata, remaining = parse_frontmatter(content)
+
+        assert metadata["date"] == "2024-03-15"
+        assert isinstance(metadata["date"], str)
+
+    def test_frontmatter_with_nested_dates(self):
+        """Test parsing frontmatter with nested date fields."""
+        content = """---
+title: My Document
+schedule:
+  start: 2024-03-15
+  end: 2024-04-01
+---
+
+Content here.
+"""
+        kind, tags, metadata, remaining = parse_frontmatter(content)
+
+        assert metadata["schedule"]["start"] == "2024-03-15"
+        assert metadata["schedule"]["end"] == "2024-04-01"
+        assert isinstance(metadata["schedule"]["start"], str)

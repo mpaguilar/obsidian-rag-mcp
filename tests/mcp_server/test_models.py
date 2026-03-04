@@ -9,6 +9,7 @@ from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
     DocumentResponse,
     HealthResponse,
+    TagListResponse,
     TaskListResponse,
     TaskResponse,
     _validate_limit,
@@ -320,3 +321,47 @@ class TestCreateDocumentResponse:
         assert response.similarity_score == similarity
         assert response.created_at_fs == doc.created_at_fs
         assert response.modified_at_fs == doc.modified_at_fs
+
+
+class TestTagListResponse:
+    """Tests for TagListResponse model."""
+
+    def test_tag_list_response_creation(self):
+        """Test creating a TagListResponse."""
+        response = TagListResponse(
+            tags=["work", "personal", "urgent"],
+            total_count=3,
+            has_more=False,
+            next_offset=None,
+        )
+
+        assert response.tags == ["work", "personal", "urgent"]
+        assert response.total_count == 3
+        assert response.has_more is False
+        assert response.next_offset is None
+
+    def test_tag_list_response_empty(self):
+        """Test TagListResponse with no tags."""
+        response = TagListResponse(
+            tags=[],
+            total_count=0,
+            has_more=False,
+            next_offset=None,
+        )
+
+        assert response.tags == []
+        assert response.total_count == 0
+
+    def test_tag_list_response_with_pagination(self):
+        """Test TagListResponse with pagination."""
+        response = TagListResponse(
+            tags=["work", "personal"],
+            total_count=10,
+            has_more=True,
+            next_offset=2,
+        )
+
+        assert len(response.tags) == 2
+        assert response.total_count == 10
+        assert response.has_more is True
+        assert response.next_offset == 2

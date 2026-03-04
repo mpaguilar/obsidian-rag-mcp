@@ -65,6 +65,7 @@ DEFAULT_CONFIG = {
         "cors_origins": ["*"],
         "enable_health_check": True,
         "stateless_http": False,
+        "ingest_path": "/data",
     },
 }
 
@@ -369,6 +370,7 @@ class MCPConfig(BaseModel):
         cors_origins: List of allowed CORS origins.
         enable_health_check: Enable health check endpoint.
         stateless_http: Enable stateless mode for horizontal scaling.
+        ingest_path: Default path for MCP ingest tool (default: "/data").
 
     """
 
@@ -378,6 +380,7 @@ class MCPConfig(BaseModel):
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     enable_health_check: bool = True
     stateless_http: bool = False
+    ingest_path: str = "/data"
 
     @field_validator("port")
     @classmethod

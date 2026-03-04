@@ -39,6 +39,7 @@ The `content_vector` column uses HNSW (Hierarchical Navigable Small World) index
 - `kind` (TEXT, nullable) - from FrontMatter
 - `tags` (TEXT[], nullable) - from FrontMatter, deduplicated
 - `frontmatter_json` (JSONB) - all other FrontMatter properties
+- `vault_root` (TEXT, nullable) - root path of vault during ingestion
 
 **tasks table:**
 - `id` (UUID, PK)
@@ -223,7 +224,7 @@ CLI Query → Config → LLM Provider → Vector Generation → Database Search 
 | `cli.py` | 90% | Error handling and defensive paths |
 | `mcp_server/__main__.py` | 100% | Complete coverage |
 | `mcp_server/server.py` | 72% | Tool function bodies require MCP integration testing |
-| `mcp_server/tools/documents.py` | 100% | Complete coverage |
+| `mcp_server/tools/documents.py` | 79% | PostgreSQL-specific code paths require integration testing |
 | `mcp_server/tools/tasks.py` | 100% | Complete coverage |
 
 ### Running Tests
@@ -247,7 +248,7 @@ FastMCP server configuration with:
 - Bearer token authentication via `BearerTokenAuth`
 - CORS middleware for browser-based clients
 - Health check endpoint at `/health`
-- Five read-only tools for querying tasks and documents
+- Seven read-only tools for querying tasks, documents, and ingestion status
 
 **Server Creation:**
 ```python
@@ -274,6 +275,11 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 
 **Document Tools:**
 - `query_documents`: Semantic search using vector similarity (cosine distance)
+- `get_documents_by_tag`: Query documents by tag with optional vault_root filter and include_untagged flag
+- `get_all_tags`: Query all unique document tags with optional glob pattern filtering
+
+**Ingest Tools:**
+- `ingest`: Check data directory and return ingestion statistics (validates path exists, returns file counts)
 
 **Pagination Pattern:**
 - `limit`: Default 20, maximum 100
@@ -291,6 +297,9 @@ Pydantic models for request/response validation:
 **Document Models:**
 - `DocumentResponse`: Single document with similarity score
 - `DocumentListResponse`: Paginated document list
+
+**Tag Models:**
+- `TagListResponse`: Paginated list of unique tags
 
 **Health Model:**
 - `HealthResponse`: Health check status
