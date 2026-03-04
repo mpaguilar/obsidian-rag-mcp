@@ -2,6 +2,32 @@
 
 CLI tool for ingesting Obsidian markdown documents into PostgreSQL with vector embeddings and semantic search capabilities.
 
+## Quick Start
+
+```bash
+# 1. Install
+pip install obsidian-rag
+
+# 2. Configure (create .obsidian-rag.yaml)
+echo "database:
+  url: postgresql://localhost/obsidian_rag
+endpoints:
+  embedding:
+    provider: openai
+    model: text-embedding-3-small
+    api_key: \${OPENAI_API_KEY}" > .obsidian-rag.yaml
+
+# 3. Setup database
+createdb obsidian_rag
+psql -d obsidian_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# 4. Ingest your vault
+obsidian-rag ingest /path/to/obsidian/vault
+
+# 5. Search
+obsidian-rag query "project planning ideas"
+```
+
 ## Overview
 
 Obsidian RAG provides a complete pipeline for:
@@ -216,6 +242,143 @@ export OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_API_KEY="sk-..."
 
 # Logging
 export OBSIDIAN_RAG_LOGGING_LEVEL="DEBUG"
+```
+
+## MCP Server
+
+Obsidian RAG includes an MCP (Model Context Protocol) server for remote access to RAG functionality via HTTP.
+
+### Running the MCP Server
+
+```bash
+# Run directly
+python -m obsidian_rag.mcp_server
+
+# Or with uvicorn
+uvicorn obsidian_rag.mcp_server.server:create_http_app --factory
+```
+
+### MCP Server Configuration
+
+Add MCP settings to your config file:
+
+```yaml
+mcp:
+  host: "0.0.0.0"
+  port: 8000
+  token: ${OBSIDIAN_RAG_MCP_TOKEN}  # Required for authentication
+  cors_origins: ["*"]
+  enable_health_check: true
+```
+
+Or via environment variables:
+
+```bash
+export OBSIDIAN_RAG_MCP_TOKEN="your-secret-token"
+export OBSIDIAN_RAG_MCP_PORT=8000
+```
+
+### MCP Endpoint and Transport
+
+The MCP server uses **HTTP transport** (Streamable HTTP) on the following endpoints:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `http://localhost:8000/` | **MCP Protocol endpoint** - Main MCP communication |
+| `http://localhost:8000/health` | Health check endpoint (if enabled) |
+
+**Important:** The MCP protocol runs on the **root path** (`/`), not a sub-path like `/mcp` or `/sse`.
+
+**Authentication:** All requests must include a Bearer token:
+```
+Authorization: Bearer your-token-here
+```
+
+### MCP Server Data Access
+
+**Important:** The MCP server only requires access to the **PostgreSQL database**, not the original vault files.
+
+| Requirement | Purpose | Notes |
+|-------------|---------|-------|
+| PostgreSQL database | Store/query all data | Must be same DB used during ingestion |
+| Bearer token | Authentication | Required for all requests |
+| Embedding provider | Semantic search | Only needed for `query_documents` tool |
+
+**Not Required:**
+- Original Obsidian vault files
+- File system access to markdown files
+
+All content is stored in the database during ingestion:
+- Document content → `documents.content` (TEXT)
+- Vector embeddings → `documents.content_vector` (VECTOR)
+- Task data → `tasks` table
+- File metadata → `documents.file_path`, `tags`, etc.
+
+This means you can run the MCP server on a completely different machine from where the files were ingested, or even delete the original vault after ingestion.
+
+### Available MCP Tools
+
+The MCP server provides read-only tools for querying tasks and documents:
+
+**Task Tools:**
+- `get_incomplete_tasks`: Query incomplete tasks with pagination
+- `get_tasks_due_this_week`: Query tasks due within 7 days
+- `get_tasks_by_tag`: Query tasks by tag (case-insensitive)
+- `get_completed_tasks`: Query completed tasks with optional date filter
+
+**Document Tools:**
+- `query_documents`: Semantic search using vector similarity
+
+### Connecting to the MCP Server
+
+Connect using any MCP client that supports HTTP transport:
+
+```python
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+
+# Using StreamableHttpTransport
+transport = StreamableHttpTransport(
+    url="http://localhost:8000/",
+    headers={"Authorization": "Bearer your-token-here"}
+)
+client = Client(transport)
+
+# Or using the convenience method with BearerAuth
+from fastmcp.client.auth import BearerAuth
+client = Client(
+    "http://localhost:8000/",
+    auth=BearerAuth("your-token-here")
+)
+
+# Use the client
+async with client:
+    # Query incomplete tasks
+    tasks = await client.call_tool(
+        "get_incomplete_tasks",
+        {"limit": 10}
+    )
+
+    # Search documents
+    docs = await client.call_tool(
+        "query_documents",
+        {"query": "project planning", "limit": 5}
+    )
+```
+
+### Docker Support
+
+Build and run the MCP server with Docker:
+
+```bash
+# Build image
+docker build -t obsidian-rag-mcp .
+
+# Run with MCP-only dependencies
+docker run -p 8000:8000 \
+  -e OBSIDIAN_RAG_MCP_TOKEN=secret \
+  -e OBSIDIAN_RAG_DATABASE_URL=postgresql://host.docker.internal/obsidian_rag \
+  obsidian-rag-mcp
 ```
 
 ## LLM Providers
@@ -466,28 +629,6 @@ ruff check
 
 # Fix auto-fixable issues
 ruff check --fix
-```
-
-### Project Structure
-
-```
-obsidian_rag/
-├── __init__.py
-├── cli.py              # CLI entry point
-├── config.py           # Configuration management
-├── database/
-│   ├── __init__.py
-│   ├── engine.py       # Database connection
-│   └── models.py       # SQLAlchemy models
-├── llm/
-│   ├── __init__.py
-│   ├── base.py         # Base provider classes
-│   └── providers.py    # Provider implementations
-└── parsing/
-    ├── __init__.py
-    ├── frontmatter.py  # Frontmatter extraction
-    ├── scanner.py      # File scanning
-    └── tasks.py        # Task parsing
 ```
 
 ## License

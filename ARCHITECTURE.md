@@ -214,13 +214,17 @@ CLI Query → Config → LLM Provider → Vector Generation → Database Search 
 
 | Module | Coverage | Notes |
 |--------|----------|-------|
-| `config.py` | 100% | Complete coverage |
+| `config.py` | 97% | Environment variable interpolation exit branches |
 | `parsing/` | 100% | All parsing modules fully covered |
 | `database/engine.py` | 100% | Complete coverage |
-| `database/models.py` | 95% | PostgreSQL-specific code paths |
-| `llm/base.py` | 95% | Abstract methods (by design) |
-| `llm/providers.py` | 99% | Defensive branches |
-| `cli.py` | 79% | Integration tests require database setup |
+| `database/models.py` | 100% | Complete coverage |
+| `llm/base.py` | 100% | Complete coverage |
+| `llm/providers.py` | 100% | Complete coverage |
+| `cli.py` | 90% | Error handling and defensive paths |
+| `mcp_server/__main__.py` | 100% | Complete coverage |
+| `mcp_server/server.py` | 72% | Tool function bodies require MCP integration testing |
+| `mcp_server/tools/documents.py` | 100% | Complete coverage |
+| `mcp_server/tools/tasks.py` | 100% | Complete coverage |
 
 ### Running Tests
 

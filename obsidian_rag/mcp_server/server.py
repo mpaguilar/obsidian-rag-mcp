@@ -320,13 +320,18 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         log.error(_msg)
         raise ValueError(_msg)
 
-    auth = StaticTokenVerifier(
-        tokens={settings.mcp.token: {"sub": "user"}},
+    # Configure static bearer token authentication
+    # StaticTokenVerifier accepts a dict mapping tokens to their claims
+    token_verifier = StaticTokenVerifier(
+        tokens={
+            settings.mcp.token: {
+                "client_id": "obsidian-rag-client",
+                "sub": "user",
+            }
+        }
     )
-    mcp = FastMCP(
-        "Obsidian RAG Server",
-        auth=auth,
-    )
+
+    mcp = FastMCP("Obsidian RAG Server", auth=token_verifier)
     db_manager = DatabaseManager(settings.database.url)
     embedding_provider = _create_embedding_provider(settings)
 
@@ -375,6 +380,7 @@ def create_http_app(settings: Settings) -> Starlette:
     ]
 
     app = mcp.http_app(
+        path="/",
         middleware=middleware,
         stateless_http=settings.mcp.stateless_http,
     )

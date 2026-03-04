@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING, Any
 import click
 from sqlalchemy.orm import Session
 
-from obsidian_rag.config import get_settings
+from obsidian_rag.config import Settings, get_settings
 from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.database.models import Document, Task
-from obsidian_rag.llm.base import ProviderFactory
+from obsidian_rag.llm.base import EmbeddingProvider, ProviderFactory
 from obsidian_rag.parsing.frontmatter import parse_frontmatter
 from obsidian_rag.parsing.scanner import (
     FileInfo,
@@ -22,7 +22,7 @@ from obsidian_rag.parsing.scanner import (
 from obsidian_rag.parsing.tasks import parse_tasks_from_content
 
 if TYPE_CHECKING:
-    pass
+    from obsidian_rag.parsing.tasks import ParsedTask
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ def cli(ctx: click.Context, verbose: bool, config_file: str | None) -> None:
     ctx.obj["settings"] = settings
 
 
-def _get_embedding_provider(settings: Any) -> Any:
+def _get_embedding_provider(settings: Settings) -> EmbeddingProvider:
     """Create embedding provider from settings."""
     embedding_config = settings.get_endpoint_config("embedding")
     if embedding_config:
@@ -114,7 +114,7 @@ class ProcessingContext:
     def __init__(
         self,
         db_manager: DatabaseManager,
-        embedding_provider: Any,
+        embedding_provider: EmbeddingProvider,
         dry_run: bool,
         verbose: bool,
         stats: dict[str, int],
@@ -150,7 +150,7 @@ def _process_single_file_safe(
 def _process_files(
     file_infos: list[FileInfo],
     db_manager: DatabaseManager,
-    embedding_provider: Any,
+    embedding_provider: EmbeddingProvider,
     dry_run: bool,
     verbose: bool,
 ) -> dict[str, int]:
@@ -253,7 +253,7 @@ def ingest(ctx: click.Context, path: str, dry_run: bool, verbose: bool) -> None:
 def _process_single_file(
     db_manager: DatabaseManager,
     file_info: FileInfo,
-    embedding_provider: Any,
+    embedding_provider: EmbeddingProvider,
     dry_run: bool,
 ) -> str:
     """Process a single file.
@@ -302,7 +302,7 @@ def _process_single_file(
 def _create_document(
     file_info: FileInfo,
     parsed_data: tuple[str | None, list[str] | None, dict[str, Any], str],
-    embedding_provider: Any,
+    embedding_provider: EmbeddingProvider,
 ) -> Document:
     """Create a new Document instance."""
     kind, tags, metadata, content = parsed_data
@@ -346,9 +346,9 @@ def _update_document(
 
 
 def _create_tasks(
-    session: Any,
+    session: Session,
     document: Document,
-    parsed_tasks: list[tuple[int, Any]],
+    parsed_tasks: list[tuple[int, "ParsedTask"]],
 ) -> None:
     """Create Task instances for a document."""
     for line_number, parsed_task in parsed_tasks:
@@ -370,9 +370,9 @@ def _create_tasks(
 
 
 def _update_tasks(
-    session: Any,
+    session: Session,
     document: Document,
-    parsed_tasks: list[tuple[int, Any]],
+    parsed_tasks: list[tuple[int, "ParsedTask"]],
 ) -> None:
     """Update tasks for a document (delete old, create new)."""
     # Delete existing tasks

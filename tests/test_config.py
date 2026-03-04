@@ -661,6 +661,34 @@ class TestSettingsWithInitKwargs:
         assert "Getting endpoint config for: embedding" in caplog.text
 
 
+class TestMCPConfig:
+    """Test cases for MCPConfig."""
+
+    def test_mcp_config_port_validation_raises_for_zero(self):
+        """Test that port validation raises for port 0."""
+        from obsidian_rag.config import MCPConfig
+        import pytest
+
+        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+            MCPConfig(port=0)
+
+    def test_mcp_config_port_validation_raises_for_negative(self):
+        """Test that port validation raises for negative port."""
+        from obsidian_rag.config import MCPConfig
+        import pytest
+
+        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+            MCPConfig(port=-1)
+
+    def test_mcp_config_port_validation_raises_for_too_large(self):
+        """Test that port validation raises for port > 65535."""
+        from obsidian_rag.config import MCPConfig
+        import pytest
+
+        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+            MCPConfig(port=70000)
+
+
 class TestValidateEmbeddingDimensionCompatibilityEdgeCases:
     """Test edge cases for dimension validation."""
 

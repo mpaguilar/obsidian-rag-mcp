@@ -28,7 +28,7 @@ class EmbeddingProvider(ABC):
             EmbeddingError: If embedding generation fails.
 
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def get_dimension(self) -> int:
@@ -38,7 +38,7 @@ class EmbeddingProvider(ABC):
             The embedding dimension (e.g., 1536 for OpenAI).
 
         """
-        pass
+        pass  # pragma: no cover
 
 
 class ChatProvider(ABC):
@@ -63,7 +63,7 @@ class ChatProvider(ABC):
             ChatError: If the chat request fails.
 
         """
-        pass
+        pass  # pragma: no cover
 
 
 class ProviderError(Exception):

@@ -8,10 +8,11 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Union, overload
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -126,7 +127,21 @@ def _replace_env_var(match: re.Match) -> str:
         return str(result)
 
 
-def _interpolate_env_vars(value: Any) -> Any:
+@overload
+def _interpolate_env_vars(value: str) -> str: ...
+
+
+@overload
+def _interpolate_env_vars(value: dict[str, Any]) -> dict[str, Any]: ...
+
+
+@overload
+def _interpolate_env_vars(value: list[Any]) -> list[Any]: ...
+
+
+def _interpolate_env_vars(
+    value: Union[str, dict[str, Any], list[Any]],
+) -> Union[str, dict[str, Any], list[Any]]:
     """Interpolate environment variables in configuration values.
 
     Supports ${VAR} and ${VAR:-default} syntax.
@@ -226,7 +241,9 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
 
     """
 
-    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:  # noqa: ARG002
+    def get_field_value(
+        self, field: FieldInfo, field_name: str
+    ) -> tuple[Any, str, bool]:  # noqa: ARG002
         """Get field value from YAML config.
 
         Note: This method is required by the base class but we implement
@@ -241,6 +258,8 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
 
         """
         # We don't use per-field loading; full dictionary is loaded below
+        _ = field  # Explicitly mark as used for ruff
+        _ = field_name  # Explicitly mark as used for ruff
         return None, "", False
 
     def __call__(self) -> dict[str, Any]:

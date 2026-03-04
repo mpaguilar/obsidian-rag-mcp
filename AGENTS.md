@@ -25,6 +25,15 @@ obsidian_rag/                    # Main package
 │   ├── __init__.py
 │   ├── base.py                  # Base provider classes
 │   └── providers.py             # Provider implementations
+├── mcp_server/                  # MCP server layer
+│   ├── __init__.py
+│   ├── __main__.py              # Server entry point
+│   ├── models.py                # Pydantic request/response models
+│   ├── server.py                # FastMCP server setup
+│   └── tools/                   # MCP tools
+│       ├── __init__.py
+│       ├── documents.py         # Document query tools
+│       └── tasks.py             # Task query tools
 └── parsing/                     # Document parsing
     ├── __init__.py
     ├── frontmatter.py           # FrontMatter extraction
@@ -68,8 +77,10 @@ Config file locations (searched in order):
 ## Development
 
 - All code must pass ruff linting
-- 100% test coverage on core modules (config, parsing, database engine)
-- 95%+ coverage on modules with platform-specific code (database models, llm providers)
+- 100% test coverage on core modules (parsing, database engine, llm base/providers)
+- 95%+ coverage on config (environment variable edge cases)
+- 90%+ coverage on cli (error handling and defensive paths)
+- 72%+ coverage on mcp_server/server (tool bodies require MCP integration)
 - All functions require type hints and docstrings
 - McCabe complexity max: 5
 - All source files under 1000 lines

@@ -793,3 +793,26 @@ class TestOpenRouterChatProvider:
             with patch.object(builtins, "__import__", mock_import):
                 with pytest.raises(ImportError, match="litellm package is required"):
                     OpenRouterChatProvider(api_key="test-key")
+
+    def test_chat_with_empty_base_url_does_not_set_api_base(self):
+        """Test chat with explicitly empty base_url does not set api_base."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        mock_response = {
+            "choices": [{"message": {"content": "Test"}}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.completion", return_value=mock_response) as mock_chat:
+                provider = OpenRouterChatProvider(
+                    api_key="test-key",
+                    base_url="",
+                )
+                # Manually set base_url to empty to test defensive branch
+                provider.base_url = ""
+                messages = [{"role": "user", "content": "Hello"}]
+                provider.chat(messages)
+
+        mock_chat.assert_called_once()
+        call_kwargs = mock_chat.call_args.kwargs
+        assert "api_base" not in call_kwargs

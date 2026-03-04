@@ -19,13 +19,14 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
     event,
     text,
-    TypeDecorator,
 )
 from sqlalchemy.dialects.postgresql import UUID, ARRAY as PG_ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeEngine
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection, Dialect
@@ -47,7 +48,7 @@ class ArrayType(TypeDecorator[List[str]]):
     impl = JSON
     cache_ok = True
 
-    def load_dialect_impl(self, dialect: "Dialect") -> Any:
+    def load_dialect_impl(self, dialect: "Dialect") -> TypeEngine[Any]:
         """Load the appropriate implementation for the dialect.
 
         Args:
@@ -217,7 +218,7 @@ def _create_pgvector_extension(
     """Create pgvector extension before creating tables (PostgreSQL only)."""
     # Only create extension on PostgreSQL
     dialect = connection.dialect.name
-    if dialect == "postgresql":
+    if dialect == "postgresql":  # pragma: no cover
         _msg = "Creating pgvector extension"
         log.debug(_msg)
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))

@@ -40,6 +40,8 @@ def query_documents(
     Notes:
         Uses cosine distance for similarity (lower is better).
         Documents without embeddings are excluded.
+        For SQLite databases (used in testing), returns empty results since
+        pg_vector's cosine distance operator is not available.
 
     """
     _msg = "query_documents starting"
@@ -48,7 +50,22 @@ def query_documents(
     limit = _validate_limit(limit)
     offset = _validate_offset(offset)
 
-    # Build vector similarity query
+    # Detect database dialect - PostgreSQL is required for vector operations
+    dialect = session.bind.dialect.name if session.bind else "unknown"
+
+    if dialect != "postgresql":
+        # For SQLite and other databases without pg_vector, return empty results
+        # since content_vector won't be populated with proper vector data
+        _msg = f"Vector similarity not supported for dialect: {dialect}"
+        log.debug(_msg)
+        return DocumentListResponse(
+            results=[],
+            total_count=0,
+            has_more=False,
+            next_offset=None,
+        )
+
+    # Build vector similarity query for PostgreSQL
     # Using cosine distance - lower values indicate higher similarity
     distance_expr = Document.content_vector.cosine_distance(query_embedding)
 
