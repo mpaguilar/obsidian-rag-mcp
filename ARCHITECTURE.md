@@ -157,6 +157,44 @@ Entry point for all user interactions:
   - Options: `--status`, `--due-before DATE`, `--tag TAG`, `--limit N`
   - Flexible filtering
 
+### 6. Service Layer (`services/`)
+
+#### IngestionService (`services/ingestion.py`)
+
+Centralized service for document ingestion, shared by CLI and MCP server:
+
+**Key Features:**
+- **Shared Logic**: Same ingestion logic used by both CLI and MCP server
+- **Per-File Transactions**: Each file processed in independent transaction
+- **Error Isolation**: Individual file failures don't stop overall ingestion
+- **Progress Callbacks**: Optional callback for progress reporting
+- **Dry-Run Support**: Can simulate ingestion without database writes
+
+**Class Structure:**
+```python
+class IngestionService:
+    def __init__(db_manager, embedding_provider, settings)
+    def ingest_vault(vault_path, dry_run=False, progress_callback=None, file_infos=None) -> IngestionResult
+    def _ingest_single_file(file_info, dry_run=False) -> str
+    def _create_document(file_info, parsed_data) -> Document
+    def _update_document(document, file_info, parsed_data)
+    def _create_tasks(session, document, parsed_tasks)
+    def _update_tasks(session, document, parsed_tasks)
+```
+
+**IngestionResult Dataclass:**
+- `total`: Total files processed
+- `new`: New documents created
+- `updated`: Existing documents updated
+- `unchanged`: Unchanged documents (same checksum)
+- `errors`: Files that failed processing
+- `processing_time_seconds`: Time taken
+- `message`: Human-readable summary
+
+**Usage Patterns:**
+- **CLI**: Uses service with progress callbacks and verbose output
+- **MCP**: Uses service with path override support, returns structured results
+
 ## Data Flow
 
 ### Ingestion Flow
@@ -215,16 +253,22 @@ CLI Query → Config → LLM Provider → Vector Generation → Database Search 
 
 | Module | Coverage | Notes |
 |--------|----------|-------|
-| `config.py` | 97% | Environment variable interpolation exit branches |
+| `config.py` | 97% | Environment variable interpolation branches |
 | `parsing/` | 100% | All parsing modules fully covered |
 | `database/engine.py` | 100% | Complete coverage |
 | `database/models.py` | 100% | Complete coverage |
 | `llm/base.py` | 100% | Complete coverage |
 | `llm/providers.py` | 100% | Complete coverage |
-| `cli.py` | 90% | Error handling and defensive paths |
+| `services/ingestion.py` | 100% | Complete coverage |
+| `cli.py` | 95% | Error handling and edge cases |
 | `mcp_server/__main__.py` | 100% | Complete coverage |
-| `mcp_server/server.py` | 72% | Tool function bodies require MCP integration testing |
-| `mcp_server/tools/documents.py` | 79% | PostgreSQL-specific code paths require integration testing |
+| `mcp_server/server.py` | 71% | Tool registration and logging functions |
+| `mcp_server/tools/documents.py` | 94% | PostgreSQL-specific tag filtering requires integration testing |
+| `mcp_server/tools/documents_filters.py` | 99% | Single defensive branch |
+| `mcp_server/tools/documents_postgres.py` | 100% | Complete coverage |
+| `mcp_server/tools/documents_sqlite.py` | 100% | Complete coverage |
+| `mcp_server/tools/documents_tags.py` | 100% | Complete coverage |
+| `mcp_server/tools/documents_params.py` | 100% | Complete coverage |
 | `mcp_server/tools/tasks.py` | 100% | Complete coverage |
 
 ### Running Tests
@@ -274,12 +318,32 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 - `get_completed_tasks`: Query completed tasks with optional date filter
 
 **Document Tools:**
-- `query_documents`: Semantic search using vector similarity (cosine distance)
-- `get_documents_by_tag`: Query documents by tag with optional vault_root filter and include_untagged flag
+- `query_documents`: Semantic search using vector similarity (cosine distance) with optional property and tag filters
+- `get_documents_by_tag`: Query documents by tags with include/exclude lists and match_mode ("all" or "any")
+- `get_documents_by_property`: Query documents by frontmatter properties with include/exclude filters
 - `get_all_tags`: Query all unique document tags with optional glob pattern filtering
 
+**Property Filter Operators:**
+- `equals`: Exact match (case-insensitive)
+- `contains`: Substring match (case-insensitive)
+- `exists`: Property key exists (no value required)
+- `in`: Value is in provided list
+- `starts_with`: String starts with pattern (case-insensitive)
+- `regex`: Regular expression match
+
+**Tag Filter Features:**
+- `include_tags`: Documents must have ALL (match_mode="all") or ANY (match_mode="any") of these tags
+- `exclude_tags`: Documents must NOT have any of these tags
+- Tag matching is case-insensitive substring match
+- Conflicting tags (in both include and exclude) are rejected with validation error
+
+**Filter Combinations:**
+- Property filters and tag filters can be combined (AND logic between filter types)
+- Multiple property filters within include list use AND logic
+- Multiple property filters within exclude list use OR logic (any match excludes)
+
 **Ingest Tools:**
-- `ingest`: Check data directory and return ingestion statistics (validates path exists, returns file counts)
+- `ingest`: Ingest markdown files and return processing statistics
 
 **Pagination Pattern:**
 - `limit`: Default 20, maximum 100
@@ -300,6 +364,11 @@ Pydantic models for request/response validation:
 
 **Tag Models:**
 - `TagListResponse`: Paginated list of unique tags
+
+**Filter Models:**
+- `PropertyFilter`: Filter for document frontmatter properties with path, operator, and value
+- `TagFilter`: Filter for document tags with include/exclude lists and match_mode
+- `QueryFilterParams`: Combined filter parameters for property and tag filtering
 
 **Health Model:**
 - `HealthResponse`: Health check status

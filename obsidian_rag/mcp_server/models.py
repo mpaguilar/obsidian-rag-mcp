@@ -3,11 +3,61 @@
 import logging
 import uuid
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
+
+
+class PropertyFilter(BaseModel):
+    """Filter for document frontmatter properties.
+
+    Attributes:
+        path: Property path using dot notation (e.g., "author.name").
+        operator: Comparison operator (equals, contains, exists, in, starts_with, regex).
+        value: Value to compare against (optional for 'exists' operator).
+
+    """
+
+    path: str = Field(
+        ...,
+        description="Property path using dot notation (e.g., 'author.name')",
+    )
+    operator: Literal["equals", "contains", "exists", "in", "starts_with", "regex"] = (
+        Field(
+            ...,
+            description="Comparison operator",
+        )
+    )
+    value: str | int | float | bool | None | list[str | int | float] = Field(
+        default=None,
+        description="Value to compare against (not needed for 'exists' operator, can be list for 'in' operator)",
+    )
+
+
+class TagFilter(BaseModel):
+    """Filter for document tags with include/exclude semantics.
+
+    Attributes:
+        include_tags: List of tags that documents must have.
+        exclude_tags: List of tags that documents must NOT have.
+        match_mode: Whether document must have ALL or ANY of the include_tags.
+
+    """
+
+    include_tags: list[str] = Field(
+        default_factory=list,
+        description="Tags that documents must have",
+    )
+    exclude_tags: list[str] = Field(
+        default_factory=list,
+        description="Tags that documents must NOT have",
+    )
+    match_mode: Literal["all", "any"] = Field(
+        default="all",
+        description="Whether document must have ALL or ANY of the include_tags",
+    )
 
 
 class TaskResponse(BaseModel):

@@ -1,0 +1,212 @@
+"""PostgreSQL-specific document query implementations.
+
+This module contains query implementations optimized for PostgreSQL with pgvector support.
+Uses native JSONB operators and vector similarity functions.
+"""
+
+import logging
+from typing import TYPE_CHECKING
+
+from sqlalchemy import func, or_, text
+
+from obsidian_rag.database.models import Document
+from obsidian_rag.mcp_server.models import (
+    DocumentListResponse,
+    create_document_response,
+)
+from obsidian_rag.mcp_server.tools.documents_filters import (
+    apply_postgresql_property_filter,
+    matches_property_filter,
+)
+from obsidian_rag.mcp_server.tools.documents_params import (
+    DocumentQueryParams,
+    PaginationParams,
+    PropertyFilterParams,
+    PropertyQueryParams,
+    QueryFilterParams,
+    TagFilterParams,
+)
+from obsidian_rag.mcp_server.tools.documents_tags import (
+    apply_postgresql_tag_filter,
+    matches_tag_filter,
+)
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Query, Session
+
+    from obsidian_rag.mcp_server.models import PropertyFilter
+
+log = logging.getLogger(__name__)
+
+
+def _filter_results_by_exclude(
+    results: list,
+    property_filters_exclude: list["PropertyFilter"] | None,
+) -> list:
+    """Filter results by exclude property filters.
+
+    Args:
+        results: List of query results.
+        property_filters_exclude: Property filters to exclude.
+
+    Returns:
+        Filtered list of results.
+
+    """
+    if not property_filters_exclude:
+        return results
+
+    filtered = []
+    for row in results:
+        doc = (
+            getattr(row, "Document", row[0])
+            if hasattr(row, "Document")
+            else (row[0] if isinstance(row, tuple) else row)
+        )
+        if not any(matches_property_filter(doc, f) for f in property_filters_exclude):
+            filtered.append(row)
+    return filtered
+
+
+def _apply_postgresql_filters(
+    query: "Query[Document]",
+    property_filters_include: list["PropertyFilter"] | None,
+    tag_filter_params: TagFilterParams,
+) -> "Query[Document]":
+    """Apply PostgreSQL-specific filters to query.
+
+    Args:
+        query: SQLAlchemy query object.
+        property_filters_include: Property filters to include.
+        tag_filter_params: Tag filter parameters.
+
+    Returns:
+        Filtered query.
+
+    """
+    if property_filters_include:
+        for prop_filter in property_filters_include:
+            query = apply_postgresql_property_filter(query, prop_filter)
+
+    query = apply_postgresql_tag_filter(query, tag_filter_params.tag_filter)
+    return query
+
+
+def query_documents_postgresql(params: DocumentQueryParams) -> DocumentListResponse:
+    """Query documents using PostgreSQL with vector similarity.
+
+    Args:
+        params: Document query parameters including session, embedding, filters, and pagination.
+
+    Returns:
+        DocumentListResponse with results ordered by similarity.
+
+    """
+    _msg = "query_documents_postgresql starting"
+    log.debug(_msg)
+
+    session = params.session
+    query_embedding = params.query_embedding
+    filter_params = params.filter_params
+    pagination = params.pagination
+
+    distance_expr = Document.content_vector.cosine_distance(query_embedding)
+
+    query = session.query(Document, distance_expr.label("distance")).filter(
+        Document.content_vector.isnot(None)
+    )
+
+    query = _apply_postgresql_filters(
+        query,
+        filter_params.property_filters.include_filters,
+        filter_params.tag_params,
+    )
+    query = query.order_by(distance_expr.asc())
+
+    total_count = query.count()
+    results = query.offset(pagination.offset).limit(pagination.limit).all()
+
+    results = _filter_results_by_exclude(
+        results, filter_params.property_filters.exclude_filters
+    )
+    total_count = len(results)
+
+    document_responses = []
+    for row in results:
+        doc = (
+            getattr(row, "Document", row[0])
+            if hasattr(row, "Document")
+            else (row[0] if isinstance(row, tuple) else row)
+        )
+        dist = (
+            getattr(row, "distance", 0.0)
+            if hasattr(row, "distance")
+            else (row[1] if isinstance(row, tuple) else 0.0)
+        )
+        document_responses.append(create_document_response(doc, dist))
+
+    has_more = (pagination.offset + pagination.limit) < total_count
+    next_offset = pagination.offset + pagination.limit if has_more else None
+
+    _msg = "query_documents_postgresql returning"
+    log.debug(_msg)
+
+    return DocumentListResponse(
+        results=document_responses,
+        total_count=total_count,
+        has_more=has_more,
+        next_offset=next_offset,
+    )
+
+
+def get_documents_by_property_postgresql(
+    params: PropertyQueryParams,
+) -> tuple[list[Document], int]:
+    """Query documents using PostgreSQL with property filters.
+
+    Args:
+        params: Property query parameters including session, filters, and pagination.
+
+    Returns:
+        Tuple of (results list, total count).
+
+    """
+    _msg = "get_documents_by_property_postgresql starting"
+    log.debug(_msg)
+
+    session = params.session
+    property_filters = params.property_filters
+    tag_params = params.tag_params
+    vault_root = params.vault_root
+    pagination = params.pagination
+
+    query = session.query(Document)
+
+    if vault_root is not None:
+        query = query.filter(Document.vault_root == vault_root)
+
+    if property_filters.include_filters:
+        for prop_filter in property_filters.include_filters:
+            query = apply_postgresql_property_filter(query, prop_filter)
+
+    query = apply_postgresql_tag_filter(query, tag_params.tag_filter)
+    query = query.order_by(Document.file_name)
+
+    total_count = query.count()
+    results = query.offset(pagination.offset).limit(pagination.limit).all()
+
+    if property_filters.exclude_filters:
+        results = [
+            doc
+            for doc in results
+            if not any(
+                matches_property_filter(doc, f)
+                for f in property_filters.exclude_filters
+            )
+        ]
+        total_count = len(results)
+
+    _msg = "get_documents_by_property_postgresql returning"
+    log.debug(_msg)
+
+    return results, total_count

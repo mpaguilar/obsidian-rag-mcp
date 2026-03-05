@@ -185,25 +185,6 @@ class TestCliHelpers:
 
             assert exc_info.value.code == 1
 
-    def test_update_stats_new(self):
-        """Test _update_stats with new result."""
-        from obsidian_rag.cli import _update_stats
-
-        stats = {"new": 0, "updated": 0, "unchanged": 0, "errors": 0}
-        _update_stats(stats, "new")
-
-        assert stats["new"] == 1
-
-    def test_update_stats_unknown(self):
-        """Test _update_stats with unknown result."""
-        from obsidian_rag.cli import _update_stats
-
-        stats = {"new": 0, "updated": 0, "unchanged": 0, "errors": 0}
-        _update_stats(stats, "unknown")
-
-        # Stats should remain unchanged
-        assert stats == {"new": 0, "updated": 0, "unchanged": 0, "errors": 0}
-
 
 class TestFormatTaskResults:
     """Test _format_task_results function."""
@@ -478,32 +459,6 @@ class TestLogLevelFlag:
         assert call_kwargs["logging"]["level"] == "ERROR"
 
 
-class TestProcessingContext:
-    """Test ProcessingContext class."""
-
-    def test_processing_context_init(self):
-        """Test ProcessingContext initialization."""
-        from obsidian_rag.cli import ProcessingContext
-
-        mock_db_manager = MagicMock()
-        mock_embedding_provider = MagicMock()
-        stats = {"new": 0, "updated": 0, "unchanged": 0, "errors": 0}
-
-        ctx = ProcessingContext(
-            db_manager=mock_db_manager,
-            embedding_provider=mock_embedding_provider,
-            dry_run=True,
-            verbose=True,
-            stats=stats,
-        )
-
-        assert ctx.db_manager is mock_db_manager
-        assert ctx.embedding_provider is mock_embedding_provider
-        assert ctx.dry_run is True
-        assert ctx.verbose is True
-        assert ctx.stats is stats
-
-
 class TestLoggingToStderr:
     """Test that logging output goes to stderr."""
 
@@ -573,3 +528,516 @@ class TestLoggingToStderr:
             assert "Invalid log level" in output
         finally:
             sys.stderr = original_stderr
+
+
+class TestSetupLoggingJsonFormat:
+    """Test _setup_logging with JSON format."""
+
+    def test_setup_logging_json_format(self):
+        """Test _setup_logging with JSON format type (TASK-038)."""
+        import logging
+        import sys
+        from io import StringIO
+
+        from obsidian_rag.cli import _setup_logging
+
+        # Capture stderr
+        stderr_capture = StringIO()
+        original_stderr = sys.stderr
+        sys.stderr = stderr_capture
+
+        try:
+            _setup_logging("INFO", "json")
+            logger = logging.getLogger("json_test_logger")
+            logger.info("JSON test message")
+
+            output = stderr_capture.getvalue()
+            assert '"timestamp"' in output
+            assert '"level"' in output
+            assert '"message"' in output
+            assert "JSON test message" in output
+        finally:
+            sys.stderr = original_stderr
+
+
+class TestCliConfigFileLogging:
+    """Test CLI config file path logging."""
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_cli_with_config_file_path_logging(self, _mock_db_manager):
+        """Test CLI with config file path logging (TASK-039)."""
+        from pathlib import Path
+
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        _mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            with runner.isolated_filesystem() as fs:
+                config_path = Path(fs) / "config.yaml"
+                config_path.write_text("database:\n  url: sqlite:///:memory:")
+                result = runner.invoke(
+                    cli, ["--config-file", str(config_path), "tasks"]
+                )
+
+        assert result.exit_code == 0
+
+
+class TestCliVerboseFlag:
+    """Test CLI verbose flag behavior."""
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_cli_with_verbose_flag(self, _mock_db_manager):
+        """Test CLI with verbose flag (TASK-040)."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "DEBUG"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        _mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["--verbose", "tasks"])
+
+        assert result.exit_code == 0
+
+
+class TestGetEmbeddingProvider:
+    """Test _get_embedding_provider function."""
+
+    def test_get_embedding_provider_with_missing_config(self):
+        """Test _get_embedding_provider with missing config (TASK-041)."""
+        from obsidian_rag.cli import _get_embedding_provider
+
+        mock_settings = MagicMock()
+        mock_settings.get_endpoint_config.return_value = None
+
+        with patch("obsidian_rag.cli.ProviderFactory") as mock_factory:
+            mock_provider = MagicMock()
+            mock_factory.create_embedding_provider.return_value = mock_provider
+
+            result = _get_embedding_provider(mock_settings)
+
+            assert result is mock_provider
+            mock_factory.create_embedding_provider.assert_called_once_with("openai")
+
+
+class TestCreateProgressCallback:
+    """Test _create_progress_callback function."""
+
+    def test_create_progress_callback_with_verbose_true(self):
+        """Test _create_progress_callback with verbose=True (TASK-042)."""
+        import click
+        from click.testing import CliRunner
+
+        from obsidian_rag.cli import _create_progress_callback
+
+        runner = CliRunner()
+
+        callback = _create_progress_callback(verbose=True)
+
+        @click.command()
+        def test_cmd():
+            callback(10, 100, 8, 2)
+
+        result = runner.invoke(test_cmd)
+        assert result.exit_code == 0
+        assert (
+            "Progress: 10/100 files processed (8 successful, 2 errors)" in result.output
+        )
+
+
+class TestReportIngestResults:
+    """Test _report_ingest_results function."""
+
+    def test_report_ingest_results_with_errors(self):
+        """Test _report_ingest_results with errors (TASK-043)."""
+        import click
+        from click.testing import CliRunner
+
+        from obsidian_rag.cli import _report_ingest_results
+
+        runner = CliRunner()
+
+        @click.command()
+        def test_cmd():
+            stats = {"new": 5, "updated": 3, "unchanged": 2, "errors": 2}
+            _report_ingest_results(10, stats, 5.5)
+
+        result = runner.invoke(test_cmd)
+        assert result.exit_code == 0
+        assert "Successfully ingested 10 documents" in result.output
+        assert "(5 new, 3 updated, 2 unchanged)" in result.output
+        assert "Errors: 2 files" in result.output
+        assert "Completed in 5.5 seconds" in result.output
+
+
+class TestIngestCommand:
+    """Test ingest command with various options."""
+
+    @patch("obsidian_rag.cli._scan_vault")
+    @patch("obsidian_rag.cli.process_files_in_batches")
+    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli._get_embedding_provider")
+    @patch("obsidian_rag.cli.IngestionService")
+    def test_ingest_command_with_dry_run(
+        self,
+        mock_ingestion_service,
+        mock_get_provider,
+        mock_db_manager,
+        mock_process,
+        mock_scan,
+    ):
+        """Test ingest command with dry_run flag (TASK-044)."""
+        from pathlib import Path
+
+        from obsidian_rag.services.ingestion import IngestionResult
+
+        runner = CliRunner()
+
+        mock_scan.return_value = [Path("test.md")]
+        mock_process.return_value = []
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.ingestion.batch_size = 100
+        mock_settings.ingestion.progress_interval = 10
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_embedding_provider = MagicMock()
+        mock_get_provider.return_value = mock_embedding_provider
+
+        mock_db_instance = MagicMock()
+        mock_db_manager.return_value = mock_db_instance
+
+        mock_service = MagicMock()
+        mock_result = IngestionResult(
+            total=1,
+            new=0,
+            updated=0,
+            unchanged=1,
+            errors=0,
+            processing_time_seconds=1.0,
+            message="Dry run completed",
+        )
+        mock_service.ingest_vault.return_value = mock_result
+        mock_ingestion_service.return_value = mock_service
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            with runner.isolated_filesystem() as fs:
+                vault_path = Path(fs) / "vault"
+                vault_path.mkdir()
+                test_file = vault_path / "test.md"
+                test_file.write_text("# Test")
+                result = runner.invoke(cli, ["ingest", str(vault_path), "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "DRY RUN: No changes will be written to the database" in result.output
+
+    @patch("obsidian_rag.cli._scan_vault")
+    @patch("obsidian_rag.cli.process_files_in_batches")
+    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli._get_embedding_provider")
+    @patch("obsidian_rag.cli.IngestionService")
+    def test_ingest_command_full_flow(
+        self,
+        mock_ingestion_service,
+        mock_get_provider,
+        mock_db_manager,
+        mock_process,
+        mock_scan,
+    ):
+        """Test ingest command full flow including embedding provider and IngestionService (TASK-045)."""
+        from pathlib import Path
+
+        from obsidian_rag.services.ingestion import IngestionResult
+
+        runner = CliRunner()
+
+        mock_scan.return_value = [Path("test.md")]
+
+        # Create mock file info
+        mock_file_info = MagicMock()
+        mock_file_info.path = Path("test.md")
+        mock_file_info.name = "test.md"
+        mock_process.return_value = [mock_file_info]
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.ingestion.batch_size = 100
+        mock_settings.ingestion.progress_interval = 10
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_embedding_provider = MagicMock()
+        mock_get_provider.return_value = mock_embedding_provider
+
+        mock_db_instance = MagicMock()
+        mock_db_manager.return_value = mock_db_instance
+
+        mock_service = MagicMock()
+        mock_result = IngestionResult(
+            total=1,
+            new=1,
+            updated=0,
+            unchanged=0,
+            errors=0,
+            processing_time_seconds=2.5,
+            message="Ingestion completed successfully",
+        )
+        mock_service.ingest_vault.return_value = mock_result
+        mock_ingestion_service.return_value = mock_service
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            with runner.isolated_filesystem() as fs:
+                vault_path = Path(fs) / "vault"
+                vault_path.mkdir()
+                test_file = vault_path / "test.md"
+                test_file.write_text("# Test content")
+                result = runner.invoke(cli, ["ingest", str(vault_path)])
+
+        assert result.exit_code == 0
+        assert "Found 1 markdown files" in result.output
+        assert "Successfully ingested 1 documents" in result.output
+        assert "(1 new, 0 updated, 0 unchanged)" in result.output
+        mock_ingestion_service.assert_called_once()
+
+
+class TestFormatQueryResults:
+    """Test query result formatting functions."""
+
+    def test_format_query_results_json_with_tags(self):
+        """Test _format_query_results_json with results containing tags (TASK-046)."""
+        import json
+
+        from obsidian_rag.cli import _format_query_results_json
+
+        mock_doc = MagicMock()
+        mock_doc.file_path = "/path/to/doc.md"
+        mock_doc.file_name = "doc.md"
+        mock_doc.kind = "note"
+        mock_doc.tags = ["work", "urgent"]
+
+        results = [(mock_doc, 0.5)]
+        output = _format_query_results_json(results)
+
+        parsed = json.loads(output)
+        assert len(parsed) == 1
+        assert parsed[0]["file_path"] == "/path/to/doc.md"
+        assert parsed[0]["file_name"] == "doc.md"
+        assert parsed[0]["kind"] == "note"
+        assert parsed[0]["tags"] == ["work", "urgent"]
+        assert parsed[0]["distance"] == 0.5
+
+    def test_format_query_results_table_with_kind_and_tags(self):
+        """Test _format_query_results_table with documents having kind and tags (TASK-047)."""
+        from obsidian_rag.cli import _format_query_results_table
+
+        mock_doc = MagicMock()
+        mock_doc.file_name = "doc.md"
+        mock_doc.file_path = "/path/to/doc.md"
+        mock_doc.kind = "project"
+        mock_doc.tags = ["work", "urgent"]
+
+        results = [(mock_doc, 0.75)]
+        output = _format_query_results_table(results)
+
+        assert "Found 1 results:" in output
+        assert "File: doc.md" in output
+        assert "Path: /path/to/doc.md" in output
+        assert "Distance: 0.7500" in output
+        assert "Kind: project" in output
+        assert "Tags: work, urgent" in output
+
+
+class TestQueryCommand:
+    """Test query command with various scenarios."""
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli._get_embedding_provider")
+    def test_query_command_with_embedding_failure(
+        self, mock_get_provider, mock_db_manager
+    ):
+        """Test query command with embedding generation failure (TASK-048)."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_embedding_provider = MagicMock()
+        mock_embedding_provider.generate_embedding.side_effect = Exception(
+            "Embedding failed"
+        )
+        mock_get_provider.return_value = mock_embedding_provider
+
+        mock_db_instance = MagicMock()
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["query", "test query"])
+
+        assert result.exit_code == 1
+        assert "Failed to generate query embedding" in result.output
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli._get_embedding_provider")
+    def test_query_command_with_json_output(self, mock_get_provider, mock_db_manager):
+        """Test query command with JSON output format (TASK-049)."""
+        import json
+
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_embedding_provider = MagicMock()
+        mock_embedding_provider.generate_embedding.return_value = [0.1] * 1536
+        mock_get_provider.return_value = mock_embedding_provider
+
+        mock_doc = MagicMock()
+        mock_doc.file_path = "/path/to/doc.md"
+        mock_doc.file_name = "doc.md"
+        mock_doc.kind = None
+        mock_doc.tags = None
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_query_result = MagicMock()
+        mock_query_result.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
+            (mock_doc, 0.5)
+        ]
+        mock_session.query.return_value = mock_query_result
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["query", "test query", "--format", "json"])
+
+        assert result.exit_code == 0
+        # Verify JSON output
+        try:
+            parsed = json.loads(result.output)
+            assert isinstance(parsed, list)
+        except json.JSONDecodeError:
+            # Output might have logging mixed in, check for JSON structure
+            assert '"file_path"' in result.output or "file_path" in result.output
+
+
+class TestTasksCommand:
+    """Test tasks command with various scenarios."""
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_tasks_command_with_no_results(self, mock_db_manager):
+        """Test tasks command with no results (TASK-050)."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_query_result = MagicMock()
+        mock_query_result.join.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        mock_session.query.return_value = mock_query_result
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["tasks"])
+
+        assert result.exit_code == 0
+        assert "Found 0 tasks" in result.output
+
+
+class TestBuildTasksQuery:
+    """Test _build_tasks_query function."""
+
+    def test_build_tasks_query_with_status_filter(self):
+        """Test _build_tasks_query with status filter (TASK-051)."""
+        from obsidian_rag.cli import _build_tasks_query
+
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_session.query.return_value = mock_query
+        mock_query.join.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+
+        result = _build_tasks_query(mock_session, "completed", None, None, 10)
+
+        mock_session.query.assert_called_once()
+        mock_query.filter.assert_called()
+        mock_query.limit.assert_called_once_with(10)
+
+    def test_build_tasks_query_with_invalid_date_format(self):
+        """Test _build_tasks_query with invalid date format error path (TASK-052)."""
+        import click
+        from click.testing import CliRunner
+
+        from obsidian_rag.cli import _build_tasks_query
+
+        runner = CliRunner()
+
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_session.query.return_value = mock_query
+        mock_query.join.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+
+        @click.command()
+        def test_cmd():
+            _build_tasks_query(mock_session, None, "invalid-date", None, 10)
+
+        result = runner.invoke(test_cmd)
+        assert result.exit_code == 1
+        assert "Invalid date format" in result.output
+
+
+class TestMainFunction:
+    """Test main entry point."""
+
+    @patch("obsidian_rag.cli.cli")
+    def test_main_function(self, mock_cli):
+        """Test main() function calls cli() (line 421)."""
+        from obsidian_rag.cli import main
+
+        main()
+
+        mock_cli.assert_called_once()

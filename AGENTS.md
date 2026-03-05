@@ -32,13 +32,21 @@ obsidian_rag/                    # Main package
 │   ├── server.py                # FastMCP server setup
 │   └── tools/                   # MCP tools
 │       ├── __init__.py
-│       ├── documents.py         # Document query tools
+│       ├── documents.py         # Document query tools (public API)
+│       ├── documents_filters.py # Property filter implementations
+│       ├── documents_params.py  # Filter parameter dataclasses
+│       ├── documents_postgres.py # PostgreSQL-specific queries
+│       ├── documents_sqlite.py  # SQLite-specific queries
+│       ├── documents_tags.py    # Tag filtering logic
 │       └── tasks.py             # Task query tools
-└── parsing/                     # Document parsing
+├── parsing/                     # Document parsing
+│   ├── __init__.py
+│   ├── frontmatter.py           # FrontMatter extraction
+│   ├── scanner.py               # File scanning
+│   └── tasks.py                 # Task parsing
+└── services/                    # Service layer
     ├── __init__.py
-    ├── frontmatter.py           # FrontMatter extraction
-    ├── scanner.py               # File scanning
-    └── tasks.py                 # Task parsing
+    └── ingestion.py             # Document ingestion service
 ```
 
 ## Requirements
@@ -78,11 +86,13 @@ Config file locations (searched in order):
 ## Development
 
 - All code must pass ruff linting
-- 100% test coverage on core modules (parsing, database engine, llm base/providers)
-- 95%+ coverage on config (environment variable edge cases)
-- 90%+ coverage on cli (error handling and defensive paths)
-- 72%+ coverage on mcp_server/server (tool bodies require MCP integration)
-- 79%+ coverage on mcp_server/tools/documents (PostgreSQL-specific code paths require integration testing)
+- 100% test coverage on core modules (parsing, database engine, llm base/providers, services/ingestion)
+- 97%+ coverage on config (environment variable interpolation branches)
+- 95%+ coverage on cli (error handling and edge cases)
+- 71%+ coverage on mcp_server/server (tool registration and logging functions)
+- 94%+ coverage on mcp_server/tools/documents (PostgreSQL-specific tag filtering requires integration testing)
+- 99%+ coverage on mcp_server/tools/documents_filters (single defensive branch)
+- 100% coverage on mcp_server/tools/documents_postgres, documents_sqlite, documents_tags, documents_params
 - All functions require type hints and docstrings
 - McCabe complexity max: 5
 - All source files under 1000 lines

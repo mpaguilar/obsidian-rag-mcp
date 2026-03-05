@@ -1,108 +1,52 @@
 """Document query tools for MCP server.
 
 All tools in this module are read-only and only use SELECT queries.
+
+This module serves as the public API that re-exports functions from
+dedicated submodules for PostgreSQL, SQLite, filters, and tags.
 """
 
+import fnmatch
 import logging
-import re
 from typing import TYPE_CHECKING
-
-from sqlalchemy import func, or_
 
 from obsidian_rag.database.models import Document
 from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
+    PropertyFilter,
+    TagFilter,
     TagListResponse,
-    create_document_response,
     _validate_limit,
     _validate_offset,
+    create_document_response,
 )
+from obsidian_rag.mcp_server.tools.documents_filters import validate_property_filters
+from obsidian_rag.mcp_server.tools.documents_params import (
+    DocumentQueryParams,
+    PaginationParams,
+    PropertyFilterParams,
+    PropertyQueryParams,
+    QueryFilterParams,
+    TagFilterParams,
+)
+from obsidian_rag.mcp_server.tools.documents_postgres import (
+    get_documents_by_property_postgresql,
+    query_documents_postgresql,
+)
+from obsidian_rag.mcp_server.tools.documents_sqlite import (
+    get_documents_by_property_sqlite,
+    query_documents_sqlite,
+)
+from obsidian_rag.mcp_server.tools.documents_tags import validate_tag_filter
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Query, Session
+    from sqlalchemy.orm import Session
 
 log = logging.getLogger(__name__)
 
-
-def query_documents(
-    session: "Session",
-    query_embedding: list[float],
-    limit: int = 20,
-    offset: int = 0,
-) -> DocumentListResponse:
-    """Semantic search over document content using vector similarity.
-
-    Args:
-        session: Database session.
-        query_embedding: Vector embedding of the query text.
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
-
-    Returns:
-        DocumentListResponse with results and pagination info.
-
-    Notes:
-        Uses cosine distance for similarity (lower is better).
-        Documents without embeddings are excluded.
-        For SQLite databases (used in testing), returns empty results since
-        pg_vector's cosine distance operator is not available.
-
-    """
-    _msg = "query_documents starting"
-    log.debug(_msg)
-
-    limit = _validate_limit(limit)
-    offset = _validate_offset(offset)
-
-    # Detect database dialect - PostgreSQL is required for vector operations
-    dialect = session.bind.dialect.name if session.bind else "unknown"
-
-    if dialect != "postgresql":
-        # For SQLite and other databases without pg_vector, return empty results
-        # since content_vector won't be populated with proper vector data
-        _msg = f"Vector similarity not supported for dialect: {dialect}"
-        log.debug(_msg)
-        return DocumentListResponse(
-            results=[],
-            total_count=0,
-            has_more=False,
-            next_offset=None,
-        )
-
-    # Build vector similarity query for PostgreSQL
-    # Using cosine distance - lower values indicate higher similarity
-    distance_expr = Document.content_vector.cosine_distance(query_embedding)
-
-    query = (
-        session.query(Document, distance_expr.label("distance"))
-        .filter(Document.content_vector.isnot(None))
-        .order_by(distance_expr.asc())
-    )
-
-    # Get total count of documents with embeddings
-    total_count = query.count()
-
-    # Get paginated results
-    results = query.offset(offset).limit(limit).all()
-
-    # Convert to response models
-    document_responses = [
-        create_document_response(doc, distance) for doc, distance in results
-    ]
-
-    # Calculate pagination
-    has_more = (offset + limit) < total_count
-    next_offset = offset + limit if has_more else None
-
-    _msg = "query_documents returning"
-    log.debug(_msg)
-
-    return DocumentListResponse(
-        results=document_responses,
-        total_count=total_count,
-        has_more=has_more,
-        next_offset=next_offset,
-    )
+# Maximum query complexity limits (re-exported for backward compatibility)
+MAX_PROPERTY_FILTERS = 10
+MAX_TAGS_PER_QUERY = 50
 
 
 def _get_relative_path(file_path: str, vault_root: str | None) -> str:
@@ -152,160 +96,138 @@ def _glob_to_like(pattern: str) -> str:
     return result
 
 
-def _has_tags(doc: Document, search_tag: str) -> bool:
-    """Check if document has a matching tag (case-insensitive substring).
-
-    Args:
-        doc: Document to check.
-        search_tag: Tag to search for (lowercase).
-
-    Returns:
-        True if document has a matching tag.
-
-    """
-    if doc.tags is None:
-        return False
-    for t in doc.tags:
-        if search_tag in t.lower():
-            return True
-    return False
-
-
-def _is_untagged(doc: Document) -> bool:
-    """Check if document has no tags.
-
-    Args:
-        doc: Document to check.
-
-    Returns:
-        True if document has no tags or empty tags.
-
-    """
-    return doc.tags is None or len(doc.tags) == 0
-
-
-def _matches_glob(tag: str, pattern: str) -> bool:
-    """Check if tag matches glob pattern.
-
-    Args:
-        tag: Tag to check.
-        pattern: Glob pattern (supports *, ?, [abc]).
-
-    Returns:
-        True if tag matches pattern.
-
-    Notes:
-        Uses fnmatch for glob pattern matching.
-
-    """
-    import fnmatch
-
-    return fnmatch.fnmatch(tag.lower(), pattern.lower())
-
-
-def _apply_postgresql_tag_filter(
-    query: "Query[Document]",
-    tag: str | None,
-    include_untagged: bool,
-):
-    """Apply PostgreSQL-specific tag filtering.
-
-    Args:
-        query: SQLAlchemy query object.
-        tag: Tag to filter by.
-        include_untagged: Whether to include untagged documents.
-
-    Returns:
-        Filtered query.
-
-    """
-    if tag is None and not include_untagged:
-        return query
-
-    if tag is not None:
-        search_tag = tag.lower()
-        tag_filter = func.lower(Document.tags).contains(search_tag)
-        untagged_filter = or_(
-            Document.tags.is_(None),
-            func.array_length(Document.tags, 1) == 0,
-        )
-        query = query.filter(
-            or_(tag_filter, untagged_filter) if include_untagged else tag_filter
-        )
-    elif include_untagged:
-        query = query.filter(
-            or_(
-                Document.tags.is_(None),
-                func.array_length(Document.tags, 1) == 0,
-            )
-        )
-
-    return query
-
-
-def _should_include_doc(doc: Document, tag: str | None, include_untagged: bool) -> bool:
-    """Check if document should be included based on tag filters.
-
-    Args:
-        doc: Document to check.
-        tag: Tag to filter by.
-        include_untagged: Whether to include untagged documents.
-
-    Returns:
-        True if document should be included.
-
-    """
-    if tag is None:
-        return include_untagged and _is_untagged(doc)
-
-    has_tag = _has_tags(doc, tag.lower())
-    if include_untagged:
-        return has_tag or _is_untagged(doc)
-    return has_tag
-
-
-def _filter_docs_python(
-    all_docs: list[Document],
-    tag: str | None,
-    include_untagged: bool,
-) -> list[Document]:
-    """Filter documents using Python logic.
-
-    Args:
-        all_docs: List of documents to filter.
-        tag: Tag to filter by.
-        include_untagged: Whether to include untagged documents.
-
-    Returns:
-        Filtered list of documents.
-
-    """
-    if tag is None and not include_untagged:
-        return all_docs
-
-    return [doc for doc in all_docs if _should_include_doc(doc, tag, include_untagged)]
-
-
-def get_documents_by_tag(  # noqa: PLR0913
-    session: "Session",
-    tag: str | None,
-    vault_root: str | None,
-    include_untagged: bool,
-    limit: int,
+def _build_document_list_response(
+    results: list[Document],
+    total_count: int,
     offset: int,
+    limit: int,
 ) -> DocumentListResponse:
-    """Query documents filtered by tag.
+    """Build DocumentListResponse from query results.
+
+    Args:
+        results: List of Document objects.
+        total_count: Total number of matching documents.
+        offset: Current offset.
+        limit: Current limit.
+
+    Returns:
+        DocumentListResponse with results and pagination info.
+
+    """
+    document_responses = []
+    for doc in results:
+        relative_path = _get_relative_path(doc.file_path, doc.vault_root)
+        doc_response = create_document_response(doc, 0.0)
+        doc_response.file_path = relative_path
+        document_responses.append(doc_response)
+
+    has_more = (offset + limit) < total_count
+    next_offset = offset + limit if has_more else None
+
+    return DocumentListResponse(
+        results=document_responses,
+        total_count=total_count,
+        has_more=has_more,
+        next_offset=next_offset,
+    )
+
+
+def query_documents(
+    session: "Session",
+    query_embedding: list[float],
+    property_filters_include: list[PropertyFilter] | None = None,
+    property_filters_exclude: list[PropertyFilter] | None = None,
+    tag_filter: TagFilter | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> DocumentListResponse:
+    """Semantic search over document content with optional property and tag filters.
 
     Args:
         session: Database session.
-        tag: Tag to filter by (optional, case-insensitive substring match).
-        vault_root: Filter by specific vault root path (optional).
-        include_untagged: Include documents with no tags when True.
+        query_embedding: Vector embedding of the query text.
+        property_filters_include: Property filters to include (AND logic).
+        property_filters_exclude: Property filters to exclude (OR logic).
+        tag_filter: Tag filter with include/exclude lists.
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
 
     Returns:
         DocumentListResponse with results and pagination info.
+
+    Raises:
+        ValueError: If filter validation fails.
+
+    Notes:
+        Uses cosine distance for similarity (lower is better).
+        Documents without embeddings are excluded.
+        For SQLite databases, filtering is done in Python.
+
+    """
+    _msg = "query_documents starting"
+    log.debug(_msg)
+
+    limit = _validate_limit(limit)
+    offset = _validate_offset(offset)
+
+    validate_property_filters(property_filters_include)
+    validate_property_filters(property_filters_exclude)
+    validate_tag_filter(tag_filter)
+
+    dialect = session.bind.dialect.name if session.bind else "unknown"
+    is_postgresql = dialect == "postgresql"
+
+    # Build filter parameters
+    property_filter_params = PropertyFilterParams(
+        include_filters=property_filters_include,
+        exclude_filters=property_filters_exclude,
+    )
+    tag_filter_params = TagFilterParams(tag_filter=tag_filter)
+    filter_params = QueryFilterParams(
+        property_filters=property_filter_params,
+        tag_params=tag_filter_params,
+    )
+    pagination = PaginationParams(limit=limit, offset=offset)
+    query_params = DocumentQueryParams(
+        session=session,
+        query_embedding=query_embedding,
+        filter_params=filter_params,
+        pagination=pagination,
+    )
+
+    if not is_postgresql:
+        result = query_documents_sqlite(query_params)
+        _msg = "query_documents returning (SQLite path)"
+        log.debug(_msg)
+        return result
+
+    result = query_documents_postgresql(query_params)
+    _msg = "query_documents returning"
+    log.debug(_msg)
+    return result
+
+
+def get_documents_by_tag(
+    session: "Session",
+    tag_filter: TagFilter,
+    vault_root: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> DocumentListResponse:
+    """Query documents filtered by tags with include/exclude semantics.
+
+    Args:
+        session: Database session.
+        tag_filter: Tag filter with include/exclude lists.
+        vault_root: Filter by specific vault root path (optional).
+        limit: Maximum number of results (default: 20, max: 100).
+        offset: Number of results to skip (default: 0).
+
+    Returns:
+        DocumentListResponse with results and pagination info.
+
+    Raises:
+        ValueError: If tag filter validation fails.
 
     Notes:
         Tag matching is case-insensitive substring match.
@@ -320,6 +242,9 @@ def get_documents_by_tag(  # noqa: PLR0913
     limit = _validate_limit(limit)
     offset = _validate_offset(offset)
 
+    # Validate tag filter
+    validate_tag_filter(tag_filter)
+
     dialect = session.bind.dialect.name if session.bind else "unknown"
     is_postgresql = dialect == "postgresql"
 
@@ -329,14 +254,20 @@ def get_documents_by_tag(  # noqa: PLR0913
         query = query.filter(Document.vault_root == vault_root)
 
     if is_postgresql:
-        query = _apply_postgresql_tag_filter(query, tag, include_untagged)
+        from obsidian_rag.mcp_server.tools.documents_tags import (
+            apply_postgresql_tag_filter,
+        )
+
+        query = apply_postgresql_tag_filter(query, tag_filter)
         query = query.order_by(Document.file_name)
         total_count = query.count()
         results = query.offset(offset).limit(limit).all()
     else:
+        from obsidian_rag.mcp_server.tools.documents_tags import matches_tag_filter
+
         query = query.order_by(Document.file_name)
         all_docs = query.all()
-        filtered_docs = _filter_docs_python(all_docs, tag, include_untagged)
+        filtered_docs = [doc for doc in all_docs if matches_tag_filter(doc, tag_filter)]
         total_count = len(filtered_docs)
         results = filtered_docs[offset : offset + limit]
 
@@ -361,6 +292,77 @@ def get_documents_by_tag(  # noqa: PLR0913
     )
 
 
+def get_documents_by_property(
+    session: "Session",
+    include_properties: list[PropertyFilter] | None = None,
+    exclude_properties: list[PropertyFilter] | None = None,
+    tag_filter: TagFilter | None = None,
+    vault_root: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> DocumentListResponse:
+    """Query documents filtered by frontmatter properties.
+
+    Args:
+        session: Database session.
+        include_properties: Property filters to include (AND logic within list).
+        exclude_properties: Property filters to exclude (OR logic within list).
+        tag_filter: Optional tag filter to also apply.
+        vault_root: Filter by specific vault root path (optional).
+        limit: Maximum number of results (default: 20, max: 100).
+        offset: Number of results to skip (default: 0).
+
+    Returns:
+        DocumentListResponse with results and pagination info.
+
+    Raises:
+        ValueError: If property filter validation fails.
+
+    Notes:
+        Property paths use dot notation (e.g., "author.name").
+        Supported operators: equals, contains, exists, in, starts_with, regex.
+        For SQLite databases, filtering is done in Python.
+
+    """
+    _msg = "get_documents_by_property starting"
+    log.debug(_msg)
+
+    limit = _validate_limit(limit)
+    offset = _validate_offset(offset)
+
+    validate_property_filters(include_properties)
+    validate_property_filters(exclude_properties)
+    validate_tag_filter(tag_filter)
+
+    dialect = session.bind.dialect.name if session.bind else "unknown"
+    is_postgresql = dialect == "postgresql"
+
+    # Build query parameters
+    property_filters = PropertyFilterParams(
+        include_filters=include_properties,
+        exclude_filters=exclude_properties,
+    )
+    tag_params = TagFilterParams(tag_filter=tag_filter)
+    pagination = PaginationParams(limit=limit, offset=offset)
+    query_params = PropertyQueryParams(
+        session=session,
+        property_filters=property_filters,
+        tag_params=tag_params,
+        vault_root=vault_root,
+        pagination=pagination,
+    )
+
+    if is_postgresql:
+        results, total_count = get_documents_by_property_postgresql(query_params)
+    else:
+        results, total_count = get_documents_by_property_sqlite(query_params)
+
+    _msg = "get_documents_by_property returning"
+    log.debug(_msg)
+
+    return _build_document_list_response(results, total_count, offset, limit)
+
+
 def _extract_tags_postgresql(session: "Session", pattern: str | None) -> list[str]:
     """Extract tags using PostgreSQL UNNEST function.
 
@@ -372,6 +374,8 @@ def _extract_tags_postgresql(session: "Session", pattern: str | None) -> list[st
         Sorted list of unique tags.
 
     """
+    from sqlalchemy import func
+
     tags_query = session.query(
         func.distinct(func.unnest(Document.tags)).label("tag")
     ).filter(Document.tags.isnot(None))
@@ -406,6 +410,8 @@ def _extract_tags_sqlite(session: "Session", pattern: str | None) -> list[str]:
                 unique_tags.add(tag)
 
     if pattern is not None:
+        from obsidian_rag.mcp_server.tools.documents_tags import _matches_glob
+
         unique_tags = {t for t in unique_tags if _matches_glob(t, pattern)}
 
     return sorted(unique_tags)

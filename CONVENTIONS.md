@@ -201,6 +201,8 @@ async def dashboard(request: Request) -> HTMLResponse:
 * **100% test coverage is required, including branch coverage**
     * Run with: `pytest --cov=myapp --cov-branch --cov-report=term-missing`
     * All code paths and branches must be tested
+    * There are no exceptions
+    * When writing code, priority should be given to testability.
 * IMPORTANT: Do not use duplicate file names for tests, even in separate paths. This causes errors.
     * All test files **must** have unique filenames
 

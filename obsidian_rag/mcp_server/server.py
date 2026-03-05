@@ -2,9 +2,10 @@
 
 import logging
 import os
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, TypedDict, cast
 
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
@@ -18,9 +19,15 @@ from starlette.responses import JSONResponse
 from obsidian_rag.config import Settings
 from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.llm.base import EmbeddingProvider, ProviderFactory
-from obsidian_rag.mcp_server.models import HealthResponse
+from obsidian_rag.mcp_server.models import (
+    HealthResponse,
+    PropertyFilter,
+    TagFilter,
+)
+from obsidian_rag.services.ingestion import IngestionService
 from obsidian_rag.mcp_server.tools.documents import (
     get_all_tags as get_all_tags_tool,
+    get_documents_by_property as get_documents_by_property_tool,
     get_documents_by_tag as get_documents_by_tag_tool,
     query_documents as query_documents_tool,
 )
@@ -35,14 +42,23 @@ from obsidian_rag.mcp_server.tools.tasks import (
 class DocumentTagParams(TypedDict, total=False):
     """Parameters for get_documents_by_tag tool."""
 
-    tag: str | None
+    include_tags: list[str]
+    exclude_tags: list[str]
+    match_mode: str
     vault_root: str | None
-    include_untagged: bool
     limit: int
     offset: int
 
 
-from obsidian_rag.parsing.scanner import scan_markdown_files
+@dataclass
+class QueryFilterParams:
+    """Parameters for query_documents filter configuration."""
+
+    include_properties: list[dict] | None
+    exclude_properties: list[dict] | None
+    include_tags: list[str] | None
+    exclude_tags: list[str] | None
+
 
 log = logging.getLogger(__name__)
 
@@ -163,18 +179,26 @@ def _get_documents_by_tag_handler(
 
     Args:
         db_manager: Database manager for sessions.
-        params: Dictionary with tag, vault_root, include_untagged, limit, offset.
+        params: Dictionary with include_tags, exclude_tags, match_mode, vault_root, limit, offset.
 
     Returns:
         Document list response as dictionary.
 
     """
+    # Create TagFilter from params with proper type casting
+    match_mode_value = params.get("match_mode", "all")
+    match_mode_casted = cast(Literal["all", "any"], match_mode_value)
+    tag_filter = TagFilter(
+        include_tags=params.get("include_tags", []),
+        exclude_tags=params.get("exclude_tags", []),
+        match_mode=match_mode_casted,
+    )
+
     with db_manager.get_session() as session:
         result = get_documents_by_tag_tool(
             session=session,
-            tag=params.get("tag"),
+            tag_filter=tag_filter,
             vault_root=params.get("vault_root"),
-            include_untagged=params.get("include_untagged", False),
             limit=params.get("limit", 20),
             offset=params.get("offset", 0),
         )
@@ -198,17 +222,55 @@ def _get_all_tags_handler(
         return result.model_dump()
 
 
+def _convert_property_filters(
+    properties: list[dict] | None,
+) -> list[PropertyFilter] | None:
+    """Convert list of dict property filters to PropertyFilter objects.
+
+    Args:
+        properties: List of property filter dicts.
+
+    Returns:
+        List of PropertyFilter objects or None.
+
+    """
+    if not properties:
+        return None
+    return [PropertyFilter(**prop) for prop in properties]
+
+
+def _create_tag_filter(
+    include_tags: list[str] | None,
+    exclude_tags: list[str] | None,
+    match_mode: str,
+) -> TagFilter | None:
+    """Build TagFilter from parameters.
+
+    Args:
+        include_tags: List of tags documents must have.
+        exclude_tags: List of tags documents must NOT have.
+        match_mode: Whether to match "all" or "any" of include_tags.
+
+    Returns:
+        TagFilter or None if no tags specified.
+
+    """
+    if not include_tags and not exclude_tags:
+        return None
+
+    valid_match_mode = match_mode if match_mode in ("all", "any") else "all"
+    return TagFilter(
+        include_tags=include_tags or [],
+        exclude_tags=exclude_tags or [],
+        match_mode=cast(Literal["all", "any"], valid_match_mode),
+    )
+
+
 def _register_task_tools(
     mcp: FastMCP,
     db_manager: DatabaseManager,
 ) -> None:
-    """Register task-related tools.
-
-    Args:
-        mcp: FastMCP server instance.
-        db_manager: Database manager for sessions.
-
-    """
+    """Register task-related tools."""
 
     @mcp.tool()
     def get_incomplete_tasks(
@@ -259,30 +321,28 @@ def _register_task_tools(
         return _get_completed_tasks_handler(db_manager, limit, offset, completed_since)
 
 
-def _register_document_tools(
+def _register_query_documents_tool(
     mcp: FastMCP,
     db_manager: DatabaseManager,
     embedding_provider: EmbeddingProvider | None,
 ) -> None:
-    """Register document-related tools.
-
-    Args:
-        mcp: FastMCP server instance.
-        db_manager: Database manager for sessions.
-        embedding_provider: Embedding provider for semantic search.
-
-    """
+    """Register query_documents tool."""
 
     @mcp.tool()
     def query_documents(
         query: str,
+        filters: QueryFilterParams | None = None,
+        tag_match_mode: str = "all",
         limit: int = 20,
         offset: int = 0,
     ) -> dict[str, object]:
-        """Semantic search over document content.
+        """Semantic search over document content with optional filters.
 
         Args:
             query: Search query text.
+            filters: QueryFilterParams with include_properties, exclude_properties,
+                include_tags, exclude_tags.
+            tag_match_mode: Whether document must have ALL or ANY of include_tags.
             limit: Maximum number of results (default: 20, max: 100).
             offset: Number of results to skip (default: 0).
 
@@ -291,6 +351,7 @@ def _register_document_tools(
 
         Raises:
             RuntimeError: If embedding provider is not available.
+            ValueError: If filter validation fails.
 
         """
         _msg = f"Tool query_documents called with query: {query[:50]}..."
@@ -303,29 +364,58 @@ def _register_document_tools(
 
         query_embedding = embedding_provider.generate_embedding(query)
 
+        filters = filters or QueryFilterParams(
+            include_properties=None,
+            exclude_properties=None,
+            include_tags=None,
+            exclude_tags=None,
+        )
+
+        prop_filters_include = _convert_property_filters(
+            filters.get("include_properties")
+        )
+        prop_filters_exclude = _convert_property_filters(
+            filters.get("exclude_properties")
+        )
+        tag_filter = _create_tag_filter(
+            filters.get("include_tags"),
+            filters.get("exclude_tags"),
+            tag_match_mode,
+        )
+
         with db_manager.get_session() as session:
             result = query_documents_tool(
                 session=session,
                 query_embedding=query_embedding,
+                property_filters_include=prop_filters_include,
+                property_filters_exclude=prop_filters_exclude,
+                tag_filter=tag_filter,
                 limit=limit,
                 offset=offset,
             )
             return result.model_dump()
 
+
+def _register_get_documents_by_tag_tool(
+    mcp: FastMCP,
+    db_manager: DatabaseManager,
+) -> None:
+    """Register get_documents_by_tag tool."""
+
     @mcp.tool()
     def get_documents_by_tag(
-        tag: str | None = None,
+        filters: QueryFilterParams | None = None,
+        tag_match_mode: str = "all",
         vault_root: str | None = None,
-        include_untagged: bool = False,
         limit: int = 20,
         offset: int = 0,
     ) -> dict[str, object]:
-        """Query documents filtered by tag.
+        """Query documents filtered by tags with include/exclude semantics.
 
         Args:
-            tag: Tag to filter by (optional, case-insensitive substring match).
+            filters: QueryFilterParams with include_tags, exclude_tags.
+            tag_match_mode: Whether document must have ALL or ANY of include_tags.
             vault_root: Filter by specific vault root path (optional).
-            include_untagged: Include documents with no tags when True.
             limit: Maximum number of results (default: 20, max: 100).
             offset: Number of results to skip (default: 0).
 
@@ -333,16 +423,99 @@ def _register_document_tools(
             Document list response with pagination and relative paths.
 
         """
-        _msg = f"Tool get_documents_by_tag called with tag: {tag}"
+        _msg = f"Tool get_documents_by_tag called"
         log.info(_msg)
+
+        filters = filters or QueryFilterParams(
+            include_properties=None,
+            exclude_properties=None,
+            include_tags=None,
+            exclude_tags=None,
+        )
+
+        valid_match_mode = tag_match_mode if tag_match_mode in ("all", "any") else "all"
         params: DocumentTagParams = {
-            "tag": tag,
+            "include_tags": filters.get("include_tags") or [],
+            "exclude_tags": filters.get("exclude_tags") or [],
+            "match_mode": valid_match_mode,
             "vault_root": vault_root,
-            "include_untagged": include_untagged,
             "limit": limit,
             "offset": offset,
         }
         return _get_documents_by_tag_handler(db_manager, params)
+
+
+def _register_get_documents_by_property_tool(
+    mcp: FastMCP,
+    db_manager: DatabaseManager,
+) -> None:
+    """Register get_documents_by_property tool."""
+
+    @mcp.tool()
+    def get_documents_by_property(
+        filters: QueryFilterParams | None = None,
+        tag_match_mode: str = "all",
+        vault_root: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """Query documents filtered by frontmatter properties.
+
+        Args:
+            filters: QueryFilterParams with include_properties, exclude_properties,
+                include_tags, exclude_tags.
+            tag_match_mode: Whether document must have ALL or ANY of include_tags.
+            vault_root: Filter by specific vault root path (optional).
+            limit: Maximum number of results (default: 20, max: 100).
+            offset: Number of results to skip (default: 0).
+
+        Returns:
+            Document list response with pagination and relative paths.
+
+        Raises:
+            ValueError: If property filter validation fails.
+
+        """
+        _msg = f"Tool get_documents_by_property called"
+        log.info(_msg)
+
+        filters = filters or QueryFilterParams(
+            include_properties=None,
+            exclude_properties=None,
+            include_tags=None,
+            exclude_tags=None,
+        )
+
+        prop_filters_include = _convert_property_filters(
+            filters.get("include_properties")
+        )
+        prop_filters_exclude = _convert_property_filters(
+            filters.get("exclude_properties")
+        )
+        tag_filter = _create_tag_filter(
+            filters.get("include_tags"),
+            filters.get("exclude_tags"),
+            tag_match_mode,
+        )
+
+        with db_manager.get_session() as session:
+            result = get_documents_by_property_tool(
+                session=session,
+                include_properties=prop_filters_include,
+                exclude_properties=prop_filters_exclude,
+                tag_filter=tag_filter,
+                vault_root=vault_root,
+                limit=limit,
+                offset=offset,
+            )
+            return result.model_dump()
+
+
+def _register_get_all_tags_tool(
+    mcp: FastMCP,
+    db_manager: DatabaseManager,
+) -> None:
+    """Register get_all_tags tool."""
 
     @mcp.tool()
     def get_all_tags(
@@ -367,20 +540,20 @@ def _register_document_tools(
         return _get_all_tags_handler(db_manager, pattern, limit, offset)
 
 
+def _register_document_tools(
+    mcp: FastMCP,
+    db_manager: DatabaseManager,
+    embedding_provider: EmbeddingProvider | None,
+) -> None:
+    """Register document-related tools."""
+    _register_query_documents_tool(mcp, db_manager, embedding_provider)
+    _register_get_documents_by_tag_tool(mcp, db_manager)
+    _register_get_documents_by_property_tool(mcp, db_manager)
+    _register_get_all_tags_tool(mcp, db_manager)
+
+
 def _validate_ingest_path(ingest_path: str) -> Path:
-    """Validate the ingest path.
-
-    Args:
-        ingest_path: Path to validate.
-
-    Returns:
-        Validated Path object.
-
-    Raises:
-        ValueError: If path is invalid or inaccessible.
-
-    """
-    # Validate path is absolute
+    """Validate the ingest path."""
     if ".." in ingest_path:
         _msg = "Path cannot contain parent directory references (..)"
         log.error(_msg)
@@ -388,13 +561,11 @@ def _validate_ingest_path(ingest_path: str) -> Path:
 
     path = Path(ingest_path)
 
-    # Check if path exists
     if not path.exists():
         _msg = f"Data directory '{ingest_path}' does not exist. Please ensure the volume is mounted."
         log.error(_msg)
         raise ValueError(_msg)
 
-    # Check if path is a directory
     if not path.is_dir():
         _msg = f"Path '{ingest_path}' exists but is not a directory"
         log.error(_msg)
@@ -403,147 +574,63 @@ def _validate_ingest_path(ingest_path: str) -> Path:
     return path
 
 
-def _scan_files_for_ingest(path: Path) -> list:
-    """Scan directory for markdown files.
-
-    Args:
-        path: Directory path to scan.
-
-    Returns:
-        List of files found.
-
-    Raises:
-        ValueError: If scanning fails.
-
-    """
-    try:
-        return scan_markdown_files(path)
-    except PermissionError as e:
-        _msg = f"Permission denied accessing data directory: {e}"
-        log.exception(_msg)
-        raise ValueError(_msg) from e
-    except Exception as e:
-        _msg = f"Error scanning data directory: {e}"
-        log.exception(_msg)
-        raise ValueError(_msg) from e
-
-
 def _ingest_handler(
     settings: Settings,
+    db_manager: DatabaseManager,
+    embedding_provider: EmbeddingProvider | None,
     path_override: str | None,
 ) -> dict[str, object]:
-    """Handle ingest tool call.
-
-    Args:
-        settings: Application settings.
-        path_override: Optional path override from tool call.
-
-    Returns:
-        Dictionary with ingestion statistics.
-
-    Raises:
-        ValueError: If path is invalid or inaccessible.
-
-    """
+    """Handle ingest tool call."""
     _msg = "ingest handler starting"
     log.debug(_msg)
 
-    # Determine the path to use
     ingest_path = path_override if path_override else settings.mcp.ingest_path
-
-    # Validate path
     path = _validate_ingest_path(ingest_path)
 
-    # Scan for markdown files
-    files = _scan_files_for_ingest(path)
-    total = len(files)
+    ingestion_service = IngestionService(
+        db_manager=db_manager,
+        embedding_provider=embedding_provider,
+        settings=settings,
+    )
 
-    if total == 0:
-        return {
-            "total": 0,
-            "new": 0,
-            "updated": 0,
-            "unchanged": 0,
-            "errors": 0,
-            "message": "No markdown files found in data directory",
-        }
+    result = ingestion_service.ingest_vault(
+        vault_path=path,
+        dry_run=False,
+    )
 
-    # Return statistics (actual ingestion would require more refactoring)
-    _msg = f"ingest handler found {total} files"
+    _msg = f"ingest handler completed: {result.message}"
     log.info(_msg)
 
-    return {
-        "total": total,
-        "new": 0,
-        "updated": 0,
-        "unchanged": total,
-        "errors": 0,
-        "message": f"Found {total} markdown files. Use CLI ingest for processing.",
-    }
+    return result.to_dict()
 
 
 def _register_ingest_tools(
     mcp: FastMCP,
     settings: Settings,
+    db_manager: DatabaseManager,
+    embedding_provider: EmbeddingProvider | None,
 ) -> None:
-    """Register ingest-related tools.
-
-    Args:
-        mcp: FastMCP server instance.
-        settings: Application settings.
-
-    """
+    """Register ingest-related tools."""
 
     @mcp.tool()
     def ingest(
         path: str | None = None,
     ) -> dict[str, object]:
-        """Check data directory and return ingestion statistics.
-
-        Args:
-            path: Optional path override (uses config default if not provided).
-
-        Returns:
-            Dictionary with statistics:
-            - total: Total files found
-            - new: New files (0 - use CLI for processing)
-            - updated: Updated files (0 - use CLI for processing)
-            - unchanged: Unchanged files
-            - errors: Number of errors
-            - message: Status message
-
-        Raises:
-            ValueError: If data directory doesn't exist or is inaccessible.
-
-        """
+        """Ingest markdown files from the data directory into the database."""
         _msg = f"Tool ingest called with path: {path}"
         log.info(_msg)
-        return _ingest_handler(settings, path)
+        return _ingest_handler(settings, db_manager, embedding_provider, path)
 
 
 def _register_health_check(
     mcp: FastMCP,
     db_manager: DatabaseManager,
 ) -> None:
-    """Register health check endpoint.
-
-    Args:
-        mcp: FastMCP server instance.
-        db_manager: Database manager for sessions.
-
-    """
+    """Register health check endpoint."""
 
     @mcp.custom_route("/health", methods=["GET"])
     async def health_check(_request: Request) -> JSONResponse:
-        """Health check endpoint.
-
-        Args:
-            _request: The incoming request (unused but required by FastMCP).
-
-        Returns:
-            Health status response as JSON.
-
-        """
+        """Health check endpoint."""
         _msg = "Health check called"
         log.debug(_msg)
 
@@ -568,18 +655,7 @@ def _register_health_check(
 
 
 def create_mcp_server(settings: Settings) -> FastMCP:
-    """Create and configure the FastMCP server.
-
-    Args:
-        settings: Application settings.
-
-    Returns:
-        Configured FastMCP server instance.
-
-    Raises:
-        ValueError: If MCP token is not configured.
-
-    """
+    """Create and configure the FastMCP server."""
     _msg = "Creating MCP server"
     log.info(_msg)
 
@@ -588,8 +664,6 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         log.error(_msg)
         raise ValueError(_msg)
 
-    # Configure static bearer token authentication
-    # StaticTokenVerifier accepts a dict mapping tokens to their claims
     token_verifier = StaticTokenVerifier(
         tokens={
             settings.mcp.token: {
@@ -605,7 +679,7 @@ def create_mcp_server(settings: Settings) -> FastMCP:
 
     _register_task_tools(mcp, db_manager)
     _register_document_tools(mcp, db_manager, embedding_provider)
-    _register_ingest_tools(mcp, settings)
+    _register_ingest_tools(mcp, settings, db_manager, embedding_provider)
 
     if settings.mcp.enable_health_check:
         _register_health_check(mcp, db_manager)
@@ -617,21 +691,12 @@ def create_mcp_server(settings: Settings) -> FastMCP:
 
 
 def create_http_app(settings: Settings) -> Starlette:
-    """Create HTTP ASGI app for the MCP server.
-
-    Args:
-        settings: Application settings.
-
-    Returns:
-        ASGI app with CORS middleware.
-
-    """
+    """Create HTTP ASGI app for the MCP server."""
     _msg = "Creating HTTP app"
     log.info(_msg)
 
     mcp = create_mcp_server(settings)
 
-    # Configure CORS middleware with MCP-specific headers for browser clients
     middleware = [
         Middleware(
             CORSMiddleware,
