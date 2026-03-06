@@ -138,6 +138,18 @@ def _replace_env_var(match: re.Match) -> str:
 
 
 @overload
+def _interpolate_env_vars(value: None) -> None: ...
+
+
+@overload
+def _interpolate_env_vars(value: int) -> int: ...
+
+
+@overload
+def _interpolate_env_vars(value: float) -> float: ...
+
+
+@overload
 def _interpolate_env_vars(value: str) -> str: ...
 
 
@@ -150,8 +162,8 @@ def _interpolate_env_vars(value: list[Any]) -> list[Any]: ...
 
 
 def _interpolate_env_vars(
-    value: str | dict[str, Any] | list[Any],
-) -> str | dict[str, Any] | list[Any]:
+    value: str | dict[str, Any] | list[Any] | int | float | None,
+) -> str | dict[str, Any] | list[Any] | int | float | None:
     """Interpolate environment variables in configuration values.
 
     Supports ${VAR} and ${VAR:-default} syntax.
@@ -167,20 +179,22 @@ def _interpolate_env_vars(
     log.debug(_msg)
     if isinstance(value, str):
         pattern = r"\$\{([^}]+)\}"
-        result = re.sub(pattern, _replace_env_var, value)
+        str_result = re.sub(pattern, _replace_env_var, value)
         _msg = "_interpolate_env_vars returning"
         log.debug(_msg)
-        return result
+        return str_result
     if isinstance(value, dict):
-        result = {k: _interpolate_env_vars(v) for k, v in value.items()}
+        dict_result: dict[str, Any] = {
+            k: _interpolate_env_vars(v) for k, v in value.items()
+        }
         _msg = "_interpolate_env_vars returning"
         log.debug(_msg)
-        return result
+        return dict_result
     if isinstance(value, list):
-        result = [_interpolate_env_vars(item) for item in value]
+        list_result: list[Any] = [_interpolate_env_vars(item) for item in value]
         _msg = "_interpolate_env_vars returning"
         log.debug(_msg)
-        return result
+        return list_result
     _msg = "_interpolate_env_vars returning"
     log.debug(_msg)
     return value
@@ -270,7 +284,7 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
 
     def get_field_value(
         self,
-        field: FieldInfo,
+        field: FieldInfo | None,
         field_name: str,
     ) -> tuple[Any, str, bool]:  # noqa: ARG002
         """Get field value from YAML config.
@@ -447,7 +461,7 @@ class Settings(BaseSettings):
         self,
         *,
         verbose: bool = False,
-        **kwargs: str | int | float | bool | None,
+        **kwargs: Any,
     ) -> None:
         """Initialize settings with merged configuration.
 
@@ -618,7 +632,7 @@ class Settings(BaseSettings):
         return self
 
 
-def get_settings(**kwargs: str | int | float | bool | None) -> Settings:
+def get_settings(**kwargs: Any) -> Settings:
     """Get application settings instance.
 
     Args:

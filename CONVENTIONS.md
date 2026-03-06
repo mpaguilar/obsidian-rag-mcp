@@ -302,6 +302,16 @@ uv run ruff check --fix
 uv run ruff check myapp/app/models.py
 ```
 
+Run mypy for type checking:
+
+```bash
+# Run mypy on all source files
+python -m mypy obsidian_rag/ tests/
+
+# Run mypy with pytest (includes coverage)
+python -m pytest tests/ --cov=obsidian_rag --cov-branch --cov-report=term-missing --mypy
+```
+
 Always run quality checks before committing to ensure code standards are met.
 
 ## noqa Policy

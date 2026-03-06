@@ -32,6 +32,32 @@ def _serialize_for_json(obj: object) -> object:
     return obj
 
 
+def _serialize_dict_for_json(obj: dict[str, Any]) -> dict[str, Any]:
+    """Serialize a dictionary for JSON storage.
+
+    Converts date and datetime objects to ISO format strings.
+    Recursively handles dictionaries and lists.
+
+    Args:
+        obj: The dictionary to serialize.
+
+    Returns:
+        JSON-serializable dictionary.
+
+    """
+    result: dict[str, Any] = {}
+    for k, v in obj.items():
+        if isinstance(v, (date, datetime)):
+            result[k] = v.isoformat()
+        elif isinstance(v, dict):
+            result[k] = _serialize_dict_for_json(v)
+        elif isinstance(v, list):
+            result[k] = [_serialize_for_json(item) for item in v]
+        else:
+            result[k] = v
+    return result
+
+
 # Pattern to match YAML frontmatter: --- at start of file
 FRONTMATTER_PATTERN = re.compile(
     r"^---\s*\n(.*?)\n---\s*\n",
@@ -70,14 +96,17 @@ def extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     yaml_content = match.group(1)
     remaining_content = content[match.end() :]
 
+    frontmatter: dict[str, Any]
     try:
-        frontmatter = yaml.safe_load(yaml_content)
-        if frontmatter is None:
+        loaded = yaml.safe_load(yaml_content)
+        if loaded is None:
             frontmatter = {}
-        elif not isinstance(frontmatter, dict):
-            _msg = f"FrontMatter is not a dictionary, got {type(frontmatter)}"
+        elif not isinstance(loaded, dict):
+            _msg = f"FrontMatter is not a dictionary, got {type(loaded)}"
             log.warning(_msg)
             frontmatter = {}
+        else:
+            frontmatter = loaded
     except yaml.YAMLError as e:
         _msg = f"Failed to parse FrontMatter YAML: {e}"
         log.warning(_msg)
@@ -107,7 +136,7 @@ def _deduplicate_tags(tag_list: list[str]) -> list[str]:
     return normalized
 
 
-def normalize_tags(tags: str | list[str] | None) -> list[str] | None:
+def normalize_tags(tags: object) -> list[str] | None:
     """Normalize tags to a list of strings.
 
     Args:
@@ -189,7 +218,7 @@ def parse_frontmatter(
     metadata = {k: v for k, v in frontmatter.items() if k not in ("kind", "tags")}
 
     # Serialize metadata to handle date/datetime objects from YAML parsing
-    metadata = _serialize_for_json(metadata)
+    metadata = _serialize_dict_for_json(metadata)
 
     _msg = f"Parsed FrontMatter: kind={kind}, tags_count={len(tags) if tags else 0}, metadata_keys={len(metadata)}"
     log.debug(_msg)

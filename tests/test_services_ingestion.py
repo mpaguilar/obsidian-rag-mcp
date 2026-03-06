@@ -167,7 +167,7 @@ class TestIngestVault:
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
@@ -210,7 +210,7 @@ class TestIngestVault:
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
@@ -266,7 +266,7 @@ class TestIngestVault:
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
 
         existing_doc = MagicMock()
         existing_doc.checksum_md5 = "abc123"
@@ -315,7 +315,7 @@ class TestIngestVault:
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
 
         existing_doc = MagicMock()
         existing_doc.checksum_md5 = "old_checksum"
@@ -435,7 +435,7 @@ class TestIngestVault:
                     assert result.errors == 0
 
                     # Verify db_manager.get_session was never called
-                    ingestion_service.db_manager.get_session.assert_not_called()
+                    ingestion_service.db_manager.get_session.assert_not_called()  # type: ignore[attr-defined]
 
     def test_ingest_vault_with_progress_callback(
         self,
@@ -447,7 +447,7 @@ class TestIngestVault:
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
@@ -509,7 +509,7 @@ class TestIngestSingleFile:
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
@@ -534,7 +534,7 @@ class TestIngestSingleFile:
                 result = ingestion_service._ingest_single_file(mock_file_info)
 
                 assert result == "new"
-                ingestion_service.embedding_provider.generate_embedding.assert_called_once_with(
+                ingestion_service.embedding_provider.generate_embedding.assert_called_once_with(  # type: ignore[union-attr]
                     "Test content"
                 )
 
@@ -555,7 +555,7 @@ class TestIngestSingleFile:
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        service.db_manager.get_session.return_value = mock_session_context
+        service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
@@ -591,11 +591,11 @@ class TestIngestSingleFile:
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
-        ingestion_service.embedding_provider.generate_embedding.side_effect = (
+        ingestion_service.embedding_provider.generate_embedding.side_effect = (  # type: ignore[union-attr]
             EmbeddingError("Embedding failed")
         )
 
@@ -648,7 +648,7 @@ class TestTaskOperations:
 
         parsed_tasks = [(1, mock_task)]
 
-        ingestion_service._create_tasks(mock_session, mock_document, parsed_tasks)
+        ingestion_service._create_tasks(mock_session, mock_document, parsed_tasks)  # type: ignore[arg-type]
 
         mock_session.add.assert_called_once()
         added_task = mock_session.add.call_args[0][0]
@@ -680,7 +680,7 @@ class TestTaskOperations:
 
         parsed_tasks = [(1, mock_task)]
 
-        ingestion_service._update_tasks(mock_session, mock_document, parsed_tasks)
+        ingestion_service._update_tasks(mock_session, mock_document, parsed_tasks)  # type: ignore[arg-type]
 
         # Verify old tasks are deleted
         mock_session.query.return_value.filter_by.return_value.delete.assert_called_once()

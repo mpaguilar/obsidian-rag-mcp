@@ -394,8 +394,8 @@ def parse_task_line(line: str) -> ParsedTask | None:
     status = _map_checkbox_status(checkbox)
 
     # Extract inline tags
-    tags = TAG_PATTERN.findall(task_text)
-    tags = list(tags) if tags else None
+    tags_match = TAG_PATTERN.findall(task_text)
+    tags: list[str] | None = list(tags_match) if tags_match else None
 
     # Extract metadata
     standard_fields, custom_metadata = _extract_task_metadata(task_text)
@@ -437,7 +437,7 @@ def parse_tasks_from_content(content: str) -> list[tuple[int, ParsedTask]]:
     _msg = "Parsing tasks from content"
     log.debug(_msg)
 
-    tasks = []
+    tasks: list[tuple[int, ParsedTask]] = []
     lines = content.split("\n")
     max_tasks = 10000
 

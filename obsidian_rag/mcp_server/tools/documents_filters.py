@@ -6,7 +6,7 @@ Supports dot-notation property paths and multiple filter operators.
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
@@ -221,7 +221,7 @@ def apply_postgresql_property_filter(
     }
 
     if operator in condition_builders:
-        condition = condition_builders[operator]()
+        condition: Any = condition_builders[operator]()
         return query.filter(condition)
 
     return query
@@ -241,7 +241,7 @@ def get_nested_value(data: dict | None, path: str) -> object:
     if data is None:
         return None
     parts = path.split(".")
-    current = data
+    current: dict[str, Any] | None = data
     for part in parts:
         if not isinstance(current, dict):
             return None

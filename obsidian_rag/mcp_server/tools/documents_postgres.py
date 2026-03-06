@@ -33,6 +33,40 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _extract_document_from_row(row: object) -> Document:
+    """Extract Document from query result row.
+
+    Args:
+        row: Query result row (could be tuple, object with Document attr, or Document).
+
+    Returns:
+        Document instance.
+
+    """
+    if hasattr(row, "Document"):
+        return getattr(row, "Document")
+    if isinstance(row, tuple):
+        return row[0]  # type: ignore[return-value]
+    return row  # type: ignore[return-value]
+
+
+def _extract_distance_from_row(row: object) -> float:
+    """Extract distance value from query result row.
+
+    Args:
+        row: Query result row (could be tuple, object with distance attr, or Document).
+
+    Returns:
+        Distance value as float.
+
+    """
+    if hasattr(row, "distance"):
+        return float(getattr(row, "distance", 0.0))
+    if isinstance(row, tuple) and len(row) > 1:
+        return float(row[1])
+    return 0.0
+
+
 def _filter_results_by_exclude(
     results: list,
     property_filters_exclude: list["PropertyFilter"] | None,
@@ -128,16 +162,8 @@ def query_documents_postgresql(params: DocumentQueryParams) -> DocumentListRespo
 
     document_responses = []
     for row in results:
-        doc = (
-            getattr(row, "Document", row[0])
-            if hasattr(row, "Document")
-            else (row[0] if isinstance(row, tuple) else row)
-        )
-        dist = (
-            getattr(row, "distance", 0.0)
-            if hasattr(row, "distance")
-            else (row[1] if isinstance(row, tuple) else 0.0)
-        )
+        doc = _extract_document_from_row(row)
+        dist = _extract_distance_from_row(row)
         document_responses.append(create_document_response(doc, dist))
 
     has_more = (pagination.offset + pagination.limit) < total_count

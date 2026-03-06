@@ -63,7 +63,11 @@ class TestValidatePropertyFilter:
 
     def test_validate_property_filter_with_various_operators(self):
         """Test validate_property_filter with various operators (TASK-074)."""
-        operators = ["equals", "contains", "exists", "in", "starts_with", "regex"]
+        from typing import Literal
+
+        operators: list[
+            Literal["equals", "contains", "exists", "in", "starts_with", "regex"]
+        ] = ["equals", "contains", "exists", "in", "starts_with", "regex"]
 
         for operator in operators:
             filter_obj = PropertyFilter(path="status", operator=operator, value="draft")

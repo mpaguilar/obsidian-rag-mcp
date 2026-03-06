@@ -258,27 +258,27 @@ class MockTask:
     """Mock task object for testing."""
 
     def __init__(self):
-        self.id = uuid.uuid4()
-        self.raw_text = "- [ ] Test task"
-        self.status = "not_completed"
-        self.description = "Test task"
-        self.due = date(2025, 3, 15)
-        self.priority = "high"
-        self.tags = ["tag1"]
+        self.id: uuid.UUID = uuid.uuid4()
+        self.raw_text: str = "- [ ] Test task"
+        self.status: str = "not_completed"
+        self.description: str = "Test task"
+        self.due: date = date(2025, 3, 15)
+        self.priority: str = "high"
+        self.tags: list[str] = ["tag1"]
 
 
 class MockDocument:
     """Mock document object for testing."""
 
     def __init__(self):
-        self.id = uuid.uuid4()
-        self.file_path = "/path/to/doc.md"
-        self.file_name = "doc.md"
-        self.content = "# Content"
-        self.kind = "article"
-        self.tags = ["tag1", "tag2"]
-        self.created_at_fs = datetime.now()
-        self.modified_at_fs = datetime.now()
+        self.id: uuid.UUID = uuid.uuid4()
+        self.file_path: str = "/path/to/doc.md"
+        self.file_name: str = "doc.md"
+        self.content: str = "# Content"
+        self.kind: str = "article"
+        self.tags: list[str] = ["tag1", "tag2"]
+        self.created_at_fs: datetime = datetime.now()
+        self.modified_at_fs: datetime = datetime.now()
 
 
 class TestCreateTaskResponse:
@@ -289,7 +289,7 @@ class TestCreateTaskResponse:
         task = MockTask()
         doc = MockDocument()
 
-        response = create_task_response(task, doc)
+        response = create_task_response(task, doc)  # type: ignore[arg-type]
 
         assert response.id == task.id
         assert response.raw_text == task.raw_text
@@ -310,7 +310,7 @@ class TestCreateDocumentResponse:
         doc = MockDocument()
         similarity = 0.25
 
-        response = create_document_response(doc, similarity)
+        response = create_document_response(doc, similarity)  # type: ignore[arg-type]
 
         assert response.id == doc.id
         assert response.file_path == doc.file_path

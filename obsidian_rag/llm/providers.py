@@ -158,7 +158,7 @@ class ProviderFactory:
     @staticmethod
     def create_embedding_provider(
         provider_name: str,
-        **config: str | int | float | None,
+        **config: Any,
     ) -> EmbeddingProvider:
         """Create an embedding provider instance.
 
@@ -177,7 +177,7 @@ class ProviderFactory:
         log.debug(_msg)
 
         if provider_name == "openai":
-            result = OpenAIEmbeddingProvider(**config)
+            result: EmbeddingProvider = OpenAIEmbeddingProvider(**config)
             _msg = "create_embedding_provider returning"
             log.debug(_msg)
             return result
@@ -198,7 +198,7 @@ class ProviderFactory:
     @staticmethod
     def create_chat_provider(
         provider_name: str,
-        **config: str | int | float | None,
+        **config: Any,
     ) -> ChatProvider:
         """Create a chat provider instance.
 
@@ -217,7 +217,7 @@ class ProviderFactory:
         log.debug(_msg)
 
         if provider_name == "openai":
-            result = OpenAIChatProvider(**config)
+            result: ChatProvider = OpenAIChatProvider(**config)
             _msg = "create_chat_provider returning"
             log.debug(_msg)
             return result

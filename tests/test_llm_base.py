@@ -47,7 +47,7 @@ class TestEmbeddingProvider:
     def test_cannot_instantiate_directly(self):
         """Test that EmbeddingProvider cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            EmbeddingProvider()
+            EmbeddingProvider()  # type: ignore[abstract]
 
     def test_subclass_must_implement_methods(self):
         """Test that subclass must implement abstract methods."""
@@ -56,7 +56,7 @@ class TestEmbeddingProvider:
             pass
 
         with pytest.raises(TypeError):
-            IncompleteProvider()
+            IncompleteProvider()  # type: ignore[abstract]
 
     def test_can_create_complete_subclass(self):
         """Test creating a complete subclass."""
@@ -79,7 +79,7 @@ class TestChatProvider:
     def test_cannot_instantiate_directly(self):
         """Test that ChatProvider cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            ChatProvider()
+            ChatProvider()  # type: ignore[abstract]
 
     def test_subclass_must_implement_chat(self):
         """Test that subclass must implement chat method."""
@@ -88,7 +88,7 @@ class TestChatProvider:
             pass
 
         with pytest.raises(TypeError):
-            IncompleteProvider()
+            IncompleteProvider()  # type: ignore[abstract]
 
     def test_can_create_complete_subclass(self):
         """Test creating a complete subclass."""
