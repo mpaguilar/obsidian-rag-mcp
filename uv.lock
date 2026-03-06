@@ -1714,13 +1714,16 @@ wheels = [
 
 [[package]]
 name = "obsidian-rag"
-version = "0.8.0"
+version = "0.9.2"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "click" },
     { name = "fastmcp" },
     { name = "httpx" },
+    { name = "langchain" },
+    { name = "langchain-huggingface" },
+    { name = "litellm" },
     { name = "pgvector" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
@@ -1749,9 +1752,6 @@ openai = [
 dev = [
     { name = "bandit", extra = ["baseline"] },
     { name = "coverage" },
-    { name = "langchain" },
-    { name = "langchain-huggingface" },
-    { name = "litellm" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1768,10 +1768,13 @@ requires-dist = [
     { name = "click", specifier = ">=8.0.0" },
     { name = "fastmcp", specifier = ">=3.0.0" },
     { name = "httpx", specifier = ">=0.27.0" },
+    { name = "langchain", specifier = ">=0.1.0" },
     { name = "langchain", marker = "extra == 'all'", specifier = ">=0.1.0" },
     { name = "langchain", marker = "extra == 'local'", specifier = ">=0.1.0" },
+    { name = "langchain-huggingface", specifier = ">=0.0.1" },
     { name = "langchain-huggingface", marker = "extra == 'all'", specifier = ">=0.0.1" },
     { name = "langchain-huggingface", marker = "extra == 'local'", specifier = ">=0.0.1" },
+    { name = "litellm", specifier = ">=1.0.0" },
     { name = "litellm", marker = "extra == 'all'", specifier = ">=1.0.0" },
     { name = "litellm", marker = "extra == 'openai'", specifier = ">=1.0.0" },
     { name = "pgvector", specifier = ">=0.2.0" },
@@ -1789,9 +1792,6 @@ provides-extras = ["openai", "local", "all"]
 dev = [
     { name = "bandit", extras = ["baseline", "toml"], specifier = ">=1.8.6" },
     { name = "coverage", specifier = ">=7.10.3" },
-    { name = "langchain", specifier = ">=0.1.0" },
-    { name = "langchain-huggingface", specifier = ">=0.0.1" },
-    { name = "litellm", specifier = ">=1.0.0" },
     { name = "mypy", specifier = ">=1.19.1" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", specifier = ">=1.1.0" },

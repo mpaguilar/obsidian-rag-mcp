@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack, overload
 
 from obsidian_rag.llm.base import (
     ChatError,
@@ -32,6 +32,66 @@ except ImportError:
     pass
 
 log = logging.getLogger(__name__)
+
+
+class OpenAIProviderConfig(TypedDict, total=False):
+    """Configuration for OpenAI providers.
+
+    Attributes:
+        api_key: API key for authentication.
+        model: Model name to use.
+        base_url: Optional custom base URL for API.
+        temperature: Sampling temperature for chat.
+        max_tokens: Maximum tokens to generate.
+
+    """
+
+    api_key: str | None
+    model: str | None
+    base_url: str | None
+    temperature: float
+    max_tokens: int | None
+
+
+class HuggingFaceProviderConfig(TypedDict, total=False):
+    """Configuration for HuggingFace providers.
+
+    Attributes:
+        model: Model name to use.
+        device: Device to use ('cpu', 'cuda', etc.).
+
+    """
+
+    model: str | None
+    device: str | None
+
+
+class OpenRouterProviderConfig(TypedDict, total=False):
+    """Configuration for OpenRouter providers.
+
+    Attributes:
+        api_key: API key for authentication.
+        model: Model name to use.
+        base_url: Optional custom base URL for API.
+        temperature: Sampling temperature for chat.
+        max_tokens: Maximum tokens to generate.
+
+    """
+
+    api_key: str | None
+    model: str | None
+    base_url: str | None
+    temperature: float
+    max_tokens: int | None
+
+
+# Union type for embedding provider configs
+EmbeddingProviderConfig = (
+    OpenAIProviderConfig | HuggingFaceProviderConfig | OpenRouterProviderConfig
+)
+
+# Union type for chat provider configs
+ChatProviderConfig = OpenAIProviderConfig | OpenRouterProviderConfig
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
@@ -155,6 +215,27 @@ class ProviderFactory:
 
     """
 
+    @overload
+    @staticmethod
+    def create_embedding_provider(
+        provider_name: Literal["openai"],
+        **config: Unpack[OpenAIProviderConfig],
+    ) -> EmbeddingProvider: ...
+
+    @overload
+    @staticmethod
+    def create_embedding_provider(
+        provider_name: Literal["huggingface"],
+        **config: Unpack[HuggingFaceProviderConfig],
+    ) -> EmbeddingProvider: ...
+
+    @overload
+    @staticmethod
+    def create_embedding_provider(
+        provider_name: Literal["openrouter"],
+        **config: Unpack[OpenRouterProviderConfig],
+    ) -> EmbeddingProvider: ...
+
     @staticmethod
     def create_embedding_provider(
         provider_name: str,
@@ -194,6 +275,20 @@ class ProviderFactory:
         _msg = f"Unknown embedding provider: {provider_name}"
         log.error(_msg)
         raise ValueError(_msg)
+
+    @overload
+    @staticmethod
+    def create_chat_provider(
+        provider_name: Literal["openai"],
+        **config: Unpack[OpenAIProviderConfig],
+    ) -> ChatProvider: ...
+
+    @overload
+    @staticmethod
+    def create_chat_provider(
+        provider_name: Literal["openrouter"],
+        **config: Unpack[OpenRouterProviderConfig],
+    ) -> ChatProvider: ...
 
     @staticmethod
     def create_chat_provider(

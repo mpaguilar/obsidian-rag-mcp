@@ -8,7 +8,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, overload
+from typing import Any, TypedDict, Unpack, overload
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -434,6 +434,56 @@ class MCPConfig(BaseModel):
         return v
 
 
+class SettingsKwargs(TypedDict, total=False):
+    """TypedDict for Settings constructor kwargs.
+
+    This TypedDict defines all valid keyword arguments for the Settings
+    class constructor, enabling type-safe configuration overrides.
+
+    Uses dict types because users pass dicts that Pydantic converts
+    to model instances internally.
+
+    Attributes:
+        endpoints: Dictionary of endpoint configurations.
+        database: Database connection configuration.
+        ingestion: Document ingestion settings.
+        logging: Logging configuration.
+        mcp: MCP server configuration.
+
+    """
+
+    endpoints: dict[str, dict[str, Any]]
+    database: dict[str, Any]
+    ingestion: dict[str, Any]
+    logging: dict[str, Any]
+    mcp: dict[str, Any]
+
+
+class GetSettingsKwargs(TypedDict, total=False):
+    """TypedDict for get_settings function kwargs.
+
+    Includes verbose parameter which is passed through to Settings.
+    Uses dict types because users pass dicts that Pydantic converts
+    to model instances internally.
+
+    Attributes:
+        verbose: If True, set logging level to DEBUG.
+        endpoints: Dictionary of endpoint configurations.
+        database: Database connection configuration.
+        ingestion: Document ingestion settings.
+        logging: Logging configuration.
+        mcp: MCP server configuration.
+
+    """
+
+    verbose: bool
+    endpoints: dict[str, dict[str, Any]]
+    database: dict[str, Any]
+    ingestion: dict[str, Any]
+    logging: dict[str, Any]
+    mcp: dict[str, Any]
+
+
 class Settings(BaseSettings):
     """Application settings with layered configuration.
 
@@ -461,7 +511,7 @@ class Settings(BaseSettings):
         self,
         *,
         verbose: bool = False,
-        **kwargs: Any,
+        **kwargs: Unpack[SettingsKwargs],
     ) -> None:
         """Initialize settings with merged configuration.
 
@@ -475,7 +525,8 @@ class Settings(BaseSettings):
 
         # Apply verbose flag as a CLI override
         if verbose:
-            kwargs = _deep_merge(kwargs, {"logging": {"level": "DEBUG"}})
+            merged = _deep_merge(dict(kwargs), {"logging": {"level": "DEBUG"}})
+            kwargs = merged  # type: ignore[assignment]
 
         super().__init__(**kwargs)
 
@@ -632,7 +683,7 @@ class Settings(BaseSettings):
         return self
 
 
-def get_settings(**kwargs: Any) -> Settings:
+def get_settings(**kwargs: Unpack[GetSettingsKwargs]) -> Settings:
     """Get application settings instance.
 
     Args:
