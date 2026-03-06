@@ -287,11 +287,12 @@ class TestHuggingFaceEmbeddingProvider:
         from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
 
         mock_embeddings = Mock()
+        mock_hf_class = Mock(return_value=mock_embeddings)
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
-                "langchain_huggingface.HuggingFaceEmbeddings",
-                return_value=mock_embeddings,
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
             ):
                 provider = HuggingFaceEmbeddingProvider()
 
@@ -303,11 +304,12 @@ class TestHuggingFaceEmbeddingProvider:
         from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
 
         mock_embeddings = Mock()
+        mock_hf_class = Mock(return_value=mock_embeddings)
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
-                "langchain_huggingface.HuggingFaceEmbeddings",
-                return_value=mock_embeddings,
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
             ):
                 provider = HuggingFaceEmbeddingProvider(model="all-mpnet-base-v2")
 
@@ -319,16 +321,17 @@ class TestHuggingFaceEmbeddingProvider:
         from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
 
         mock_embeddings = Mock()
+        mock_hf_class = Mock(return_value=mock_embeddings)
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
-                "langchain_huggingface.HuggingFaceEmbeddings",
-                return_value=mock_embeddings,
-            ) as mock_hf:
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
+            ):
                 HuggingFaceEmbeddingProvider(device="cuda")
 
-        mock_hf.assert_called_once()
-        call_kwargs = mock_hf.call_args.kwargs
+        mock_hf_class.assert_called_once()
+        call_kwargs = mock_hf_class.call_args.kwargs
         assert call_kwargs["model_kwargs"]["device"] == "cuda"
 
     def test_init_import_error(self):
@@ -336,17 +339,8 @@ class TestHuggingFaceEmbeddingProvider:
         from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
 
         with patch("obsidian_rag.llm.providers.log"):
-            # Mock the import statement to raise ImportError
-            import builtins
-
-            original_import = builtins.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "langchain_huggingface":
-                    raise ImportError("No module named 'langchain_huggingface'")
-                return original_import(name, *args, **kwargs)
-
-            with patch.object(builtins, "__import__", mock_import):
+            # Patch the HuggingFaceEmbeddings module variable to None
+            with patch("obsidian_rag.llm.providers.HuggingFaceEmbeddings", None):
                 with pytest.raises(
                     ImportError, match="langchain-huggingface package is required"
                 ):
@@ -357,11 +351,12 @@ class TestHuggingFaceEmbeddingProvider:
         from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
 
         mock_embeddings = Mock()
+        mock_hf_class = Mock(return_value=mock_embeddings)
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
-                "langchain_huggingface.HuggingFaceEmbeddings",
-                return_value=mock_embeddings,
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
             ):
                 provider = HuggingFaceEmbeddingProvider()
 
@@ -373,11 +368,12 @@ class TestHuggingFaceEmbeddingProvider:
 
         mock_embeddings = Mock()
         mock_embeddings.embed_query.return_value = [0.1, 0.2, 0.3]
+        mock_hf_class = Mock(return_value=mock_embeddings)
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
-                "langchain_huggingface.HuggingFaceEmbeddings",
-                return_value=mock_embeddings,
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
             ):
                 provider = HuggingFaceEmbeddingProvider()
                 result = provider.generate_embedding("test text")
@@ -391,11 +387,12 @@ class TestHuggingFaceEmbeddingProvider:
 
         mock_embeddings = Mock()
         mock_embeddings.embed_query.side_effect = Exception("Model Error")
+        mock_hf_class = Mock(return_value=mock_embeddings)
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
-                "langchain_huggingface.HuggingFaceEmbeddings",
-                return_value=mock_embeddings,
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
             ):
                 provider = HuggingFaceEmbeddingProvider()
 
@@ -407,11 +404,12 @@ class TestHuggingFaceEmbeddingProvider:
         from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
 
         mock_embeddings = Mock()
+        mock_hf_class = Mock(return_value=mock_embeddings)
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
-                "langchain_huggingface.HuggingFaceEmbeddings",
-                return_value=mock_embeddings,
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
             ):
                 provider = HuggingFaceEmbeddingProvider(model="all-MiniLM-L12-v2")
 
@@ -422,11 +420,12 @@ class TestHuggingFaceEmbeddingProvider:
         from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
 
         mock_embeddings = Mock()
+        mock_hf_class = Mock(return_value=mock_embeddings)
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
-                "langchain_huggingface.HuggingFaceEmbeddings",
-                return_value=mock_embeddings,
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
             ):
                 provider = HuggingFaceEmbeddingProvider(
                     model="paraphrase-multilingual-MiniLM-L12-v2",
@@ -439,11 +438,12 @@ class TestHuggingFaceEmbeddingProvider:
         from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
 
         mock_embeddings = Mock()
+        mock_hf_class = Mock(return_value=mock_embeddings)
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
-                "langchain_huggingface.HuggingFaceEmbeddings",
-                return_value=mock_embeddings,
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
             ):
                 provider = HuggingFaceEmbeddingProvider(model="unknown-model")
 
@@ -579,19 +579,12 @@ class TestOpenRouterEmbeddingProvider:
 
     def test_init_import_error(self):
         """Test initialization raises ImportError when litellm not installed."""
+        from obsidian_rag.llm import providers as providers_module
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
         with patch("obsidian_rag.llm.providers.log"):
-            import builtins
-
-            original_import = builtins.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "litellm":
-                    raise ImportError("No module named 'litellm'")
-                return original_import(name, *args, **kwargs)
-
-            with patch.object(builtins, "__import__", mock_import):
+            # Patch the litellm module variable to None to simulate it not being installed
+            with patch.object(providers_module, "litellm", None):
                 with pytest.raises(ImportError, match="litellm package is required"):
                     OpenRouterEmbeddingProvider(api_key="test-key")
 
@@ -778,19 +771,12 @@ class TestOpenRouterChatProvider:
 
     def test_init_import_error(self):
         """Test initialization raises ImportError when litellm not installed."""
+        from obsidian_rag.llm import providers as providers_module
         from obsidian_rag.llm.providers import OpenRouterChatProvider
 
         with patch("obsidian_rag.llm.providers.log"):
-            import builtins
-
-            original_import = builtins.__import__
-
-            def mock_import(name, *args, **kwargs):
-                if name == "litellm":
-                    raise ImportError("No module named 'litellm'")
-                return original_import(name, *args, **kwargs)
-
-            with patch.object(builtins, "__import__", mock_import):
+            # Patch the litellm module variable to None to simulate it not being installed
+            with patch.object(providers_module, "litellm", None):
                 with pytest.raises(ImportError, match="litellm package is required"):
                     OpenRouterChatProvider(api_key="test-key")
 
@@ -816,3 +802,25 @@ class TestOpenRouterChatProvider:
         mock_chat.assert_called_once()
         call_kwargs = mock_chat.call_args.kwargs
         assert "api_base" not in call_kwargs
+
+
+class TestOptionalDependencyErrors:
+    """Test defensive branches when optional dependencies are not installed."""
+
+    def test_openai_embedding_provider_without_litellm(self):
+        """Test OpenAIEmbeddingProvider raises ImportError when litellm is None (lines 57-58)."""
+        with patch("obsidian_rag.llm.providers.litellm", None):
+            with patch("obsidian_rag.llm.providers.log"):
+                with pytest.raises(ImportError, match="litellm package is required"):
+                    from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+                    OpenAIEmbeddingProvider(api_key="test-key")
+
+    def test_openai_chat_provider_without_litellm(self):
+        """Test OpenAIChatProvider raises ImportError when litellm is None (lines 173-174)."""
+        with patch("obsidian_rag.llm.providers.litellm", None):
+            with patch("obsidian_rag.llm.providers.log"):
+                with pytest.raises(ImportError, match="litellm package is required"):
+                    from obsidian_rag.llm.providers import OpenAIChatProvider
+
+                    OpenAIChatProvider(api_key="test-key")

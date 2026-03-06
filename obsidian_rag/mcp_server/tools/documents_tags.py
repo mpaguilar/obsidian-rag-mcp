@@ -13,7 +13,7 @@ from sqlalchemy import func, or_, text
 from obsidian_rag.database.models import Document
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Query, Session
+    from sqlalchemy.orm import Query
 
     from obsidian_rag.mcp_server.models import TagFilter
 
@@ -36,10 +36,7 @@ def _has_tags(doc: Document, search_tag: str) -> bool:
     """
     if doc.tags is None:
         return False
-    for t in doc.tags:
-        if search_tag in t.lower():
-            return True
-    return False
+    return any(search_tag in t.lower() for t in doc.tags)
 
 
 def _is_untagged(doc: Document) -> bool:
@@ -84,10 +81,7 @@ def _tag_in_doc_tags(tag: str, doc_tags_lower: set[str]) -> bool:
 
     """
     tag_lower = tag.lower()
-    for doc_tag in doc_tags_lower:
-        if tag_lower in doc_tag:
-            return True
-    return False
+    return any(tag_lower in doc_tag for doc_tag in doc_tags_lower)
 
 
 def _matches_all_tags(doc: Document, tags: list[str]) -> bool:
@@ -271,7 +265,7 @@ def apply_postgresql_include_tags(
         # Document must have ALL include tags
         for tag in include_lower:
             query = query.filter(
-                func.lower(func.array_to_string(Document.tags, ",")).contains(tag)
+                func.lower(func.array_to_string(Document.tags, ",")).contains(tag),
             )
     else:  # "any"
         # Document must have ANY of the include tags

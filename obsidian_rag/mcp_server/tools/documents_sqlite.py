@@ -14,10 +14,7 @@ from obsidian_rag.mcp_server.models import (
 from obsidian_rag.mcp_server.tools.documents_filters import matches_property_filters
 from obsidian_rag.mcp_server.tools.documents_params import (
     DocumentQueryParams,
-    PaginationParams,
-    PropertyFilterParams,
     PropertyQueryParams,
-    TagFilterParams,
 )
 from obsidian_rag.mcp_server.tools.documents_tags import matches_tag_filter
 

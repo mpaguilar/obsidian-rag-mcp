@@ -6,14 +6,12 @@ This module serves as the public API that re-exports functions from
 dedicated submodules for PostgreSQL, SQLite, filters, and tags.
 """
 
-import fnmatch
 import logging
 from typing import TYPE_CHECKING
 
 from obsidian_rag.database.models import Document
 from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
-    PropertyFilter,
     TagFilter,
     TagListResponse,
     _validate_limit,
@@ -135,22 +133,18 @@ def _build_document_list_response(
 def query_documents(
     session: "Session",
     query_embedding: list[float],
-    property_filters_include: list[PropertyFilter] | None = None,
-    property_filters_exclude: list[PropertyFilter] | None = None,
+    filter_params: PropertyFilterParams | None = None,
     tag_filter: TagFilter | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    pagination: PaginationParams | None = None,
 ) -> DocumentListResponse:
     """Semantic search over document content with optional property and tag filters.
 
     Args:
         session: Database session.
         query_embedding: Vector embedding of the query text.
-        property_filters_include: Property filters to include (AND logic).
-        property_filters_exclude: Property filters to exclude (OR logic).
+        filter_params: Property filter parameters with include/exclude lists.
         tag_filter: Tag filter with include/exclude lists.
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
+        pagination: Pagination parameters (limit/offset).
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -167,8 +161,14 @@ def query_documents(
     _msg = "query_documents starting"
     log.debug(_msg)
 
-    limit = _validate_limit(limit)
-    offset = _validate_offset(offset)
+    # Use default pagination if not provided
+    pagination = pagination or PaginationParams(limit=20, offset=0)
+    limit = _validate_limit(pagination.limit)
+    offset = pagination.offset
+
+    # Extract include/exclude filters from filter_params
+    property_filters_include = filter_params.include_filters if filter_params else None
+    property_filters_exclude = filter_params.exclude_filters if filter_params else None
 
     validate_property_filters(property_filters_include)
     validate_property_filters(property_filters_exclude)
@@ -183,7 +183,7 @@ def query_documents(
         exclude_filters=property_filters_exclude,
     )
     tag_filter_params = TagFilterParams(tag_filter=tag_filter)
-    filter_params = QueryFilterParams(
+    query_filter_params = QueryFilterParams(
         property_filters=property_filter_params,
         tag_params=tag_filter_params,
     )
@@ -191,7 +191,7 @@ def query_documents(
     query_params = DocumentQueryParams(
         session=session,
         query_embedding=query_embedding,
-        filter_params=filter_params,
+        filter_params=query_filter_params,
         pagination=pagination,
     )
 
@@ -294,23 +294,19 @@ def get_documents_by_tag(
 
 def get_documents_by_property(
     session: "Session",
-    include_properties: list[PropertyFilter] | None = None,
-    exclude_properties: list[PropertyFilter] | None = None,
+    property_filters: PropertyFilterParams | None = None,
     tag_filter: TagFilter | None = None,
     vault_root: str | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    pagination: PaginationParams | None = None,
 ) -> DocumentListResponse:
     """Query documents filtered by frontmatter properties.
 
     Args:
         session: Database session.
-        include_properties: Property filters to include (AND logic within list).
-        exclude_properties: Property filters to exclude (OR logic within list).
+        property_filters: Property filter parameters with include/exclude lists.
         tag_filter: Optional tag filter to also apply.
         vault_root: Filter by specific vault root path (optional).
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
+        pagination: Pagination parameters (limit/offset).
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -327,8 +323,14 @@ def get_documents_by_property(
     _msg = "get_documents_by_property starting"
     log.debug(_msg)
 
-    limit = _validate_limit(limit)
-    offset = _validate_offset(offset)
+    # Use default pagination if not provided
+    pagination = pagination or PaginationParams(limit=20, offset=0)
+    limit = _validate_limit(pagination.limit)
+    offset = pagination.offset
+
+    # Extract include/exclude filters from property_filters
+    include_properties = property_filters.include_filters if property_filters else None
+    exclude_properties = property_filters.exclude_filters if property_filters else None
 
     validate_property_filters(include_properties)
     validate_property_filters(exclude_properties)
@@ -338,7 +340,7 @@ def get_documents_by_property(
     is_postgresql = dialect == "postgresql"
 
     # Build query parameters
-    property_filters = PropertyFilterParams(
+    filter_params = PropertyFilterParams(
         include_filters=include_properties,
         exclude_filters=exclude_properties,
     )
@@ -346,7 +348,7 @@ def get_documents_by_property(
     pagination = PaginationParams(limit=limit, offset=offset)
     query_params = PropertyQueryParams(
         session=session,
-        property_filters=property_filters,
+        property_filters=filter_params,
         tag_params=tag_params,
         vault_root=vault_root,
         pagination=pagination,
@@ -377,13 +379,13 @@ def _extract_tags_postgresql(session: "Session", pattern: str | None) -> list[st
     from sqlalchemy import func
 
     tags_query = session.query(
-        func.distinct(func.unnest(Document.tags)).label("tag")
+        func.distinct(func.unnest(Document.tags)).label("tag"),
     ).filter(Document.tags.isnot(None))
 
     if pattern is not None:
         like_pattern = _glob_to_like(pattern)
         tags_query = tags_query.filter(
-            func.lower(func.unnest(Document.tags)).ilike(func.lower(like_pattern))
+            func.lower(func.unnest(Document.tags)).ilike(func.lower(like_pattern)),
         )
 
     tags_query = tags_query.order_by("tag")

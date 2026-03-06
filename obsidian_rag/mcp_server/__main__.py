@@ -1,11 +1,20 @@
 """Entry point for running the MCP server."""
 
 import logging
-import os
 import sys
+from typing import Any
 
 from obsidian_rag.config import get_settings
 from obsidian_rag.mcp_server.server import create_http_app
+
+# Optional dependency - will be None if not installed
+uvicorn: Any = None
+try:
+    import uvicorn as _uvicorn
+
+    uvicorn = _uvicorn
+except ImportError:
+    pass
 
 
 def main() -> None:
@@ -44,10 +53,8 @@ def main() -> None:
         log.exception(_msg)
         sys.exit(1)
 
-    # Import here to avoid requiring uvicorn as a core dependency
-    try:
-        import uvicorn
-    except ImportError:
+    # Check uvicorn is available
+    if uvicorn is None:
         _msg = "uvicorn is required to run the MCP server. Install with: pip install uvicorn"
         log.error(_msg)
         sys.exit(1)

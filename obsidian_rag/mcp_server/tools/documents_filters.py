@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 
 # Maximum query complexity limits
 MAX_PROPERTY_FILTERS = 10
+MAX_PROPERTY_DEPTH = 3
 
 
 def validate_property_path(path: str) -> None:
@@ -37,7 +38,7 @@ def validate_property_path(path: str) -> None:
         msg = "Property path cannot be empty"
         raise ValueError(msg)
     parts = path.split(".")
-    if len(parts) > 3:
+    if len(parts) > MAX_PROPERTY_DEPTH:
         msg = "Property path cannot exceed 3 levels"
         raise ValueError(msg)
     for part in parts:
@@ -168,7 +169,7 @@ def build_regex_condition(path_expr: str, pattern: object) -> object:
         re.compile(str(pattern))
     except re.error as e:
         msg = f"Invalid regex pattern: {e}"
-        raise ValueError(msg)
+        raise ValueError(msg) from e
     return text(f"{path_expr} ~ :pattern").bindparams(pattern=str(pattern))
 
 
@@ -311,11 +312,14 @@ def check_regex(value: object, pattern: object) -> bool:
     """
     if value is None:
         return False
+    match_result = None
     try:
         pattern_str = str(pattern)
-        return re.search(pattern_str, str(value), re.IGNORECASE) is not None
+        match_result = re.search(pattern_str, str(value), re.IGNORECASE)
     except re.error:
-        return False
+        match_result = None
+
+    return match_result is not None
 
 
 def check_in_list(value: object, filter_values: object) -> bool:
@@ -366,6 +370,7 @@ def matches_property_filter(doc: Document, prop_filter: "PropertyFilter") -> boo
 def check_filters_match(
     doc: Document,
     filters: list["PropertyFilter"] | None,
+    *,
     should_match: bool,
 ) -> bool:
     """Check if document matches (or doesn't match) filters.
@@ -406,6 +411,12 @@ def matches_property_filters(
         True if document passes all filters.
 
     """
-    return check_filters_match(doc, include_filters, True) and check_filters_match(
-        doc, exclude_filters, False
+    return check_filters_match(
+        doc,
+        include_filters,
+        should_match=True,
+    ) and check_filters_match(
+        doc,
+        exclude_filters,
+        should_match=False,
     )

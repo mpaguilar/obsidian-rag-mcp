@@ -1,7 +1,8 @@
 """Concrete LLM provider implementations."""
 
 import logging
-from typing import TYPE_CHECKING
+import os
+from typing import TYPE_CHECKING, Any
 
 from obsidian_rag.llm.base import (
     ChatError,
@@ -11,6 +12,23 @@ from obsidian_rag.llm.base import (
 )
 
 if TYPE_CHECKING:
+    pass
+
+# Optional dependencies - will be None if not installed
+litellm: Any = None
+try:
+    import litellm as _litellm
+
+    litellm = _litellm
+except ImportError:
+    pass
+
+HuggingFaceEmbeddings: Any = None
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings as _HuggingFaceEmbeddings
+
+    HuggingFaceEmbeddings = _HuggingFaceEmbeddings
+except ImportError:
     pass
 
 log = logging.getLogger(__name__)
@@ -43,20 +61,16 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         _msg = "Initializing OpenAI embedding provider"
         log.debug(_msg)
 
-        try:
-            import litellm
-        except ImportError as e:
+        if litellm is None:
             _msg = "litellm package is required for OpenAIEmbeddingProvider"
             log.error(_msg)
-            raise ImportError(_msg) from e
+            raise ImportError(_msg)
 
         self.model = model or self.DEFAULT_MODEL
         self._dimension = self._get_dimension_for_model(self.model)
 
         # Get API key
         if api_key is None:
-            import os
-
             api_key = os.environ.get("OPENAI_API_KEY")
 
         if not api_key:
@@ -74,12 +88,17 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
     def _get_dimension_for_model(self, model: str) -> int:
         """Get embedding dimension for a specific model."""
+        _msg = "_get_dimension_for_model starting"
+        log.debug(_msg)
         dimensions = {
             "text-embedding-3-small": 1536,
             "text-embedding-3-large": 3072,
             "text-embedding-ada-002": 1536,
         }
-        return dimensions.get(model, self.DEFAULT_DIMENSION)
+        result = dimensions.get(model, self.DEFAULT_DIMENSION)
+        _msg = "_get_dimension_for_model returning"
+        log.debug(_msg)
+        return result
 
     def generate_embedding(self, text: str) -> list[float]:
         """Generate embedding using litellm.
@@ -110,15 +129,106 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                 api_key=self.api_key,
                 api_base=self.base_url,
             )
-            return response["data"][0]["embedding"]
         except Exception as e:
             _msg = f"OpenAI embedding generation failed: {e}"
             log.exception(_msg)
             raise EmbeddingError(_msg) from e
+        else:
+            result = response["data"][0]["embedding"]
+            _msg = "generate_embedding returning"
+            log.debug(_msg)
+            return result
 
     def get_dimension(self) -> int:
         """Get embedding dimension."""
+        _msg = "get_dimension starting"
+        log.debug(_msg)
+        _msg = "get_dimension returning"
+        log.debug(_msg)
         return self._dimension
+
+
+class ProviderFactory:
+    """Factory for creating provider instances.
+
+    Creates appropriate provider instances based on configuration.
+
+    """
+
+    @staticmethod
+    def create_embedding_provider(
+        provider_name: str,
+        **config: str | int | float | None,
+    ) -> EmbeddingProvider:
+        """Create an embedding provider instance.
+
+        Args:
+            provider_name: Name of the provider ('openai', 'huggingface', 'openrouter').
+            **config: Provider-specific configuration.
+
+        Returns:
+            EmbeddingProvider instance.
+
+        Raises:
+            ValueError: If the provider name is unknown.
+
+        """
+        _msg = f"Creating embedding provider: {provider_name}"
+        log.debug(_msg)
+
+        if provider_name == "openai":
+            result = OpenAIEmbeddingProvider(**config)
+            _msg = "create_embedding_provider returning"
+            log.debug(_msg)
+            return result
+        if provider_name == "huggingface":
+            result = HuggingFaceEmbeddingProvider(**config)
+            _msg = "create_embedding_provider returning"
+            log.debug(_msg)
+            return result
+        if provider_name == "openrouter":
+            result = OpenRouterEmbeddingProvider(**config)
+            _msg = "create_embedding_provider returning"
+            log.debug(_msg)
+            return result
+        _msg = f"Unknown embedding provider: {provider_name}"
+        log.error(_msg)
+        raise ValueError(_msg)
+
+    @staticmethod
+    def create_chat_provider(
+        provider_name: str,
+        **config: str | int | float | None,
+    ) -> ChatProvider:
+        """Create a chat provider instance.
+
+        Args:
+            provider_name: Name of the provider ('openai', 'openrouter').
+            **config: Provider-specific configuration.
+
+        Returns:
+            ChatProvider instance.
+
+        Raises:
+            ValueError: If the provider name is unknown.
+
+        """
+        _msg = f"Creating chat provider: {provider_name}"
+        log.debug(_msg)
+
+        if provider_name == "openai":
+            result = OpenAIChatProvider(**config)
+            _msg = "create_chat_provider returning"
+            log.debug(_msg)
+            return result
+        if provider_name == "openrouter":
+            result = OpenRouterChatProvider(**config)
+            _msg = "create_chat_provider returning"
+            log.debug(_msg)
+            return result
+        _msg = f"Unknown chat provider: {provider_name}"
+        log.error(_msg)
+        raise ValueError(_msg)
 
 
 class OpenAIChatProvider(ChatProvider):
@@ -151,12 +261,10 @@ class OpenAIChatProvider(ChatProvider):
         _msg = "Initializing OpenAI chat provider"
         log.debug(_msg)
 
-        try:
-            import litellm
-        except ImportError as e:
+        if litellm is None:
             _msg = "litellm package is required for OpenAIChatProvider"
             log.error(_msg)
-            raise ImportError(_msg) from e
+            raise ImportError(_msg)
 
         self.model = model or self.DEFAULT_MODEL
         self.temperature = temperature
@@ -164,8 +272,6 @@ class OpenAIChatProvider(ChatProvider):
 
         # Get API key
         if api_key is None:
-            import os
-
             api_key = os.environ.get("OPENAI_API_KEY")
 
         if not api_key:
@@ -181,7 +287,7 @@ class OpenAIChatProvider(ChatProvider):
         _msg = f"OpenAI chat provider initialized with model: {self.model}"
         log.debug(_msg)
 
-    def chat(self, messages: list[dict[str, str]], **kwargs) -> str:
+    def chat(self, messages: list[dict[str, str]], **kwargs: object) -> str:
         """Generate chat response using litellm.
 
         Args:
@@ -217,11 +323,15 @@ class OpenAIChatProvider(ChatProvider):
 
         try:
             response = self.litellm.completion(**request_params)
-            return response["choices"][0]["message"]["content"] or ""
         except Exception as e:
             _msg = f"OpenAI chat request failed: {e}"
             log.exception(_msg)
             raise ChatError(_msg) from e
+        else:
+            result = response["choices"][0]["message"]["content"] or ""
+            _msg = "chat returning"
+            log.debug(_msg)
+            return result
 
 
 class OpenRouterEmbeddingProvider(EmbeddingProvider):
@@ -263,20 +373,16 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
         _msg = "Initializing OpenRouter embedding provider"
         log.debug(_msg)
 
-        try:
-            import litellm
-        except ImportError as e:
+        if litellm is None:
             _msg = "litellm package is required for OpenRouterEmbeddingProvider"
             log.error(_msg)
-            raise ImportError(_msg) from e
+            raise ImportError(_msg)
 
         self.model = model or self.DEFAULT_MODEL
         self._dimension = self._get_dimension_for_model(self.model)
 
         # Get API key
         if api_key is None:
-            import os
-
             api_key = os.environ.get("OPENROUTER_API_KEY")
 
         if not api_key:
@@ -302,10 +408,15 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
             The embedding dimension for the model.
 
         """
+        _msg = "_get_dimension_for_model starting"
+        log.debug(_msg)
         dimensions = {
             "qwen/qwen3-embedding-8b": 4096,
         }
-        return dimensions.get(model, self.DEFAULT_DIMENSION)
+        result = dimensions.get(model, self.DEFAULT_DIMENSION)
+        _msg = "_get_dimension_for_model returning"
+        log.debug(_msg)
+        return result
 
     def generate_embedding(self, text: str) -> list[float]:
         """Generate embedding using litellm.
@@ -337,11 +448,15 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
                 api_key=self.api_key,
                 api_base=self.base_url,
             )
-            return response["data"][0]["embedding"]
         except Exception as e:
             _msg = f"OpenRouter embedding generation failed: {e}"
             log.exception(_msg)
             raise EmbeddingError(_msg) from e
+        else:
+            result = response["data"][0]["embedding"]
+            _msg = "generate_embedding returning"
+            log.debug(_msg)
+            return result
 
     def get_dimension(self) -> int:
         """Get embedding dimension.
@@ -350,6 +465,10 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
             The embedding dimension for the configured model.
 
         """
+        _msg = "get_dimension starting"
+        log.debug(_msg)
+        _msg = "get_dimension returning"
+        log.debug(_msg)
         return self._dimension
 
 
@@ -394,12 +513,10 @@ class OpenRouterChatProvider(ChatProvider):
         _msg = "Initializing OpenRouter chat provider"
         log.debug(_msg)
 
-        try:
-            import litellm
-        except ImportError as e:
+        if litellm is None:
             _msg = "litellm package is required for OpenRouterChatProvider"
             log.error(_msg)
-            raise ImportError(_msg) from e
+            raise ImportError(_msg)
 
         self.model = model or self.DEFAULT_MODEL
         self.temperature = temperature
@@ -407,8 +524,6 @@ class OpenRouterChatProvider(ChatProvider):
 
         # Get API key
         if api_key is None:
-            import os
-
             api_key = os.environ.get("OPENROUTER_API_KEY")
 
         if not api_key:
@@ -424,7 +539,7 @@ class OpenRouterChatProvider(ChatProvider):
         _msg = f"OpenRouter chat provider initialized with model: {self.model}"
         log.debug(_msg)
 
-    def chat(self, messages: list[dict[str, str]], **kwargs) -> str:
+    def chat(self, messages: list[dict[str, str]], **kwargs: object) -> str:
         """Generate chat response using litellm.
 
         Args:
@@ -461,11 +576,15 @@ class OpenRouterChatProvider(ChatProvider):
 
         try:
             response = self.litellm.completion(**request_params)
-            return response["choices"][0]["message"]["content"] or ""
         except Exception as e:
             _msg = f"OpenRouter chat request failed: {e}"
             log.exception(_msg)
             raise ChatError(_msg) from e
+        else:
+            result = response["choices"][0]["message"]["content"] or ""
+            _msg = "chat returning"
+            log.debug(_msg)
+            return result
 
 
 class HuggingFaceEmbeddingProvider(EmbeddingProvider):
@@ -492,12 +611,10 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
         _msg = "Initializing HuggingFace embedding provider"
         log.debug(_msg)
 
-        try:
-            from langchain_huggingface import HuggingFaceEmbeddings
-        except ImportError as e:
+        if HuggingFaceEmbeddings is None:
             _msg = "langchain-huggingface package is required for HuggingFaceEmbeddingProvider"
             log.error(_msg)
-            raise ImportError(_msg) from e
+            raise ImportError(_msg)
 
         self.model_name = model or self.DEFAULT_MODEL
 
@@ -524,6 +641,8 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
             The embedding dimension.
 
         """
+        _msg = "_get_dimension_from_model starting"
+        log.debug(_msg)
         # Map of known model dimensions
         dimensions = {
             "all-MiniLM-L6-v2": 384,
@@ -531,7 +650,10 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
             "all-mpnet-base-v2": 768,
             "paraphrase-multilingual-MiniLM-L12-v2": 384,
         }
-        return dimensions.get(self.model_name, self.DEFAULT_DIMENSION)
+        result = dimensions.get(self.model_name, self.DEFAULT_DIMENSION)
+        _msg = "_get_dimension_from_model returning"
+        log.debug(_msg)
+        return result
 
     def generate_embedding(self, text: str) -> list[float]:
         """Generate embedding using HuggingFace via langchain.
@@ -554,12 +676,20 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
 
         try:
             embedding = self.embedding_model.embed_query(text)
-            return list(embedding)
         except Exception as e:
             _msg = f"HuggingFace embedding generation failed: {e}"
             log.exception(_msg)
             raise EmbeddingError(_msg) from e
+        else:
+            result = list(embedding)
+            _msg = "generate_embedding returning"
+            log.debug(_msg)
+            return result
 
     def get_dimension(self) -> int:
         """Get embedding dimension."""
+        _msg = "get_dimension starting"
+        log.debug(_msg)
+        _msg = "get_dimension returning"
+        log.debug(_msg)
         return self._dimension

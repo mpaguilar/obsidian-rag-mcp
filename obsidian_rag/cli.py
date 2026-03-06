@@ -1,10 +1,11 @@
 """CLI entry point for obsidian-rag."""
 
+import json
 import logging
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import click
 from sqlalchemy.orm import Session
@@ -12,7 +13,8 @@ from sqlalchemy.orm import Session
 from obsidian_rag.config import Settings, get_settings
 from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.database.models import Document, Task
-from obsidian_rag.llm.base import EmbeddingProvider, ProviderFactory
+from obsidian_rag.llm.base import EmbeddingProvider
+from obsidian_rag.llm.providers import ProviderFactory
 from obsidian_rag.parsing.scanner import (
     process_files_in_batches,
     scan_markdown_files,
@@ -42,12 +44,12 @@ def _setup_logging(level: str, format_type: str) -> None:
     if format_type == "json":
         # Simple JSON format
         formatter = logging.Formatter(
-            '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s"}'
+            '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s"}',
         )
     else:
         # Text format
         formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
 
     handler = logging.StreamHandler(sys.stderr)
@@ -72,7 +74,11 @@ def _setup_logging(level: str, format_type: str) -> None:
 @click.option("--config-file", type=click.Path(), help="Path to config file.")
 @click.pass_context
 def cli(
-    ctx: click.Context, verbose: bool, log_level: str | None, config_file: str | None
+    ctx: click.Context,
+    *,
+    verbose: bool,
+    log_level: str | None,
+    config_file: str | None,
 ) -> None:
     """Obsidian RAG - CLI tool for ingesting Obsidian documents with vector search."""
     _msg = "Starting obsidian-rag CLI"
@@ -108,56 +114,77 @@ def cli(
 
 def _get_embedding_provider(settings: Settings) -> EmbeddingProvider:
     """Create embedding provider from settings."""
+    _msg = "_get_embedding_provider starting"
+    log.debug(_msg)
     embedding_config = settings.get_endpoint_config("embedding")
     if embedding_config:
-        return ProviderFactory.create_embedding_provider(
+        result = ProviderFactory.create_embedding_provider(
             embedding_config.provider,
             api_key=embedding_config.api_key,
             model=embedding_config.model,
             base_url=embedding_config.base_url,
         )
-    else:
-        _msg = "No embedding configuration found, using default OpenAI provider"
-        log.warning(_msg)
-        return ProviderFactory.create_embedding_provider("openai")
+        _msg = "_get_embedding_provider returning"
+        log.debug(_msg)
+        return result
+    _msg = "No embedding configuration found, using default OpenAI provider"
+    log.warning(_msg)
+    result = ProviderFactory.create_embedding_provider("openai")
+    _msg = "_get_embedding_provider returning"
+    log.debug(_msg)
+    return result
 
 
 def _scan_vault(vault_path: Path) -> list:
     """Scan vault for markdown files."""
+    _msg = "_scan_vault starting"
+    log.debug(_msg)
     try:
-        return scan_markdown_files(vault_path)
+        result = scan_markdown_files(vault_path)
     except Exception as e:
         _msg = f"Failed to scan vault: {e}"
         log.exception(_msg)
         click.echo(f"Error: {_msg}", err=True)
-        import sys
-
         sys.exit(1)
+    else:
+        _msg = "_scan_vault returning"
+        log.debug(_msg)
+        return result
 
 
-def _create_progress_callback(verbose: bool):
+def _create_progress_callback(*, verbose: bool):
     """Create progress callback function."""
+    _msg = "_create_progress_callback starting"
+    log.debug(_msg)
 
     def callback(current: int, total: int, successes: int, errors: int) -> None:
         if verbose:
             click.echo(
-                f"Progress: {current}/{total} files processed ({successes} successful, {errors} errors)"
+                f"Progress: {current}/{total} files processed ({successes} successful, {errors} errors)",
             )
 
+    _msg = "_create_progress_callback returning"
+    log.debug(_msg)
     return callback
 
 
 def _report_ingest_results(
-    total: int, stats: dict[str, int], elapsed_time: float
+    total: int,
+    stats: dict[str, int],
+    elapsed_time: float,
 ) -> None:
     """Report ingestion results."""
+    _msg = "_report_ingest_results starting"
+    log.debug(_msg)
     click.echo(
         f"\nSuccessfully ingested {total} documents "
-        f"({stats['new']} new, {stats['updated']} updated, {stats['unchanged']} unchanged)"
+        f"({stats['new']} new, {stats['updated']} updated, {stats['unchanged']} unchanged)",
     )
     if stats["errors"] > 0:
         click.echo(f"Errors: {stats['errors']} files")
     click.echo(f"Completed in {elapsed_time:.1f} seconds")
+    _msg = "_report_ingest_results returning"
+    log.debug(_msg)
 
 
 @cli.command()
@@ -169,7 +196,7 @@ def _report_ingest_results(
 )
 @click.option("--verbose", is_flag=True, help="Show detailed progress.")
 @click.pass_context
-def ingest(ctx: click.Context, path: str, dry_run: bool, verbose: bool) -> None:
+def ingest(ctx: click.Context, path: str, *, dry_run: bool, verbose: bool) -> None:
     """Ingest documents from an Obsidian vault.
 
     PATH is the path to the Obsidian vault directory.
@@ -196,7 +223,7 @@ def ingest(ctx: click.Context, path: str, dry_run: bool, verbose: bool) -> None:
         files,
         batch_size=settings.ingestion.batch_size,
         progress_interval=settings.ingestion.progress_interval,
-        progress_callback=_create_progress_callback(verbose),
+        progress_callback=_create_progress_callback(verbose=verbose),
     )
 
     embedding_provider = _get_embedding_provider(settings)
@@ -210,7 +237,7 @@ def ingest(ctx: click.Context, path: str, dry_run: bool, verbose: bool) -> None:
         vault_path=vault_path,
         file_infos=file_infos,
         dry_run=dry_run,
-        progress_callback=_create_progress_callback(verbose),
+        progress_callback=_create_progress_callback(verbose=verbose),
     )
 
     elapsed_time = time.time() - start_time
@@ -225,8 +252,8 @@ def ingest(ctx: click.Context, path: str, dry_run: bool, verbose: bool) -> None:
 
 def _format_query_results_json(results: list) -> str:
     """Format query results as JSON."""
-    import json
-
+    _msg = "_format_query_results_json starting"
+    log.debug(_msg)
     output = [
         {
             "file_path": str(doc.file_path),
@@ -237,11 +264,16 @@ def _format_query_results_json(results: list) -> str:
         }
         for doc, dist in results
     ]
-    return json.dumps(output, indent=2)
+    result = json.dumps(output, indent=2)
+    _msg = "_format_query_results_json returning"
+    log.debug(_msg)
+    return result
 
 
 def _format_query_results_table(results: list) -> str:
     """Format query results as table/text."""
+    _msg = "_format_query_results_table starting"
+    log.debug(_msg)
     lines = [f"Found {len(results)} results:\n"]
     for doc, dist in results:
         lines.append(f"File: {doc.file_name}")
@@ -252,14 +284,35 @@ def _format_query_results_table(results: list) -> str:
         if doc.tags:
             lines.append(f"Tags: {', '.join(doc.tags)}")
         lines.append("")
-    return "\n".join(lines)
+    result = "\n".join(lines)
+    _msg = "_format_query_results_table returning"
+    log.debug(_msg)
+    return result
 
 
 def _search_documents(
-    session: Session, query_embedding: list[float], limit: int
+    session: Session,
+    query_embedding: list[float],
+    limit: int,
 ) -> list:
-    """Search documents using semantic similarity."""
-    return (
+    """Search documents using semantic similarity.
+
+    Args:
+        session: Database session for queries.
+        query_embedding: Vector embedding of the search query.
+        limit: Maximum number of results to return.
+
+    Returns:
+        List of tuples containing (Document, distance) pairs.
+
+    Notes:
+        Performs database query using pgvector cosine distance.
+        Requires content_vector to be populated for documents.
+
+    """
+    _msg = "_search_documents starting"
+    log.debug(_msg)
+    result = (
         session.query(
             Document,
             Document.content_vector.cosine_distance(query_embedding).label("distance"),
@@ -269,13 +322,19 @@ def _search_documents(
         .limit(limit)
         .all()
     )
+    _msg = "_search_documents returning"
+    log.debug(_msg)
+    return result
 
 
 @cli.command()
 @click.argument("query_text")
 @click.option("--limit", default=10, help="Maximum number of results.")
 @click.option(
-    "--format", "output_format", type=click.Choice(["table", "json"]), default="table"
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"]),
+    default="table",
 )
 @click.pass_context
 def query(ctx: click.Context, query_text: str, limit: int, output_format: str) -> None:
@@ -316,7 +375,9 @@ def query(ctx: click.Context, query_text: str, limit: int, output_format: str) -
     type=click.Choice(["completed", "not_completed", "in_progress", "cancelled"]),
 )
 @click.option(
-    "--due-before", type=str, help="Filter tasks due before date (YYYY-MM-DD)."
+    "--due-before",
+    type=str,
+    help="Filter tasks due before date (YYYY-MM-DD).",
 )
 @click.option("--tag", help="Filter by tag.")
 @click.option("--limit", default=20, help="Maximum number of results.")
@@ -353,9 +414,25 @@ def _build_tasks_query(
     tag: str | None,
     limit: int,
 ):
-    """Build the tasks query with filters."""
-    from datetime import datetime
+    """Build the tasks query with filters.
 
+    Args:
+        session: Database session for queries.
+        status: Filter by task status (optional).
+        due_before: Filter by due date before this date (optional).
+        tag: Filter by tag (optional).
+        limit: Maximum number of results to return.
+
+    Returns:
+        SQLAlchemy query object for tasks.
+
+    Notes:
+        Performs database query with joins to documents table.
+        Date parsing uses strptime with YYYY-MM-DD format.
+
+    """
+    _msg = "_build_tasks_query starting"
+    log.debug(_msg)
     query = session.query(Task).join(Document)
 
     if status:
@@ -363,12 +440,11 @@ def _build_tasks_query(
 
     if due_before:
         try:
-            due_date = datetime.strptime(due_before, "%Y-%m-%d").date()  # noqa: DTZ007
+            parsed = datetime.strptime(due_before, "%Y-%m-%d").replace(tzinfo=UTC)
+            due_date = parsed.date()
             query = query.filter(Task.due <= due_date)
         except ValueError:
             click.echo("Error: Invalid date format. Use YYYY-MM-DD.", err=True)
-            import sys
-
             sys.exit(1)
 
     if tag:
@@ -376,7 +452,8 @@ def _build_tasks_query(
 
     query = query.order_by(Task.priority, Task.due)
     query = query.limit(limit)
-
+    _msg = "_build_tasks_query returning"
+    log.debug(_msg)
     return query
 
 
@@ -390,6 +467,8 @@ def _format_task_results(results: list) -> str:
         Formatted string with one task per line.
 
     """
+    _msg = "_format_task_results starting"
+    log.debug(_msg)
     lines = [f"Found {len(results)} tasks:\n"]
     status_indicator = {
         "completed": "[x]",
@@ -413,7 +492,10 @@ def _format_task_results(results: list) -> str:
         metadata = ", ".join(parts)
         lines.append(f"{indicator} {task.description} ({metadata})")
 
-    return "\n".join(lines)
+    result = "\n".join(lines)
+    _msg = "_format_task_results returning"
+    log.debug(_msg)
+    return result
 
 
 def main() -> None:

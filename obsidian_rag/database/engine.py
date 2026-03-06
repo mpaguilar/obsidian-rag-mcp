@@ -2,8 +2,8 @@
 
 import logging
 import re
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -66,7 +66,9 @@ class DatabaseManager:
         log.debug(_msg)
         self.engine = create_engine(normalized_url)
         self.SessionLocal = sessionmaker(
-            autocommit=False, autoflush=False, bind=self.engine
+            autocommit=False,
+            autoflush=False,
+            bind=self.engine,
         )
 
     def create_tables(self) -> None:

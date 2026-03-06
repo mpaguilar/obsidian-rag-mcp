@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "obsidian-rag"
-version = "0.6.3"
+version = "0.7.2"
 description = "CLI tool for ingesting Obsidian markdown documents into PostgreSQL with vector embeddings"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -65,7 +65,25 @@ select = [
     "FAST",   # FastAPI-specific errors
     "D417",   # Missing argument description in docstring
     "C",      # McCabe complexity check
-    "PLR0913" # Too many arguments
+    "PLR0913",# Too many arguments
+    "I001",   # Import sorting (isort)
+    "COM812", # Missing trailing comma
+    "UP035",  # Deprecated typing imports
+    "PIE790", # Unnecessary placeholder (pass)
+    "RET505", # Superfluous else/return
+    "ANN003", # Missing **kwargs type annotation
+    "B904",   # Raise without from clause
+    "FBT001", # Boolean positional arg in function def
+    "FBT003", # Boolean positional value in call
+    "UP007",  # Use X | Y for Union
+    "UP045",  # Use X | None for Optional
+    "F401",   # Unused imports
+    "SIM110", # Use any/all instead of loop
+    "TC006",  # Unquoted type expression in cast()
+    "BLE001", # Blind except: except Exception
+    "F541",   # F-string without placeholders
+    "DTZ007", # Naive datetime from strptime
+    "PLR2004",# Magic value comparison
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -2,7 +2,6 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ class EmbeddingProvider(ABC):
             EmbeddingError: If embedding generation fails.
 
         """
-        pass  # pragma: no cover
+        # pragma: no cover
 
     @abstractmethod
     def get_dimension(self) -> int:
@@ -38,7 +37,7 @@ class EmbeddingProvider(ABC):
             The embedding dimension (e.g., 1536 for OpenAI).
 
         """
-        pass  # pragma: no cover
+        # pragma: no cover
 
 
 class ChatProvider(ABC):
@@ -49,7 +48,7 @@ class ChatProvider(ABC):
     """
 
     @abstractmethod
-    def chat(self, messages: list[dict[str, str]], **kwargs) -> str:
+    def chat(self, messages: list[dict[str, str]], **kwargs: object) -> str:
         """Send chat messages and get a response.
 
         Args:
@@ -63,103 +62,16 @@ class ChatProvider(ABC):
             ChatError: If the chat request fails.
 
         """
-        pass  # pragma: no cover
+        # pragma: no cover
 
 
 class ProviderError(Exception):
     """Base exception for provider errors."""
 
-    pass
-
 
 class EmbeddingError(ProviderError):
     """Exception raised when embedding generation fails."""
 
-    pass
-
 
 class ChatError(ProviderError):
     """Exception raised when chat request fails."""
-
-    pass
-
-
-class ProviderFactory:
-    """Factory for creating provider instances.
-
-    Creates appropriate provider instances based on configuration.
-
-    """
-
-    @staticmethod
-    def create_embedding_provider(
-        provider_name: str,
-        **config,
-    ) -> EmbeddingProvider:  # type: ignore[no-untyped-def]
-        """Create an embedding provider instance.
-
-        Args:
-            provider_name: Name of the provider ('openai', 'huggingface', 'openrouter').
-            **config: Provider-specific configuration.
-
-        Returns:
-            EmbeddingProvider instance.
-
-        Raises:
-            ValueError: If the provider name is unknown.
-
-        """
-        _msg = f"Creating embedding provider: {provider_name}"
-        log.debug(_msg)
-
-        # Import here to avoid circular dependencies
-        if provider_name == "openai":
-            from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
-
-            return OpenAIEmbeddingProvider(**config)
-        elif provider_name == "huggingface":
-            from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
-
-            return HuggingFaceEmbeddingProvider(**config)
-        elif provider_name == "openrouter":
-            from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
-
-            return OpenRouterEmbeddingProvider(**config)
-        else:
-            _msg = f"Unknown embedding provider: {provider_name}"
-            log.error(_msg)
-            raise ValueError(_msg)
-
-    @staticmethod
-    def create_chat_provider(
-        provider_name: str,
-        **config,
-    ) -> ChatProvider:  # type: ignore[no-untyped-def]
-        """Create a chat provider instance.
-
-        Args:
-            provider_name: Name of the provider ('openai', 'openrouter').
-            **config: Provider-specific configuration.
-
-        Returns:
-            ChatProvider instance.
-
-        Raises:
-            ValueError: If the provider name is unknown.
-
-        """
-        _msg = f"Creating chat provider: {provider_name}"
-        log.debug(_msg)
-
-        if provider_name == "openai":
-            from obsidian_rag.llm.providers import OpenAIChatProvider
-
-            return OpenAIChatProvider(**config)
-        elif provider_name == "openrouter":
-            from obsidian_rag.llm.providers import OpenRouterChatProvider
-
-            return OpenRouterChatProvider(**config)
-        else:
-            _msg = f"Unknown chat provider: {provider_name}"
-            log.error(_msg)
-            raise ValueError(_msg)

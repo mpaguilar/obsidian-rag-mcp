@@ -7,8 +7,6 @@ Uses native JSONB operators and vector similarity functions.
 import logging
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, or_, text
-
 from obsidian_rag.database.models import Document
 from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
@@ -20,19 +18,15 @@ from obsidian_rag.mcp_server.tools.documents_filters import (
 )
 from obsidian_rag.mcp_server.tools.documents_params import (
     DocumentQueryParams,
-    PaginationParams,
-    PropertyFilterParams,
     PropertyQueryParams,
-    QueryFilterParams,
     TagFilterParams,
 )
 from obsidian_rag.mcp_server.tools.documents_tags import (
     apply_postgresql_tag_filter,
-    matches_tag_filter,
 )
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Query, Session
+    from sqlalchemy.orm import Query
 
     from obsidian_rag.mcp_server.models import PropertyFilter
 
@@ -113,7 +107,7 @@ def query_documents_postgresql(params: DocumentQueryParams) -> DocumentListRespo
     distance_expr = Document.content_vector.cosine_distance(query_embedding)
 
     query = session.query(Document, distance_expr.label("distance")).filter(
-        Document.content_vector.isnot(None)
+        Document.content_vector.isnot(None),
     )
 
     query = _apply_postgresql_filters(
@@ -127,7 +121,8 @@ def query_documents_postgresql(params: DocumentQueryParams) -> DocumentListRespo
     results = query.offset(pagination.offset).limit(pagination.limit).all()
 
     results = _filter_results_by_exclude(
-        results, filter_params.property_filters.exclude_filters
+        results,
+        filter_params.property_filters.exclude_filters,
     )
     total_count = len(results)
 

@@ -253,17 +253,35 @@ The following ruff rules are enforced via configuration in `pyproject.toml`. All
 
 * **A002** - Argument shadows a Python built-in (e.g., naming a parameter `id` or `list`)
 * **ANN001** - Missing type annotation for function arguments
+* **ANN003** - Missing type annotation for `**kwargs`
 * **ANN201** - Missing return type annotation on public functions
 * **ANN401** - Disallow use of `typing.Any` type
 * **ARG001** - Unused function argument
 * **ARG002** - Unused method argument (self/cls excluded)
-* **F841** - Unused local variable
-* **RUF006** - Store a reference to the return value of `asyncio.create_task`
-* **TC002** - Move third-party import into a type-checking block
-* **FAST** - FastAPI-specific linting errors (e.g., FAST002 for non-Annotated Depends)
-* **D417** - Missing argument description in the docstring
+* **B904** - Raise without from clause (use `raise ... from err` or `raise ... from None`)
+* **BLE001** - Do not catch blind exception: `Exception` (use specific exception types)
+* **COM812** - Missing trailing comma
 * **C** - McCabe complexity check (cyclomatic complexity)
+* **D417** - Missing argument description in the docstring
+* **DTZ007** - Naive datetime constructed using `datetime.strptime()` without %z
+* **F401** - Unused imports
+* **F541** - F-string without placeholders
+* **F841** - Unused local variable
+* **FAST** - FastAPI-specific linting errors (e.g., FAST002 for non-Annotated Depends)
+* **FBT001** - Boolean-typed positional argument in function definition (use keyword-only)
+* **FBT003** - Boolean positional value in function call (use named argument)
+* **I001** - Import sorting (isort)
+* **PIE790** - Unnecessary placeholder (pass statement)
 * **PLR0913** - Too many arguments in function definition
+* **PLR2004** - Magic value used in comparison (use named constants)
+* **RET505** - Superfluous else/return (simplify control flow)
+* **RUF006** - Store a reference to the return value of `asyncio.create_task`
+* **SIM110** - Use `any()`/`all()` instead of equivalent loop
+* **TC002** - Move third-party import into a type-checking block
+* **TC006** - Unquoted type expression in cast()
+* **UP007** - Use `X | Y` for Union types (instead of `Union[X, Y]`)
+* **UP035** - Deprecated typing imports (e.g., `typing.List`, `typing.Dict`)
+* **UP045** - Use `X | None` for Optional types (instead of `Optional[X]`)
 
 ## McCabe Complexity
 

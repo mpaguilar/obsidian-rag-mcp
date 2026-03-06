@@ -10,8 +10,8 @@ from obsidian_rag.llm.base import (
     EmbeddingError,
     EmbeddingProvider,
     ProviderError,
-    ProviderFactory,
 )
+from obsidian_rag.llm.providers import ProviderFactory
 
 
 class TestProviderError:
@@ -114,11 +114,14 @@ class TestProviderFactory:
         """Test creating HuggingFace embedding provider."""
         from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
 
+        mock_embeddings = Mock()
+        mock_hf_class = Mock(return_value=mock_embeddings)
+
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
-                "langchain_huggingface.HuggingFaceEmbeddings",
-            ) as mock_hf:
-                mock_hf.return_value = Mock()
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
+            ):
                 provider = ProviderFactory.create_embedding_provider("huggingface")
 
         assert isinstance(provider, HuggingFaceEmbeddingProvider)
@@ -181,3 +184,37 @@ class TestProviderFactory:
         with patch.dict("os.environ", {}, clear=True):
             with pytest.raises(ValueError, match="API key is required"):
                 ProviderFactory.create_chat_provider("openrouter")
+
+    def test_create_openai_embedding_provider(self):
+        """Test creating OpenAI embedding provider covers lines 119-122."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch(
+                "obsidian_rag.llm.providers.OpenAIEmbeddingProvider",
+            ) as mock_provider_class:
+                mock_provider = Mock()
+                mock_provider_class.return_value = mock_provider
+                provider = ProviderFactory.create_embedding_provider(
+                    "openai",
+                    api_key="test-key",
+                )
+
+        assert provider is mock_provider
+
+    def test_create_openai_chat_provider(self):
+        """Test creating OpenAI chat provider covers lines 166-169."""
+        from obsidian_rag.llm.providers import OpenAIChatProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch(
+                "obsidian_rag.llm.providers.OpenAIChatProvider",
+            ) as mock_provider_class:
+                mock_provider = Mock()
+                mock_provider_class.return_value = mock_provider
+                provider = ProviderFactory.create_chat_provider(
+                    "openai",
+                    api_key="test-key",
+                )
+
+        assert provider is mock_provider

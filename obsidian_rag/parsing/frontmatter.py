@@ -42,8 +42,6 @@ FRONTMATTER_PATTERN = re.compile(
 class FrontMatterParsingError(Exception):
     """Exception raised when FrontMatter parsing fails."""
 
-    pass
-
 
 def extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     """Extract YAML frontmatter from markdown content.

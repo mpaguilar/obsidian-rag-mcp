@@ -18,6 +18,10 @@ from obsidian_rag.mcp_server.tools.documents import (
     get_documents_by_tag,
     query_documents,
 )
+from obsidian_rag.mcp_server.tools.documents_params import (
+    PaginationParams,
+    PropertyFilterParams,
+)
 from obsidian_rag.mcp_server.tools.documents_filters import (
     get_nested_value as _get_nested_value,
     matches_property_filter as _matches_property_filter,
@@ -141,7 +145,8 @@ class TestQueryDocuments:
         query_embedding = [0.1] * 1536
 
         # Test limit above maximum (should work but be clamped internally)
-        result = query_documents(db_session, query_embedding, limit=200)
+        pagination = PaginationParams(limit=200, offset=0)
+        result = query_documents(db_session, query_embedding, pagination=pagination)
         assert result.total_count == 0  # No documents
 
     def test_offset_validation(self, db_session):
@@ -149,7 +154,8 @@ class TestQueryDocuments:
         query_embedding = [0.1] * 1536
 
         # Test negative offset (should be clamped to 0)
-        result = query_documents(db_session, query_embedding, offset=-10)
+        pagination = PaginationParams(limit=20, offset=-10)
+        result = query_documents(db_session, query_embedding, pagination=pagination)
         assert result.total_count == 0  # No documents
 
 
@@ -566,11 +572,14 @@ class TestGetDocumentsByProperty:
         include_props = [
             PropertyFilter(path="status", operator="equals", value="draft")
         ]
+        property_filters = PropertyFilterParams(
+            include_filters=include_props, exclude_filters=None
+        )
+        pagination = PaginationParams(limit=20, offset=0)
         result = get_documents_by_property(
             db_session,
-            include_properties=include_props,
-            limit=20,
-            offset=0,
+            property_filters=property_filters,
+            pagination=pagination,
         )
         assert result.total_count == 2  # work.md, mixed.md
 
@@ -579,22 +588,28 @@ class TestGetDocumentsByProperty:
         include_props = [
             PropertyFilter(path="author.name", operator="contains", value="John")
         ]
+        property_filters = PropertyFilterParams(
+            include_filters=include_props, exclude_filters=None
+        )
+        pagination = PaginationParams(limit=20, offset=0)
         result = get_documents_by_property(
             db_session,
-            include_properties=include_props,
-            limit=20,
-            offset=0,
+            property_filters=property_filters,
+            pagination=pagination,
         )
         assert result.total_count == 2  # work.md, mixed.md
 
     def test_get_documents_by_property_exists(self, db_session, sample_documents):
         """Test filtering with exists operator."""
         include_props = [PropertyFilter(path="priority", operator="exists")]
+        property_filters = PropertyFilterParams(
+            include_filters=include_props, exclude_filters=None
+        )
+        pagination = PaginationParams(limit=20, offset=0)
         result = get_documents_by_property(
             db_session,
-            include_properties=include_props,
-            limit=20,
-            offset=0,
+            property_filters=property_filters,
+            pagination=pagination,
         )
         assert result.total_count == 3  # work.md, personal.md, mixed.md
 
@@ -603,11 +618,14 @@ class TestGetDocumentsByProperty:
         exclude_props = [
             PropertyFilter(path="status", operator="equals", value="draft")
         ]
+        property_filters = PropertyFilterParams(
+            include_filters=None, exclude_filters=exclude_props
+        )
+        pagination = PaginationParams(limit=20, offset=0)
         result = get_documents_by_property(
             db_session,
-            exclude_properties=exclude_props,
-            limit=20,
-            offset=0,
+            property_filters=property_filters,
+            pagination=pagination,
         )
         # Should exclude work.md and mixed.md (status=draft)
         assert result.total_count == 2  # personal.md, untagged.md
@@ -619,13 +637,16 @@ class TestGetDocumentsByProperty:
         include_props = [
             PropertyFilter(path="status", operator="equals", value="draft")
         ]
+        property_filters = PropertyFilterParams(
+            include_filters=include_props, exclude_filters=None
+        )
         tag_filter = TagFilter(include_tags=["urgent"])
+        pagination = PaginationParams(limit=20, offset=0)
         result = get_documents_by_property(
             db_session,
-            include_properties=include_props,
+            property_filters=property_filters,
             tag_filter=tag_filter,
-            limit=20,
-            offset=0,
+            pagination=pagination,
         )
         # Should include docs with status=draft AND urgent tag
         assert result.total_count == 1  # work.md
@@ -635,11 +656,14 @@ class TestGetDocumentsByProperty:
         include_props = [
             PropertyFilter(path="author.name", operator="equals", value="John")
         ]
+        property_filters = PropertyFilterParams(
+            include_filters=include_props, exclude_filters=None
+        )
+        pagination = PaginationParams(limit=20, offset=0)
         result = get_documents_by_property(
             db_session,
-            include_properties=include_props,
-            limit=20,
-            offset=0,
+            property_filters=property_filters,
+            pagination=pagination,
         )
         assert result.total_count == 2  # work.md, mixed.md
 
@@ -650,12 +674,12 @@ class TestQueryDocumentsWithFilters:
     def test_query_documents_with_tag_filter(self, db_session, sample_documents):
         """Test query_documents with tag filter."""
         tag_filter = TagFilter(include_tags=["work"])
+        pagination = PaginationParams(limit=20, offset=0)
         result = query_documents(
             db_session,
             query_embedding=[0.1] * 1536,
             tag_filter=tag_filter,
-            limit=20,
-            offset=0,
+            pagination=pagination,
         )
         # For SQLite, returns filtered docs with similarity_score=0.0
         # work.md and mixed.md have "work" tag (exact match)
@@ -666,12 +690,15 @@ class TestQueryDocumentsWithFilters:
         include_props = [
             PropertyFilter(path="status", operator="equals", value="draft")
         ]
+        property_filters = PropertyFilterParams(
+            include_filters=include_props, exclude_filters=None
+        )
+        pagination = PaginationParams(limit=20, offset=0)
         result = query_documents(
             db_session,
             query_embedding=[0.1] * 1536,
-            property_filters_include=include_props,
-            limit=20,
-            offset=0,
+            filter_params=property_filters,
+            pagination=pagination,
         )
         # work.md and mixed.md have status="draft"
         assert result.total_count == 2
@@ -679,12 +706,12 @@ class TestQueryDocumentsWithFilters:
     def test_query_documents_empty_result(self, db_session):
         """Test query_documents with empty database."""
         tag_filter = TagFilter(include_tags=["work"])
+        pagination = PaginationParams(limit=20, offset=0)
         result = query_documents(
             db_session,
             query_embedding=[0.1] * 1536,
             tag_filter=tag_filter,
-            limit=20,
-            offset=0,
+            pagination=pagination,
         )
         assert result.total_count == 0
         assert result.results == []
@@ -775,12 +802,15 @@ class TestGetDocumentsByPropertyAdditional:
         include_props = [
             PropertyFilter(path="status", operator="equals", value="draft")
         ]
+        property_filters = PropertyFilterParams(
+            include_filters=include_props, exclude_filters=None
+        )
+        pagination = PaginationParams(limit=20, offset=0)
         result = get_documents_by_property(
             db_session,
-            include_properties=include_props,
+            property_filters=property_filters,
             vault_root="/data/vault",
-            limit=20,
-            offset=0,
+            pagination=pagination,
         )
         # work.md and mixed.md both have status=draft and vault_root=/data/vault
         assert result.total_count == 2

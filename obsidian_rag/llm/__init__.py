@@ -6,12 +6,12 @@ from obsidian_rag.llm.base import (
     EmbeddingError,
     EmbeddingProvider,
     ProviderError,
-    ProviderFactory,
 )
 from obsidian_rag.llm.providers import (
     HuggingFaceEmbeddingProvider,
     OpenAIChatProvider,
     OpenAIEmbeddingProvider,
+    ProviderFactory,
 )
 
 __all__ = [

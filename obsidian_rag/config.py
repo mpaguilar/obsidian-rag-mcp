@@ -8,7 +8,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union, overload
+from typing import Any, overload
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -20,6 +20,10 @@ from pydantic_settings import (
 )
 
 log = logging.getLogger(__name__)
+
+# Constants for validation
+PGVECTOR_MAX_DIMENSION = 2000
+PORT_MAX = 65535
 
 DEFAULT_CONFIG = {
     "endpoints": {
@@ -118,14 +122,19 @@ def _replace_env_var(match: re.Match) -> str:
         The replaced value.
 
     """
+    _msg = "_replace_env_var starting"
+    log.debug(_msg)
     var_expr = match.group(1)
     if ":-" in var_expr:
         var_name, default = var_expr.split(":-", 1)
         result = os.environ.get(var_name, default)
+        _msg = "_replace_env_var returning"
+        log.debug(_msg)
         return str(result)
-    else:
-        result = os.environ.get(var_expr, match.group(0))
-        return str(result)
+    result = os.environ.get(var_expr, match.group(0))
+    _msg = "_replace_env_var returning"
+    log.debug(_msg)
+    return str(result)
 
 
 @overload
@@ -141,8 +150,8 @@ def _interpolate_env_vars(value: list[Any]) -> list[Any]: ...
 
 
 def _interpolate_env_vars(
-    value: Union[str, dict[str, Any], list[Any]],
-) -> Union[str, dict[str, Any], list[Any]]:
+    value: str | dict[str, Any] | list[Any],
+) -> str | dict[str, Any] | list[Any]:
     """Interpolate environment variables in configuration values.
 
     Supports ${VAR} and ${VAR:-default} syntax.
@@ -154,15 +163,27 @@ def _interpolate_env_vars(
         The interpolated value.
 
     """
+    _msg = "_interpolate_env_vars starting"
+    log.debug(_msg)
     if isinstance(value, str):
         pattern = r"\$\{([^}]+)\}"
-        return re.sub(pattern, _replace_env_var, value)
-    elif isinstance(value, dict):
-        return {k: _interpolate_env_vars(v) for k, v in value.items()}
-    elif isinstance(value, list):
-        return [_interpolate_env_vars(item) for item in value]
-    else:
-        return value
+        result = re.sub(pattern, _replace_env_var, value)
+        _msg = "_interpolate_env_vars returning"
+        log.debug(_msg)
+        return result
+    if isinstance(value, dict):
+        result = {k: _interpolate_env_vars(v) for k, v in value.items()}
+        _msg = "_interpolate_env_vars returning"
+        log.debug(_msg)
+        return result
+    if isinstance(value, list):
+        result = [_interpolate_env_vars(item) for item in value]
+        _msg = "_interpolate_env_vars returning"
+        log.debug(_msg)
+        return result
+    _msg = "_interpolate_env_vars returning"
+    log.debug(_msg)
+    return value
 
 
 def _load_yaml_config() -> dict:
@@ -182,13 +203,14 @@ def _load_yaml_config() -> dict:
     try:
         with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
-            if config is None:
-                return {}
-            return _interpolate_env_vars(config)
-    except Exception as e:
+    except (OSError, yaml.YAMLError) as e:
         _msg = f"Error loading config file: {e}"
         log.warning(_msg)
+        config = None
+
+    if config is None:
         return {}
+    return _interpolate_env_vars(config)
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -202,12 +224,16 @@ def _deep_merge(base: dict, override: dict) -> dict:
         The merged configuration.
 
     """
+    _msg = "_deep_merge starting"
+    log.debug(_msg)
     result = base.copy()
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             result[key] = _deep_merge(result[key], value)
         else:
             result[key] = value
+    _msg = "_deep_merge returning"
+    log.debug(_msg)
     return result
 
 
@@ -243,7 +269,9 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
     """
 
     def get_field_value(
-        self, field: FieldInfo, field_name: str
+        self,
+        field: FieldInfo,
+        field_name: str,
     ) -> tuple[Any, str, bool]:  # noqa: ARG002
         """Get field value from YAML config.
 
@@ -321,7 +349,7 @@ class DatabaseConfig(BaseModel):
         """
         if v <= 0:
             return 1536
-        if v > 2000:
+        if v > PGVECTOR_MAX_DIMENSION:
             _msg = (
                 "vector_dimension must be <= 2000 for pgvector index compatibility. "
                 "Compatible models: "
@@ -386,7 +414,7 @@ class MCPConfig(BaseModel):
     @classmethod
     def validate_port(cls, v: int) -> int:
         """Validate port is in valid range."""
-        if v < 1 or v > 65535:
+        if v < 1 or v > PORT_MAX:
             _msg = f"Port must be between 1 and 65535, got {v}"
             raise ValueError(_msg)
         return v
@@ -415,7 +443,12 @@ class Settings(BaseSettings):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
 
-    def __init__(self, verbose: bool = False, **kwargs) -> None:  # type: ignore[no-untyped-def]
+    def __init__(
+        self,
+        *,
+        verbose: bool = False,
+        **kwargs: str | int | float | bool | None,
+    ) -> None:
         """Initialize settings with merged configuration.
 
         Args:
@@ -494,7 +527,10 @@ class Settings(BaseSettings):
         return MODEL_DIMENSIONS[provider].get(model)
 
     def _validate_dimension_limit(
-        self, dimension: int, model: str, provider: str
+        self,
+        dimension: int,
+        model: str,
+        provider: str,
     ) -> None:
         """Validate that dimension does not exceed pgvector limit.
 
@@ -507,7 +543,7 @@ class Settings(BaseSettings):
             ValueError: If dimension exceeds 2000.
 
         """
-        if dimension > 2000:
+        if dimension > PGVECTOR_MAX_DIMENSION:
             _msg = (
                 f"Embedding model '{model}' from '{provider}' produces "
                 f"{dimension}-dimensional embeddings, which exceeds "
@@ -518,7 +554,10 @@ class Settings(BaseSettings):
             raise ValueError(_msg)
 
     def _validate_dimension_match(
-        self, expected: int, configured: int, model: str
+        self,
+        expected: int,
+        configured: int,
+        model: str,
     ) -> None:
         """Validate that expected dimension matches configured dimension.
 
@@ -571,13 +610,15 @@ class Settings(BaseSettings):
 
         self._validate_dimension_limit(expected_dimension, model, provider)
         self._validate_dimension_match(
-            expected_dimension, self.database.vector_dimension, model
+            expected_dimension,
+            self.database.vector_dimension,
+            model,
         )
 
         return self
 
 
-def get_settings(**kwargs) -> Settings:  # type: ignore[no-untyped-def]
+def get_settings(**kwargs: str | int | float | bool | None) -> Settings:
     """Get application settings instance.
 
     Args:

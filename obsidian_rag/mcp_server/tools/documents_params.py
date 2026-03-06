@@ -37,8 +37,8 @@ class PropertyFilterParams:
 
     """
 
-    include_filters: Optional[list["PropertyFilter"]]
-    exclude_filters: Optional[list["PropertyFilter"]]
+    include_filters: list["PropertyFilter"] | None
+    exclude_filters: list["PropertyFilter"] | None
 
 
 @dataclass
@@ -101,5 +101,5 @@ class PropertyQueryParams:
     session: "Session"
     property_filters: PropertyFilterParams
     tag_params: TagFilterParams
-    vault_root: Optional[str]
+    vault_root: str | None
     pagination: PaginationParams

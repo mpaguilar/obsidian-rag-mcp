@@ -6,9 +6,9 @@ including the pg_vector extension for vector embeddings.
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum as PyEnum
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -24,7 +24,8 @@ from sqlalchemy import (
     event,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID, ARRAY as PG_ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class ArrayType(TypeDecorator[List[str]]):
+class ArrayType(TypeDecorator[list[str]]):
     """Platform-independent array type.
 
     Uses PostgreSQL ARRAY type when available, falls back to JSON for SQLite.
@@ -69,8 +70,6 @@ VECTOR_DIMENSION = 1536
 
 class Base(DeclarativeBase):
     """Base class for all models."""
-
-    pass
 
 
 class TaskStatus(PyEnum):
@@ -116,10 +115,15 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     file_path: Mapped[str] = mapped_column(
-        Text, unique=True, nullable=False, index=True
+        Text,
+        unique=True,
+        nullable=False,
+        index=True,
     )
     file_name: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -131,7 +135,9 @@ class Document(Base):
     created_at_fs: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     modified_at_fs: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(UTC),
     )
     kind: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list[str] | None] = mapped_column(ArrayType, nullable=True)
@@ -140,7 +146,9 @@ class Document(Base):
 
     # Relationships
     tasks: Mapped[list["Task"]] = relationship(
-        "Task", back_populates="document", cascade="all, delete-orphan"
+        "Task",
+        back_populates="document",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
@@ -172,7 +180,9 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     document_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"),
@@ -215,7 +225,7 @@ class Task(Base):
 def _create_pgvector_extension(
     target: Base,  # noqa: ARG001
     connection: "Connection",
-    **kwargs,  # noqa: ARG001
+    **kwargs: object,  # noqa: ARG001
 ) -> None:
     """Create pgvector extension before creating tables (PostgreSQL only)."""
     # Only create extension on PostgreSQL

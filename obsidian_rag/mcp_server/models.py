@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
 
+# Constants for validation
+MAX_PAGINATION_LIMIT = 100
+
 
 class PropertyFilter(BaseModel):
     """Filter for document frontmatter properties.
@@ -190,10 +193,18 @@ def _validate_limit(limit: int) -> int:
         Validated limit (clamped between 1 and 100).
 
     """
+    _msg = "_validate_limit starting"
+    log.debug(_msg)
     if limit < 1:
+        _msg = "_validate_limit returning"
+        log.debug(_msg)
         return 1
-    if limit > 100:
+    if limit > MAX_PAGINATION_LIMIT:
+        _msg = "_validate_limit returning"
+        log.debug(_msg)
         return 100
+    _msg = "_validate_limit returning"
+    log.debug(_msg)
     return limit
 
 
@@ -207,8 +218,14 @@ def _validate_offset(offset: int) -> int:
         Validated offset (minimum 0).
 
     """
+    _msg = "_validate_offset starting"
+    log.debug(_msg)
     if offset < 0:
+        _msg = "_validate_offset returning"
+        log.debug(_msg)
         return 0
+    _msg = "_validate_offset returning"
+    log.debug(_msg)
     return offset
 
 
@@ -231,10 +248,10 @@ def create_task_response(
         TaskResponse populated from the models.
 
     """
-    _msg = "Creating TaskResponse from models"
+    _msg = "create_task_response starting"
     log.debug(_msg)
 
-    return TaskResponse(
+    result = TaskResponse(
         id=task.id,
         raw_text=task.raw_text,
         status=task.status,
@@ -245,6 +262,9 @@ def create_task_response(
         document_path=document.file_path,
         document_name=document.file_name,
     )
+    _msg = "create_task_response returning"
+    log.debug(_msg)
+    return result
 
 
 def create_document_response(
@@ -261,10 +281,10 @@ def create_document_response(
         DocumentResponse populated from the model.
 
     """
-    _msg = "Creating DocumentResponse from model"
+    _msg = "create_document_response starting"
     log.debug(_msg)
 
-    return DocumentResponse(
+    result = DocumentResponse(
         id=document.id,
         file_path=document.file_path,
         file_name=document.file_name,
@@ -275,3 +295,6 @@ def create_document_response(
         created_at_fs=document.created_at_fs,
         modified_at_fs=document.modified_at_fs,
     )
+    _msg = "create_document_response returning"
+    log.debug(_msg)
+    return result

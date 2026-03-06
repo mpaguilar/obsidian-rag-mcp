@@ -2,15 +2,16 @@
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
 from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.database.models import Document, Task
-from obsidian_rag.llm.base import EmbeddingProvider
+from obsidian_rag.llm.base import EmbeddingError, EmbeddingProvider
 from obsidian_rag.parsing.frontmatter import parse_frontmatter
 from obsidian_rag.parsing.scanner import (
     FileInfo,
@@ -138,7 +139,7 @@ class IngestionService:
                 batch_size=self.settings.ingestion.batch_size,
                 progress_interval=self.settings.ingestion.progress_interval,
                 progress_callback=progress_callback,
-            )
+            ),
         )
 
         return file_info_list, total
@@ -146,6 +147,7 @@ class IngestionService:
     def _process_files_with_stats(
         self,
         file_info_list: list[FileInfo],
+        *,
         dry_run: bool,
         progress_callback: Callable[[int, int, int, int], None] | None,
     ) -> dict[str, int]:
@@ -181,6 +183,7 @@ class IngestionService:
     def ingest_vault(
         self,
         vault_path: Path,
+        *,
         dry_run: bool = False,
         progress_callback: Callable[[int, int, int, int], None] | None = None,
         file_infos: list[FileInfo] | None = None,
@@ -200,6 +203,11 @@ class IngestionService:
         Raises:
             ValueError: If vault_path is invalid.
 
+        Notes:
+            Performs database operations for document and task creation/update.
+            Uses file checksums to detect changes and avoid unnecessary updates.
+            Each file is processed in its own database transaction.
+
         """
         _msg = f"ingest_vault starting for path: {vault_path}"
         log.info(_msg)
@@ -207,7 +215,9 @@ class IngestionService:
         start_time = time.time()
 
         file_info_list, total = self._get_file_info_list(
-            vault_path, file_infos, progress_callback
+            vault_path,
+            file_infos,
+            progress_callback,
         )
 
         if total == 0:
@@ -223,7 +233,9 @@ class IngestionService:
             )
 
         stats = self._process_files_with_stats(
-            file_info_list, dry_run, progress_callback
+            file_info_list,
+            dry_run=dry_run,
+            progress_callback=progress_callback,
         )
 
         elapsed_time = time.time() - start_time
@@ -250,6 +262,7 @@ class IngestionService:
     def _ingest_single_file(
         self,
         file_info: FileInfo,
+        *,
         dry_run: bool = False,
     ) -> str:
         """Ingest a single file.
@@ -263,6 +276,11 @@ class IngestionService:
 
         Raises:
             Exception: If processing fails.
+
+        Notes:
+            Performs database operations within a transaction per file.
+            Parses frontmatter and tasks from file content.
+            Generates embeddings if embedding_provider is configured.
 
         """
         _msg = f"_ingest_single_file starting for: {file_info.path}"
@@ -330,6 +348,10 @@ class IngestionService:
         Returns:
             New Document instance.
 
+        Notes:
+            Generates embeddings using the configured embedding provider.
+            Network access may occur when calling external embedding APIs.
+
         """
         _msg = "_create_document starting"
         log.debug(_msg)
@@ -343,7 +365,7 @@ class IngestionService:
                 _msg = "Generating embedding for document"
                 log.debug(_msg)
                 embedding = self.embedding_provider.generate_embedding(content)
-            except Exception as e:
+            except EmbeddingError as e:
                 _msg = f"Failed to generate embedding: {e}"
                 log.warning(_msg)
                 embedding = None

@@ -3,7 +3,7 @@
 import logging
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from dateutil.rrule import rrulestr
@@ -27,7 +27,11 @@ def _serialize_custom_metadata(
         Serialized metadata dictionary or None if input is None.
 
     """
+    _msg = "_serialize_custom_metadata starting"
+    log.debug(_msg)
     if metadata is None:
+        _msg = "_serialize_custom_metadata returning"
+        log.debug(_msg)
         return None
 
     result: dict[str, Any] = {}
@@ -36,6 +40,8 @@ def _serialize_custom_metadata(
             result[key] = value.isoformat()
         else:
             result[key] = value
+    _msg = "_serialize_custom_metadata returning"
+    log.debug(_msg)
     return result
 
 
@@ -94,13 +100,18 @@ def _map_checkbox_status(checkbox: str) -> str:
         The corresponding TaskStatus value.
 
     """
+    _msg = "_map_checkbox_status starting"
+    log.debug(_msg)
     status_map = {
         " ": TaskStatus.NOT_COMPLETED.value,
         "x": TaskStatus.COMPLETED.value,
         "/": TaskStatus.IN_PROGRESS.value,
         "-": TaskStatus.CANCELLED.value,
     }
-    return status_map.get(checkbox, TaskStatus.NOT_COMPLETED.value)
+    result = status_map.get(checkbox, TaskStatus.NOT_COMPLETED.value)
+    _msg = "_map_checkbox_status returning"
+    log.debug(_msg)
+    return result
 
 
 def _map_priority(value: str) -> str:
@@ -113,6 +124,8 @@ def _map_priority(value: str) -> str:
         The corresponding TaskPriority value.
 
     """
+    _msg = "_map_priority starting"
+    log.debug(_msg)
     priority_map = {
         "highest": TaskPriority.HIGHEST.value,
         "high": TaskPriority.HIGH.value,
@@ -121,7 +134,10 @@ def _map_priority(value: str) -> str:
         "lowest": TaskPriority.LOWEST.value,
     }
     normalized = value.lower().strip()
-    return priority_map.get(normalized, TaskPriority.NORMAL.value)
+    result = priority_map.get(normalized, TaskPriority.NORMAL.value)
+    _msg = "_map_priority returning"
+    log.debug(_msg)
+    return result
 
 
 def _parse_date(date_str: str) -> datetime | None:
@@ -141,6 +157,8 @@ def _parse_date(date_str: str) -> datetime | None:
         - DD/MM/YYYY
 
     """
+    _msg = "_parse_date starting"
+    log.debug(_msg)
     date_str = date_str.strip()
     formats = [
         "%Y-%m-%d",
@@ -151,10 +169,16 @@ def _parse_date(date_str: str) -> datetime | None:
 
     for fmt in formats:
         try:
-            return datetime.strptime(date_str, fmt)  # noqa: DTZ007
+            result = datetime.strptime(date_str, fmt).replace(tzinfo=UTC)
         except ValueError:
             continue
+        else:
+            _msg = "_parse_date returning"
+            log.debug(_msg)
+            return result
 
+    _msg = "_parse_date returning"
+    log.debug(_msg)
     return None
 
 
@@ -174,7 +198,10 @@ def _obsidian_to_rrule(pattern: str) -> str | None:
         'FREQ=WEEKLY;INTERVAL=2'
 
     """
+    _msg = "_obsidian_to_rrule starting"
+    log.debug(_msg)
     pattern = pattern.lower().strip()
+    result = None
 
     # Simple mappings for common patterns
     mappings = {
@@ -190,23 +217,25 @@ def _obsidian_to_rrule(pattern: str) -> str | None:
     }
 
     if pattern in mappings:
-        return mappings[pattern]
+        result = mappings[pattern]
+    else:
+        # Try to parse "every N units" patterns
+        match = re.match(r"every\s+(\d+)\s*(day|week|month|year)s?", pattern)
+        if match:
+            count = match.group(1)
+            unit = match.group(2).upper()
+            freq_map = {
+                "DAY": "DAILY",
+                "WEEK": "WEEKLY",
+                "MONTH": "MONTHLY",
+                "YEAR": "YEARLY",
+            }
+            freq = freq_map.get(unit, unit + "LY")
+            result = f"FREQ={freq};INTERVAL={count}"
 
-    # Try to parse "every N units" patterns
-    match = re.match(r"every\s+(\d+)\s*(day|week|month|year)s?", pattern)
-    if match:
-        count = match.group(1)
-        unit = match.group(2).upper()
-        freq_map = {
-            "DAY": "DAILY",
-            "WEEK": "WEEKLY",
-            "MONTH": "MONTHLY",
-            "YEAR": "YEARLY",
-        }
-        freq = freq_map.get(unit, unit + "LY")
-        return f"FREQ={freq};INTERVAL={count}"
-
-    return None
+    _msg = "_obsidian_to_rrule returning"
+    log.debug(_msg)
+    return result
 
 
 def _validate_rrule(pattern: str) -> bool:
@@ -219,20 +248,30 @@ def _validate_rrule(pattern: str) -> bool:
         True if valid, False otherwise.
 
     """
+    _msg = "_validate_rrule starting"
+    log.debug(_msg)
+    result = False
     try:
         rrulestr(pattern)
-        return True
-    except Exception:
-        return False
+        result = True
+    except ValueError:
+        result = False
+    _msg = "_validate_rrule returning"
+    log.debug(_msg)
+    return result
 
 
 def _process_repeat_value(value: str, standard_fields: dict[str, Any]) -> None:
     """Process repeat metadata value."""
+    _msg = "_process_repeat_value starting"
+    log.debug(_msg)
     rrule_pattern = _obsidian_to_rrule(value)
     if rrule_pattern and _validate_rrule(rrule_pattern):
         standard_fields["repeat"] = rrule_pattern
     else:
         standard_fields["repeat"] = value
+    _msg = "_process_repeat_value returning"
+    log.debug(_msg)
 
 
 def _process_standard_field(
@@ -241,18 +280,23 @@ def _process_standard_field(
     standard_fields: dict[str, Any],
 ) -> bool:
     """Process standard metadata fields. Returns True if processed."""
+    _msg = "_process_standard_field starting"
+    log.debug(_msg)
     date_fields = {"scheduled", "due", "completion"}
+    result = False
 
     if key_lower in date_fields:
         standard_fields[key_lower] = _parse_date(value)
-        return True
-    if key_lower == "priority":
+        result = True
+    elif key_lower == "priority":
         standard_fields["priority"] = _map_priority(value)
-        return True
-    if key_lower == "repeat":
+        result = True
+    elif key_lower == "repeat":
         _process_repeat_value(value, standard_fields)
-        return True
-    return False
+        result = True
+    _msg = "_process_standard_field returning"
+    log.debug(_msg)
+    return result
 
 
 def _process_metadata_key(
@@ -262,10 +306,14 @@ def _process_metadata_key(
     custom_metadata: dict[str, Any],
 ) -> None:
     """Process a single metadata key-value pair."""
+    _msg = "_process_metadata_key starting"
+    log.debug(_msg)
     key_lower = key.lower()
 
     if not _process_standard_field(key_lower, value, standard_fields):
         custom_metadata[key] = value
+    _msg = "_process_metadata_key returning"
+    log.debug(_msg)
 
 
 def _extract_task_metadata(task_text: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -279,6 +327,8 @@ def _extract_task_metadata(task_text: str) -> tuple[dict[str, Any], dict[str, An
         standard_fields contains: scheduled, due, completion, priority, repeat
 
     """
+    _msg = "_extract_task_metadata starting"
+    log.debug(_msg)
     custom_metadata: dict[str, Any] = {}
     standard_fields: dict[str, Any] = {
         "scheduled": None,
@@ -290,9 +340,14 @@ def _extract_task_metadata(task_text: str) -> tuple[dict[str, Any], dict[str, An
 
     for key, value in METADATA_PATTERN.findall(task_text):
         _process_metadata_key(
-            key.strip(), value.strip(), standard_fields, custom_metadata
+            key.strip(),
+            value.strip(),
+            standard_fields,
+            custom_metadata,
         )
 
+    _msg = "_extract_task_metadata returning"
+    log.debug(_msg)
     return standard_fields, custom_metadata
 
 
@@ -306,9 +361,14 @@ def _clean_task_description(task_text: str) -> str:
         Clean description without metadata.
 
     """
+    _msg = "_clean_task_description starting"
+    log.debug(_msg)
     description = METADATA_PATTERN.sub("", task_text)
     description = TAG_PATTERN.sub("", description)
-    return " ".join(description.split())
+    result = " ".join(description.split())
+    _msg = "_clean_task_description returning"
+    log.debug(_msg)
+    return result
 
 
 def parse_task_line(line: str) -> ParsedTask | None:

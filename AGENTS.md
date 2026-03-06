@@ -86,13 +86,7 @@ Config file locations (searched in order):
 ## Development
 
 - All code must pass ruff linting
-- 100% test coverage on core modules (parsing, database engine, llm base/providers, services/ingestion)
-- 97%+ coverage on config (environment variable interpolation branches)
-- 95%+ coverage on cli (error handling and edge cases)
-- 71%+ coverage on mcp_server/server (tool registration and logging functions)
-- 94%+ coverage on mcp_server/tools/documents (PostgreSQL-specific tag filtering requires integration testing)
-- 99%+ coverage on mcp_server/tools/documents_filters (single defensive branch)
-- 100% coverage on mcp_server/tools/documents_postgres, documents_sqlite, documents_tags, documents_params
+- 100% test coverage is required, including branch coverage (see CONVENTIONS.md)
 - All functions require type hints and docstrings
 - McCabe complexity max: 5
 - All source files under 1000 lines

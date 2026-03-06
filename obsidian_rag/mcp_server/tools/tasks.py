@@ -12,9 +12,9 @@ from sqlalchemy import func, or_
 from obsidian_rag.database.models import Document, Task, TaskStatus
 from obsidian_rag.mcp_server.models import (
     TaskListResponse,
-    create_task_response,
     _validate_limit,
     _validate_offset,
+    create_task_response,
 )
 
 if TYPE_CHECKING:
@@ -27,6 +27,7 @@ def get_incomplete_tasks(
     session: "Session",
     limit: int = 20,
     offset: int = 0,
+    *,
     include_cancelled: bool = False,
 ) -> TaskListResponse:
     """Query tasks that are not completed.
@@ -87,6 +88,7 @@ def get_tasks_due_this_week(
     session: "Session",
     limit: int = 20,
     offset: int = 0,
+    *,
     include_completed: bool = True,
 ) -> TaskListResponse:
     """Query tasks due within the next 7 days.
@@ -184,7 +186,7 @@ def get_tasks_by_tag(
             or_(
                 func.lower(Task.tags).contains(search_tag),
                 func.lower(Document.tags).contains(search_tag),
-            )
+            ),
         )
         .order_by(Task.due.asc())
     )

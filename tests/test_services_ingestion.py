@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from obsidian_rag.database.models import Document, Task
+from obsidian_rag.llm.base import EmbeddingError
 from obsidian_rag.services.ingestion import IngestionResult, IngestionService
 
 if TYPE_CHECKING:
@@ -594,8 +595,8 @@ class TestIngestSingleFile:
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
-        ingestion_service.embedding_provider.generate_embedding.side_effect = Exception(
-            "Embedding failed"
+        ingestion_service.embedding_provider.generate_embedding.side_effect = (
+            EmbeddingError("Embedding failed")
         )
 
         mock_file_info = MagicMock()

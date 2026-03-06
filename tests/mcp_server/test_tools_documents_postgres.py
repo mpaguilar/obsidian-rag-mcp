@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
+
 
 class TestQueryDocumentsPostgres:
     """Tests for query_documents with PostgreSQL dialect."""
@@ -43,7 +45,8 @@ class TestQueryDocumentsPostgres:
         mock_session.query.return_value = mock_query
 
         query_embedding = [0.1] * 1536
-        result = query_documents(mock_session, query_embedding, limit=20, offset=0)
+        pagination = PaginationParams(limit=20, offset=0)
+        result = query_documents(mock_session, query_embedding, pagination=pagination)
 
         assert result.total_count == 1
         assert len(result.results) == 1
@@ -71,7 +74,8 @@ class TestQueryDocumentsPostgres:
         mock_session.query.return_value = mock_query
 
         query_embedding = [0.1] * 1536
-        result = query_documents(mock_session, query_embedding, limit=20, offset=0)
+        pagination = PaginationParams(limit=20, offset=0)
+        result = query_documents(mock_session, query_embedding, pagination=pagination)
 
         assert result.total_count == 0
         assert len(result.results) == 0

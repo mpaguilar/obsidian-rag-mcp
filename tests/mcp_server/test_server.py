@@ -125,7 +125,7 @@ class TestCreateEmbeddingProvider:
         settings.endpoints["embedding"].provider = "openai"
 
         with patch("obsidian_rag.mcp_server.server.ProviderFactory") as mock_factory:
-            mock_factory.create_embedding_provider.side_effect = Exception("Failed")
+            mock_factory.create_embedding_provider.side_effect = RuntimeError("Failed")
 
             result = _create_embedding_provider(settings)
 
@@ -155,7 +155,9 @@ class TestTaskToolHandlers:
             mock_result.model_dump.return_value = {"tasks": []}
             mock_tool.return_value = mock_result
 
-            result = _get_incomplete_tasks_handler(mock_db_manager, 20, 0, False)
+            result = _get_incomplete_tasks_handler(
+                mock_db_manager, 20, 0, include_cancelled=False
+            )
 
             assert result == {"tasks": []}
             mock_tool.assert_called_once_with(
@@ -182,7 +184,9 @@ class TestTaskToolHandlers:
             mock_result.model_dump.return_value = {"tasks": []}
             mock_tool.return_value = mock_result
 
-            result = _get_tasks_due_this_week_handler(mock_db_manager, 20, 0, True)
+            result = _get_tasks_due_this_week_handler(
+                mock_db_manager, 20, 0, include_completed=True
+            )
 
             assert result == {"tasks": []}
             mock_tool.assert_called_once_with(
@@ -443,7 +447,9 @@ class TestTaskHandlerLogging:
             mock_result.model_dump.return_value = {"tasks": []}
             mock_tool.return_value = mock_result
 
-            result = _get_incomplete_tasks_handler(mock_db_manager, 20, 0, False)
+            result = _get_incomplete_tasks_handler(
+                mock_db_manager, 20, 0, include_cancelled=False
+            )
 
             # Verify handler returns expected result
             assert result == {"tasks": []}
@@ -468,7 +474,9 @@ class TestTaskHandlerLogging:
             mock_result.model_dump.return_value = {"tasks": []}
             mock_tool.return_value = mock_result
 
-            result = _get_tasks_due_this_week_handler(mock_db_manager, 20, 0, True)
+            result = _get_tasks_due_this_week_handler(
+                mock_db_manager, 20, 0, include_completed=True
+            )
 
             # Verify handler returns expected result
             assert result == {"tasks": []}

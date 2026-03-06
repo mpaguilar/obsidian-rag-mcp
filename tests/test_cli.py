@@ -642,6 +642,32 @@ class TestGetEmbeddingProvider:
             assert result is mock_provider
             mock_factory.create_embedding_provider.assert_called_once_with("openai")
 
+    def test_get_embedding_provider_with_config(self):
+        """Test _get_embedding_provider with existing config (lines 115-123)."""
+        from obsidian_rag.cli import _get_embedding_provider
+
+        mock_settings = MagicMock()
+        mock_config = MagicMock()
+        mock_config.provider = "openai"
+        mock_config.api_key = "test-api-key"
+        mock_config.model = "text-embedding-3-small"
+        mock_config.base_url = None
+        mock_settings.get_endpoint_config.return_value = mock_config
+
+        with patch("obsidian_rag.cli.ProviderFactory") as mock_factory:
+            mock_provider = MagicMock()
+            mock_factory.create_embedding_provider.return_value = mock_provider
+
+            result = _get_embedding_provider(mock_settings)
+
+            assert result is mock_provider
+            mock_factory.create_embedding_provider.assert_called_once_with(
+                "openai",
+                api_key="test-api-key",
+                model="text-embedding-3-small",
+                base_url=None,
+            )
+
 
 class TestCreateProgressCallback:
     """Test _create_progress_callback function."""

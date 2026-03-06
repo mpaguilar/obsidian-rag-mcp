@@ -2,10 +2,10 @@
 
 import hashlib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 log = logging.getLogger(__name__)
 
@@ -18,8 +18,6 @@ DEFAULT_BATCH_SIZE = 100
 
 class FileScanError(Exception):
     """Exception raised when file scanning fails."""
-
-    pass
 
 
 @dataclass
@@ -142,17 +140,22 @@ def _check_file_size(path: Path) -> bool:
         True if file size is acceptable, False otherwise.
 
     """
+    _msg = f"_check_file_size starting for: {path}"
+    log.debug(_msg)
+    result = False
     try:
         size = path.stat().st_size
         if size > MAX_FILE_SIZE_BYTES:
             _msg = f"File exceeds max size ({MAX_FILE_SIZE_BYTES} bytes): {path}"
             log.warning(_msg)
-            return False
-        return True
+        else:
+            result = True
     except OSError as e:
         _msg = f"Cannot stat file {path}: {e}"
         log.warning(_msg)
-        return False
+    _msg = "_check_file_size returning"
+    log.debug(_msg)
+    return result
 
 
 def _read_file_content(path: Path) -> str | None:
@@ -165,18 +168,27 @@ def _read_file_content(path: Path) -> str | None:
         File content or None if reading fails.
 
     """
+    _msg = f"_read_file_content starting for: {path}"
+    log.debug(_msg)
+    content = None
     try:
-        return path.read_text(encoding="utf-8")
+        content = path.read_text(encoding="utf-8")
     except PermissionError as e:
         _msg = f"Permission denied reading file {path}: {e}"
         log.warning(_msg)
     except UnicodeDecodeError as e:
         _msg = f"Cannot decode file {path}: {e}"
         log.warning(_msg)
-    except Exception as e:
+    except OSError as e:
         _msg = f"Error reading file {path}: {e}"
         log.warning(_msg)
-    return None
+    else:
+        _msg = "_read_file_content returning"
+        log.debug(_msg)
+        return content
+    _msg = "_read_file_content returning"
+    log.debug(_msg)
+    return content
 
 
 def read_file_with_metadata(file_path: str | Path) -> FileInfo | None:
@@ -212,8 +224,8 @@ def read_file_with_metadata(file_path: str | Path) -> FileInfo | None:
 
     # Get file timestamps
     stat = path.stat()
-    created_at = datetime.fromtimestamp(stat.st_ctime)  # noqa: DTZ006
-    modified_at = datetime.fromtimestamp(stat.st_mtime)  # noqa: DTZ006
+    created_at = datetime.fromtimestamp(stat.st_ctime, tz=UTC)
+    modified_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
 
     file_info = FileInfo(
         path=path,
@@ -225,6 +237,8 @@ def read_file_with_metadata(file_path: str | Path) -> FileInfo | None:
     )
 
     _msg = f"Successfully read file: {path.name}, checksum={checksum[:8]}..."
+    log.debug(_msg)
+    _msg = "read_file_with_metadata returning"
     log.debug(_msg)
     return file_info
 

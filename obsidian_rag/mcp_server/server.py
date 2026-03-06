@@ -9,7 +9,7 @@ from typing import Literal, TypedDict, cast
 
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
-from sqlalchemy import text
+from sqlalchemy import exc, text
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
@@ -18,25 +18,42 @@ from starlette.responses import JSONResponse
 
 from obsidian_rag.config import Settings
 from obsidian_rag.database.engine import DatabaseManager
-from obsidian_rag.llm.base import EmbeddingProvider, ProviderFactory
+from obsidian_rag.llm.base import EmbeddingProvider
+from obsidian_rag.llm.providers import ProviderFactory
 from obsidian_rag.mcp_server.models import (
     HealthResponse,
     PropertyFilter,
     TagFilter,
 )
-from obsidian_rag.services.ingestion import IngestionService
 from obsidian_rag.mcp_server.tools.documents import (
     get_all_tags as get_all_tags_tool,
+)
+from obsidian_rag.mcp_server.tools.documents import (
     get_documents_by_property as get_documents_by_property_tool,
+)
+from obsidian_rag.mcp_server.tools.documents import (
     get_documents_by_tag as get_documents_by_tag_tool,
+)
+from obsidian_rag.mcp_server.tools.documents import (
     query_documents as query_documents_tool,
+)
+from obsidian_rag.mcp_server.tools.documents_params import (
+    PaginationParams,
+    PropertyFilterParams,
 )
 from obsidian_rag.mcp_server.tools.tasks import (
     get_completed_tasks as get_completed_tasks_tool,
+)
+from obsidian_rag.mcp_server.tools.tasks import (
     get_incomplete_tasks as get_incomplete_tasks_tool,
+)
+from obsidian_rag.mcp_server.tools.tasks import (
     get_tasks_by_tag as get_tasks_by_tag_tool,
+)
+from obsidian_rag.mcp_server.tools.tasks import (
     get_tasks_due_this_week as get_tasks_due_this_week_tool,
 )
+from obsidian_rag.services.ingestion import IngestionService
 
 
 class DocumentTagParams(TypedDict, total=False):
@@ -75,10 +92,16 @@ def _create_embedding_provider(
         Embedding provider instance or None if creation fails.
 
     """
+    _msg = "_create_embedding_provider starting"
+    log.debug(_msg)
+
     embedding_config = settings.endpoints.get("embedding")
     if not embedding_config:
+        _msg = "_create_embedding_provider returning"
+        log.debug(_msg)
         return None
 
+    provider = None
     try:
         provider = ProviderFactory.create_embedding_provider(
             provider_name=embedding_config.provider,
@@ -86,22 +109,25 @@ def _create_embedding_provider(
             model=embedding_config.model,
             base_url=embedding_config.base_url,
         )
-        _msg = f"Created embedding provider: {embedding_config.provider}"
-        log.info(_msg)
-        return provider
-    except Exception as e:
+    except (ValueError, ImportError, RuntimeError) as e:
         _msg = f"Failed to create embedding provider: {e}"
         log.warning(_msg)
-        return None
+
+    _msg = "_create_embedding_provider returning"
+    log.debug(_msg)
+    return provider
 
 
 def _get_incomplete_tasks_handler(
     db_manager: DatabaseManager,
     limit: int,
     offset: int,
+    *,
     include_cancelled: bool,
 ) -> dict[str, object]:
     """Handle get_incomplete_tasks tool call."""
+    _msg = "_get_incomplete_tasks_handler starting"
+    log.debug(_msg)
     with db_manager.get_session() as session:
         result = get_incomplete_tasks_tool(
             session=session,
@@ -109,6 +135,8 @@ def _get_incomplete_tasks_handler(
             offset=offset,
             include_cancelled=include_cancelled,
         )
+        _msg = "_get_incomplete_tasks_handler returning"
+        log.debug(_msg)
         return result.model_dump()
 
 
@@ -116,9 +144,12 @@ def _get_tasks_due_this_week_handler(
     db_manager: DatabaseManager,
     limit: int,
     offset: int,
+    *,
     include_completed: bool,
 ) -> dict[str, object]:
     """Handle get_tasks_due_this_week tool call."""
+    _msg = "_get_tasks_due_this_week_handler starting"
+    log.debug(_msg)
     with db_manager.get_session() as session:
         result = get_tasks_due_this_week_tool(
             session=session,
@@ -126,6 +157,8 @@ def _get_tasks_due_this_week_handler(
             offset=offset,
             include_completed=include_completed,
         )
+        _msg = "_get_tasks_due_this_week_handler returning"
+        log.debug(_msg)
         return result.model_dump()
 
 
@@ -136,6 +169,8 @@ def _get_tasks_by_tag_handler(
     offset: int,
 ) -> dict[str, object]:
     """Handle get_tasks_by_tag tool call."""
+    _msg = "_get_tasks_by_tag_handler starting"
+    log.debug(_msg)
     with db_manager.get_session() as session:
         result = get_tasks_by_tag_tool(
             session=session,
@@ -143,6 +178,8 @@ def _get_tasks_by_tag_handler(
             limit=limit,
             offset=offset,
         )
+        _msg = "_get_tasks_by_tag_handler returning"
+        log.debug(_msg)
         return result.model_dump()
 
 
@@ -153,6 +190,8 @@ def _get_completed_tasks_handler(
     completed_since: str | None,
 ) -> dict[str, object]:
     """Handle get_completed_tasks tool call."""
+    _msg = "_get_completed_tasks_handler starting"
+    log.debug(_msg)
     since_date = None
     if completed_since:
         try:
@@ -168,6 +207,8 @@ def _get_completed_tasks_handler(
             offset=offset,
             completed_since=since_date,
         )
+        _msg = "_get_completed_tasks_handler returning"
+        log.debug(_msg)
         return result.model_dump()
 
 
@@ -185,9 +226,12 @@ def _get_documents_by_tag_handler(
         Document list response as dictionary.
 
     """
+    _msg = "_get_documents_by_tag_handler starting"
+    log.debug(_msg)
+
     # Create TagFilter from params with proper type casting
     match_mode_value = params.get("match_mode", "all")
-    match_mode_casted = cast(Literal["all", "any"], match_mode_value)
+    match_mode_casted = cast("Literal['all', 'any']", match_mode_value)
     tag_filter = TagFilter(
         include_tags=params.get("include_tags", []),
         exclude_tags=params.get("exclude_tags", []),
@@ -202,6 +246,8 @@ def _get_documents_by_tag_handler(
             limit=params.get("limit", 20),
             offset=params.get("offset", 0),
         )
+        _msg = "_get_documents_by_tag_handler returning"
+        log.debug(_msg)
         return result.model_dump()
 
 
@@ -212,6 +258,8 @@ def _get_all_tags_handler(
     offset: int,
 ) -> dict[str, object]:
     """Handle get_all_tags tool call."""
+    _msg = "_get_all_tags_handler starting"
+    log.debug(_msg)
     with db_manager.get_session() as session:
         result = get_all_tags_tool(
             session=session,
@@ -219,6 +267,8 @@ def _get_all_tags_handler(
             limit=limit,
             offset=offset,
         )
+        _msg = "_get_all_tags_handler returning"
+        log.debug(_msg)
         return result.model_dump()
 
 
@@ -234,9 +284,16 @@ def _convert_property_filters(
         List of PropertyFilter objects or None.
 
     """
+    _msg = "_convert_property_filters starting"
+    log.debug(_msg)
     if not properties:
+        _msg = "_convert_property_filters returning"
+        log.debug(_msg)
         return None
-    return [PropertyFilter(**prop) for prop in properties]
+    result = [PropertyFilter(**prop) for prop in properties]
+    _msg = "_convert_property_filters returning"
+    log.debug(_msg)
+    return result
 
 
 def _create_tag_filter(
@@ -255,15 +312,22 @@ def _create_tag_filter(
         TagFilter or None if no tags specified.
 
     """
+    _msg = "_create_tag_filter starting"
+    log.debug(_msg)
     if not include_tags and not exclude_tags:
+        _msg = "_create_tag_filter returning"
+        log.debug(_msg)
         return None
 
     valid_match_mode = match_mode if match_mode in ("all", "any") else "all"
-    return TagFilter(
+    result = TagFilter(
         include_tags=include_tags or [],
         exclude_tags=exclude_tags or [],
-        match_mode=cast(Literal["all", "any"], valid_match_mode),
+        match_mode=cast("Literal['all', 'any']", valid_match_mode),
     )
+    _msg = "_create_tag_filter returning"
+    log.debug(_msg)
+    return result
 
 
 def _register_task_tools(
@@ -276,26 +340,34 @@ def _register_task_tools(
     def get_incomplete_tasks(
         limit: int = 20,
         offset: int = 0,
+        *,
         include_cancelled: bool = False,
     ) -> dict[str, object]:
         """Query tasks that are not completed."""
         _msg = "Tool get_incomplete_tasks called"
         log.info(_msg)
         return _get_incomplete_tasks_handler(
-            db_manager, limit, offset, include_cancelled
+            db_manager,
+            limit,
+            offset,
+            include_cancelled=include_cancelled,
         )
 
     @mcp.tool()
     def get_tasks_due_this_week(
         limit: int = 20,
         offset: int = 0,
+        *,
         include_completed: bool = True,
     ) -> dict[str, object]:
         """Query tasks due within the next 7 days."""
         _msg = "Tool get_tasks_due_this_week called"
         log.info(_msg)
         return _get_tasks_due_this_week_handler(
-            db_manager, limit, offset, include_completed
+            db_manager,
+            limit,
+            offset,
+            include_completed=include_completed,
         )
 
     @mcp.tool()
@@ -364,7 +436,8 @@ def _register_query_documents_tool(
 
         query_embedding = embedding_provider.generate_embedding(query)
 
-        filters = filters or QueryFilterParams(
+        # Ensure filters is a QueryFilterParams dataclass
+        query_filters = filters or QueryFilterParams(
             include_properties=None,
             exclude_properties=None,
             include_tags=None,
@@ -372,26 +445,31 @@ def _register_query_documents_tool(
         )
 
         prop_filters_include = _convert_property_filters(
-            filters.get("include_properties")
+            query_filters.include_properties,
         )
         prop_filters_exclude = _convert_property_filters(
-            filters.get("exclude_properties")
+            query_filters.exclude_properties,
         )
         tag_filter = _create_tag_filter(
-            filters.get("include_tags"),
-            filters.get("exclude_tags"),
+            query_filters.include_tags,
+            query_filters.exclude_tags,
             tag_match_mode,
         )
+
+        # Bundle property filters into PropertyFilterParams
+        property_filter_params = PropertyFilterParams(
+            include_filters=prop_filters_include,
+            exclude_filters=prop_filters_exclude,
+        )
+        pagination = PaginationParams(limit=limit, offset=offset)
 
         with db_manager.get_session() as session:
             result = query_documents_tool(
                 session=session,
                 query_embedding=query_embedding,
-                property_filters_include=prop_filters_include,
-                property_filters_exclude=prop_filters_exclude,
+                filter_params=property_filter_params,
                 tag_filter=tag_filter,
-                limit=limit,
-                offset=offset,
+                pagination=pagination,
             )
             return result.model_dump()
 
@@ -423,7 +501,7 @@ def _register_get_documents_by_tag_tool(
             Document list response with pagination and relative paths.
 
         """
-        _msg = f"Tool get_documents_by_tag called"
+        _msg = "Tool get_documents_by_tag called"
         log.info(_msg)
 
         filters = filters or QueryFilterParams(
@@ -435,8 +513,8 @@ def _register_get_documents_by_tag_tool(
 
         valid_match_mode = tag_match_mode if tag_match_mode in ("all", "any") else "all"
         params: DocumentTagParams = {
-            "include_tags": filters.get("include_tags") or [],
-            "exclude_tags": filters.get("exclude_tags") or [],
+            "include_tags": filters.include_tags or [],
+            "exclude_tags": filters.exclude_tags or [],
             "match_mode": valid_match_mode,
             "vault_root": vault_root,
             "limit": limit,
@@ -476,7 +554,7 @@ def _register_get_documents_by_property_tool(
             ValueError: If property filter validation fails.
 
         """
-        _msg = f"Tool get_documents_by_property called"
+        _msg = "Tool get_documents_by_property called"
         log.info(_msg)
 
         filters = filters or QueryFilterParams(
@@ -486,27 +564,28 @@ def _register_get_documents_by_property_tool(
             exclude_tags=None,
         )
 
-        prop_filters_include = _convert_property_filters(
-            filters.get("include_properties")
-        )
-        prop_filters_exclude = _convert_property_filters(
-            filters.get("exclude_properties")
-        )
+        prop_filters_include = _convert_property_filters(filters.include_properties)
+        prop_filters_exclude = _convert_property_filters(filters.exclude_properties)
         tag_filter = _create_tag_filter(
-            filters.get("include_tags"),
-            filters.get("exclude_tags"),
+            filters.include_tags,
+            filters.exclude_tags,
             tag_match_mode,
         )
+
+        # Bundle property filters into PropertyFilterParams
+        property_filter_params = PropertyFilterParams(
+            include_filters=prop_filters_include,
+            exclude_filters=prop_filters_exclude,
+        )
+        pagination = PaginationParams(limit=limit, offset=offset)
 
         with db_manager.get_session() as session:
             result = get_documents_by_property_tool(
                 session=session,
-                include_properties=prop_filters_include,
-                exclude_properties=prop_filters_exclude,
+                property_filters=property_filter_params,
                 tag_filter=tag_filter,
                 vault_root=vault_root,
-                limit=limit,
-                offset=offset,
+                pagination=pagination,
             )
             return result.model_dump()
 
@@ -546,14 +625,21 @@ def _register_document_tools(
     embedding_provider: EmbeddingProvider | None,
 ) -> None:
     """Register document-related tools."""
+    _msg = "_register_document_tools starting"
+    log.debug(_msg)
     _register_query_documents_tool(mcp, db_manager, embedding_provider)
     _register_get_documents_by_tag_tool(mcp, db_manager)
     _register_get_documents_by_property_tool(mcp, db_manager)
     _register_get_all_tags_tool(mcp, db_manager)
+    _msg = "_register_document_tools returning"
+    log.debug(_msg)
 
 
 def _validate_ingest_path(ingest_path: str) -> Path:
     """Validate the ingest path."""
+    _msg = "_validate_ingest_path starting"
+    log.debug(_msg)
+
     if ".." in ingest_path:
         _msg = "Path cannot contain parent directory references (..)"
         log.error(_msg)
@@ -571,6 +657,8 @@ def _validate_ingest_path(ingest_path: str) -> Path:
         log.error(_msg)
         raise ValueError(_msg)
 
+    _msg = "_validate_ingest_path returning"
+    log.debug(_msg)
     return path
 
 
@@ -638,7 +726,7 @@ def _register_health_check(
         try:
             with db_manager.get_session() as session:
                 session.execute(text("SELECT 1"))
-        except Exception as e:
+        except exc.SQLAlchemyError as e:
             db_status = f"error: {e}"
             _msg = f"Database health check failed: {e}"
             log.warning(_msg)
@@ -669,8 +757,8 @@ def create_mcp_server(settings: Settings) -> FastMCP:
             settings.mcp.token: {
                 "client_id": "obsidian-rag-client",
                 "sub": "user",
-            }
-        }
+            },
+        },
     )
 
     mcp = FastMCP("Obsidian RAG Server", auth=token_verifier)
@@ -687,6 +775,8 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     _msg = "MCP server created successfully"
     log.info(_msg)
 
+    _msg = "create_mcp_server returning"
+    log.debug(_msg)
     return mcp
 
 
