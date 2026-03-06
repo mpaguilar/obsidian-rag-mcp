@@ -546,90 +546,11 @@ Tasks are automatically extracted from document content using checkbox syntax:
 - Recurrence (`[repeat:: every day|week|month|year]`)
 - Custom metadata (`[key:: value]`)
 
-## Database Schema
-
-### Documents Table
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | UUID | Primary key |
-| file_path | TEXT | Unique file path (indexed) |
-| file_name | TEXT | File name (indexed) |
-| content | TEXT | Document content |
-| content_vector | VECTOR | Vector embedding (configurable dimension) |
-| checksum_md5 | CHAR(32) | MD5 checksum for change detection |
-| created_at_fs | TIMESTAMP | Filesystem creation date |
-| modified_at_fs | TIMESTAMP | Filesystem modification date |
-| ingested_at | TIMESTAMP | Last ingestion timestamp |
-| kind | TEXT | Document type from frontmatter |
-| tags | TEXT[] | Tags from frontmatter |
-| frontmatter_json | JSONB | Additional frontmatter properties |
-
-### Tasks Table
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | UUID | Primary key |
-| document_id | UUID | Foreign key to documents |
-| line_number | INTEGER | Position in document |
-| raw_text | TEXT | Full task line |
-| status | ENUM | Task status |
-| description | TEXT | Task text without metadata |
-| tags | TEXT[] | Extracted tags |
-| repeat | TEXT | Recurrence pattern |
-| scheduled | DATE | Scheduled date |
-| due | DATE | Due date |
-| completion | DATE | Completion date |
-| priority | ENUM | Priority level |
-| custom_metadata | JSONB | Other metadata |
-
 ## Development
 
-### Running Tests
+For information about the codebase architecture, development setup, and contributing guidelines, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=obsidian_rag --cov-branch --cov-report=term-missing
-
-# Run specific test file
-pytest tests/test_cli.py
-```
-
-### Database Migrations
-
-This project uses Alembic for database schema migrations.
-
-```bash
-# Create a new migration (after modifying models.py)
-alembic revision --autogenerate -m "Description of changes"
-
-# Apply all pending migrations
-alembic upgrade head
-
-# Apply specific migration
-alembic upgrade +1
-
-# Downgrade one migration
-alembic downgrade -1
-
-# View current migration version
-alembic current
-```
-
-**Note:** Always review auto-generated migrations before applying them.
-
-### Code Quality
-
-```bash
-# Run linting
-ruff check
-
-# Fix auto-fixable issues
-ruff check --fix
-```
+For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
 
 ## License
 

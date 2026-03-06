@@ -64,6 +64,7 @@ class TestIngestionResult:
             updated=2,
             unchanged=4,
             errors=1,
+            deleted=2,
             processing_time_seconds=5.5,
             message="Test message",
         )
@@ -73,6 +74,7 @@ class TestIngestionResult:
         assert result.updated == 2
         assert result.unchanged == 4
         assert result.errors == 1
+        assert result.deleted == 2
         assert result.processing_time_seconds == 5.5
         assert result.message == "Test message"
 
@@ -84,6 +86,7 @@ class TestIngestionResult:
             updated=2,
             unchanged=4,
             errors=1,
+            deleted=2,
             processing_time_seconds=5.5,
             message="Test message",
         )
@@ -95,6 +98,7 @@ class TestIngestionResult:
         assert data["updated"] == 2
         assert data["unchanged"] == 4
         assert data["errors"] == 1
+        assert data["deleted"] == 2
         assert data["processing_time_seconds"] == 5.5
         assert data["message"] == "Test message"
 
@@ -405,6 +409,15 @@ class TestIngestVault:
         test_file = tmp_path / "test.md"
         test_file.write_text("# Test Document")
 
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        # Mock empty database (no orphaned documents)
+        mock_session.query.return_value.all.return_value = []
+
         with patch("obsidian_rag.services.ingestion.scan_markdown_files") as mock_scan:
             mock_file_info = MagicMock()
             mock_file_info.path = test_file
@@ -433,9 +446,10 @@ class TestIngestVault:
                     assert result.updated == 0
                     assert result.unchanged == 0
                     assert result.errors == 0
+                    assert result.deleted == 0
 
-                    # Verify db_manager.get_session was never called
-                    ingestion_service.db_manager.get_session.assert_not_called()  # type: ignore[attr-defined]
+                    # Verify session.commit was never called (no writes)
+                    mock_session.commit.assert_not_called()
 
     def test_ingest_vault_with_progress_callback(
         self,
@@ -687,3 +701,266 @@ class TestTaskOperations:
 
         # Verify new task is created
         mock_session.add.assert_called_once()
+
+
+class TestDeleteOrphanedDocuments:
+    """Test document deletion during ingestion."""
+
+    def test_delete_orphaned_documents_success(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test orphaned documents are deleted from database."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        # Create mock documents - one orphaned, one not
+        mock_doc1 = MagicMock()
+        mock_doc1.file_path = "/vault/orphaned.md"
+        mock_doc2 = MagicMock()
+        mock_doc2.file_path = "/vault/existing.md"
+
+        mock_session.query.return_value.all.return_value = [mock_doc1, mock_doc2]
+
+        # Filesystem only has existing.md
+        filesystem_paths = {"/vault/existing.md"}
+
+        deleted_count, error_count = ingestion_service._delete_orphaned_documents(
+            filesystem_paths
+        )
+
+        assert deleted_count == 1
+        assert error_count == 0
+        mock_session.delete.assert_called_once_with(mock_doc1)
+        mock_session.commit.assert_called_once()
+
+    def test_delete_orphaned_documents_empty_db(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test deletion with empty database returns zero counts."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        # Empty database
+        mock_session.query.return_value.all.return_value = []
+
+        filesystem_paths = {"/vault/file.md"}
+
+        deleted_count, error_count = ingestion_service._delete_orphaned_documents(
+            filesystem_paths
+        )
+
+        assert deleted_count == 0
+        assert error_count == 0
+        mock_session.delete.assert_not_called()
+
+    def test_delete_orphaned_documents_no_orphans(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test when all DB documents exist in filesystem."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_doc = MagicMock()
+        mock_doc.file_path = "/vault/existing.md"
+
+        mock_session.query.return_value.all.return_value = [mock_doc]
+
+        # Filesystem has the same file
+        filesystem_paths = {"/vault/existing.md"}
+
+        deleted_count, error_count = ingestion_service._delete_orphaned_documents(
+            filesystem_paths
+        )
+
+        assert deleted_count == 0
+        assert error_count == 0
+        mock_session.delete.assert_not_called()
+
+    def test_delete_orphaned_documents_dry_run(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test dry run mode doesn't actually delete."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_doc = MagicMock()
+        mock_doc.file_path = "/vault/orphaned.md"
+
+        mock_session.query.return_value.all.return_value = [mock_doc]
+
+        filesystem_paths: set[str] = set()  # Empty filesystem
+
+        deleted_count, error_count = ingestion_service._delete_orphaned_documents(
+            filesystem_paths,
+            dry_run=True,
+        )
+
+        assert deleted_count == 1  # Reports what would be deleted
+        assert error_count == 0
+        mock_session.delete.assert_not_called()  # But doesn't actually delete
+        mock_session.commit.assert_not_called()
+
+    def test_delete_orphaned_documents_batch_processing(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test documents are deleted in batches."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        # Create many orphaned documents
+        orphaned_docs = []
+        for i in range(150):
+            mock_doc = MagicMock()
+            mock_doc.file_path = f"/vault/orphaned{i}.md"
+            orphaned_docs.append(mock_doc)
+
+        mock_session.query.return_value.all.return_value = orphaned_docs
+
+        filesystem_paths: set[str] = set()  # Empty filesystem
+
+        deleted_count, error_count = ingestion_service._delete_orphaned_documents(
+            filesystem_paths,
+            dry_run=False,
+        )
+
+        assert deleted_count == 150
+        assert error_count == 0
+        # Should be called twice (two batches of 100 and 50)
+        assert mock_session.commit.call_count == 2
+
+    def test_ingest_vault_reports_deleted_count(
+        self,
+        ingestion_service: IngestionService,
+        tmp_path: Path,
+    ) -> None:
+        """Test that ingest_vault reports deleted count in result."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        # One document in DB (will be orphaned)
+        mock_doc = MagicMock()
+        mock_doc.file_path = str(tmp_path / "old.md")
+        mock_session.query.return_value.all.return_value = [mock_doc]
+        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        # Create one file in filesystem
+        test_file = tmp_path / "new.md"
+        test_file.write_text("# New Document")
+
+        with patch("obsidian_rag.services.ingestion.scan_markdown_files") as mock_scan:
+            mock_file_info = MagicMock()
+            mock_file_info.path = test_file
+            mock_file_info.name = "new.md"
+            mock_file_info.content = "# New Document"
+
+            mock_scan.return_value = [test_file]
+
+            with patch(
+                "obsidian_rag.services.ingestion.process_files_in_batches"
+            ) as mock_process:
+                mock_process.return_value = [mock_file_info]
+
+                with patch(
+                    "obsidian_rag.services.ingestion.parse_frontmatter"
+                ) as mock_parse_fm:
+                    mock_parse_fm.return_value = (None, None, {}, "# New Document")
+
+                    result = ingestion_service.ingest_vault(tmp_path)
+
+                    assert result.deleted == 1
+                    assert "1 deleted" in result.message
+
+    def test_ingest_vault_with_no_delete_flag(
+        self,
+        ingestion_service: IngestionService,
+        tmp_path: Path,
+    ) -> None:
+        """Test that no_delete flag skips deletion phase."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        # Document exists in DB (would be orphaned)
+        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        # Create file in filesystem
+        test_file = tmp_path / "test.md"
+        test_file.write_text("# Test Document")
+
+        with patch("obsidian_rag.services.ingestion.scan_markdown_files") as mock_scan:
+            mock_file_info = MagicMock()
+            mock_file_info.path = test_file
+            mock_file_info.name = "test.md"
+            mock_file_info.content = "# Test Document"
+
+            mock_scan.return_value = [test_file]
+
+            with patch(
+                "obsidian_rag.services.ingestion.process_files_in_batches"
+            ) as mock_process:
+                mock_process.return_value = [mock_file_info]
+
+                with patch(
+                    "obsidian_rag.services.ingestion.parse_frontmatter"
+                ) as mock_parse_fm:
+                    mock_parse_fm.return_value = (None, None, {}, "# Test Document")
+
+                    result = ingestion_service.ingest_vault(
+                        tmp_path,
+                        no_delete=True,
+                    )
+
+                    assert result.deleted == 0
+                    assert "deletion skipped" in result.message
+
+    def test_delete_batch_with_commit_failure(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test batch deletion when commit fails."""
+        mock_session = MagicMock()
+
+        # Create mock documents
+        mock_doc1 = MagicMock()
+        mock_doc1.file_path = "/vault/doc1.md"
+        mock_doc2 = MagicMock()
+        mock_doc2.file_path = "/vault/doc2.md"
+        batch = [mock_doc1, mock_doc2]
+
+        # Simulate commit failure
+        mock_session.commit.side_effect = RuntimeError("Database error")
+
+        deleted_count, error_count = ingestion_service._delete_batch(
+            mock_session,
+            batch,  # type: ignore[arg-type]
+        )
+
+        # When commit fails, all documents in batch are marked as failed
+        assert deleted_count == 0
+        assert error_count == 2
+        mock_session.commit.assert_called_once()

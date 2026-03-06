@@ -129,12 +129,12 @@ class TestProviderFactory:
     def test_create_unknown_embedding_provider(self):
         """Test creating unknown embedding provider."""
         with pytest.raises(ValueError, match="Unknown embedding provider"):
-            ProviderFactory.create_embedding_provider("unknown")
+            ProviderFactory.create_embedding_provider("unknown")  # type: ignore[call-overload]  # type: ignore[arg-type]
 
     def test_create_unknown_chat_provider(self):
         """Test creating unknown chat provider."""
         with pytest.raises(ValueError, match="Unknown chat provider"):
-            ProviderFactory.create_chat_provider("unknown")
+            ProviderFactory.create_chat_provider("unknown")  # type: ignore[call-overload]  # type: ignore[arg-type]
 
     def test_create_openai_chat_provider_no_api_key(self):
         """Test creating OpenAI chat provider without API key."""

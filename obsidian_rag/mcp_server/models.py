@@ -168,6 +168,29 @@ class TagListResponse(BaseModel):
     next_offset: int | None
 
 
+class SessionMetrics(BaseModel):
+    """Session metrics for health check endpoint.
+
+    Attributes:
+        total_created: Total number of sessions created.
+        total_destroyed: Total number of sessions destroyed.
+        active_count: Current number of active sessions.
+        total_requests: Total number of requests processed.
+        peak_concurrent: Peak number of concurrent sessions.
+        connection_rate: Average connections per second.
+        active_sessions_by_ip: Sessions per client IP.
+
+    """
+
+    total_created: int = 0
+    total_destroyed: int = 0
+    active_count: int = 0
+    total_requests: int = 0
+    peak_concurrent: int = 0
+    connection_rate: float = 0.0
+    active_sessions_by_ip: dict[str, int] = Field(default_factory=dict)
+
+
 class HealthResponse(BaseModel):
     """Response model for health check endpoint.
 
@@ -175,12 +198,14 @@ class HealthResponse(BaseModel):
         status: Health status string ("healthy" or "unhealthy").
         version: Application version string.
         database: Database connectivity status.
+        sessions: Session metrics and statistics.
 
     """
 
     status: str
     version: str
     database: str
+    sessions: SessionMetrics = Field(default_factory=SessionMetrics)
 
 
 def _validate_limit(limit: int) -> int:

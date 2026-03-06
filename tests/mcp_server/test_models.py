@@ -9,6 +9,7 @@ from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
     DocumentResponse,
     HealthResponse,
+    SessionMetrics,
     TagListResponse,
     TaskListResponse,
     TaskResponse,
@@ -203,11 +204,47 @@ class TestDocumentListResponse:
         assert response.total_count == 1
 
 
+class TestSessionMetrics:
+    """Tests for SessionMetrics model."""
+
+    def test_session_metrics_defaults(self):
+        """Test SessionMetrics with default values."""
+        metrics = SessionMetrics()
+
+        assert metrics.total_created == 0
+        assert metrics.total_destroyed == 0
+        assert metrics.active_count == 0
+        assert metrics.total_requests == 0
+        assert metrics.peak_concurrent == 0
+        assert metrics.connection_rate == 0.0
+        assert metrics.active_sessions_by_ip == {}
+
+    def test_session_metrics_custom_values(self):
+        """Test SessionMetrics with custom values."""
+        metrics = SessionMetrics(
+            total_created=10,
+            total_destroyed=8,
+            active_count=2,
+            total_requests=100,
+            peak_concurrent=5,
+            connection_rate=1.5,
+            active_sessions_by_ip={"192.168.1.1": 2},
+        )
+
+        assert metrics.total_created == 10
+        assert metrics.total_destroyed == 8
+        assert metrics.active_count == 2
+        assert metrics.total_requests == 100
+        assert metrics.peak_concurrent == 5
+        assert metrics.connection_rate == 1.5
+        assert metrics.active_sessions_by_ip == {"192.168.1.1": 2}
+
+
 class TestHealthResponse:
     """Tests for HealthResponse model."""
 
-    def test_health_response(self):
-        """Test creating a HealthResponse."""
+    def test_health_response_basic(self):
+        """Test creating a HealthResponse with basic fields."""
         response = HealthResponse(
             status="healthy",
             version="0.2.3",
@@ -217,6 +254,42 @@ class TestHealthResponse:
         assert response.status == "healthy"
         assert response.version == "0.2.3"
         assert response.database == "connected"
+        assert response.sessions.total_created == 0
+
+    def test_health_response_with_sessions(self):
+        """Test creating a HealthResponse with session metrics."""
+        session_metrics = SessionMetrics(
+            total_created=42,
+            total_destroyed=40,
+            active_count=2,
+            total_requests=156,
+            peak_concurrent=5,
+            connection_rate=0.7,
+            active_sessions_by_ip={"172.18.0.8": 2},
+        )
+
+        response = HealthResponse(
+            status="healthy",
+            version="0.2.3",
+            database="connected",
+            sessions=session_metrics,
+        )
+
+        assert response.status == "healthy"
+        assert response.sessions.total_created == 42
+        assert response.sessions.active_count == 2
+        assert response.sessions.active_sessions_by_ip == {"172.18.0.8": 2}
+
+    def test_health_response_unhealthy(self):
+        """Test HealthResponse with unhealthy status."""
+        response = HealthResponse(
+            status="unhealthy",
+            version="0.2.3",
+            database="error: connection failed",
+        )
+
+        assert response.status == "unhealthy"
+        assert "error" in response.database
 
 
 class TestValidateLimit:

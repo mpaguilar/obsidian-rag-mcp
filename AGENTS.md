@@ -28,8 +28,10 @@ obsidian_rag/                    # Main package
 ├── mcp_server/                  # MCP server layer
 │   ├── __init__.py
 │   ├── __main__.py              # Server entry point
+│   ├── middleware.py            # HTTP request/response logging middleware
 │   ├── models.py                # Pydantic request/response models
 │   ├── server.py                # FastMCP server setup
+│   ├── session_manager.py       # Session lifecycle and metrics tracking
 │   └── tools/                   # MCP tools
 │       ├── __init__.py
 │       ├── documents.py         # Document query tools (public API)
@@ -83,7 +85,7 @@ Config file locations (searched in order):
 - `endpoints.embedding.provider`: LLM provider for embeddings ('openai', 'openrouter', 'huggingface')
 - `endpoints.chat.provider`: LLM provider for chat/analysis ('openai', 'openrouter')
 
-## Development
+## Development Standards
 
 - All code must pass ruff linting
 - 100% test coverage is required, including branch coverage (see CONVENTIONS.md)
@@ -103,4 +105,29 @@ Run ruff checks:
 ruff check obsidian_rag/ tests/
 ```
 
-> **Technical Implementation Details**: For architecture patterns, HTMX/SSE implementation specifics, and testing patterns, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
+### Coverage Status
+
+| Module | Coverage | Notes |
+|--------|----------|-------|
+| `config.py` | 97% | Environment variable interpolation branches |
+| `parsing/` | 100% | All parsing modules fully covered |
+| `database/engine.py` | 100% | Complete coverage |
+| `database/models.py` | 100% | Complete coverage |
+| `llm/base.py` | 100% | Complete coverage |
+| `llm/providers.py` | 100% | Complete coverage |
+| `services/ingestion.py` | 100% | Complete coverage |
+| `cli.py` | 95% | Error handling and edge cases |
+| `mcp_server/__main__.py` | 100% | Complete coverage |
+| `mcp_server/server.py` | 72% | Tool registration and logging functions |
+| `mcp_server/middleware.py` | 100% | Complete coverage |
+| `mcp_server/models.py` | 100% | Complete coverage |
+| `mcp_server/session_manager.py` | 98% | Defensive timing branches |
+| `mcp_server/tools/documents.py` | 94% | PostgreSQL-specific tag filtering requires integration testing |
+| `mcp_server/tools/documents_filters.py` | 99% | Single defensive branch |
+| `mcp_server/tools/documents_postgres.py` | 93% | SQLite-specific defensive branches |
+| `mcp_server/tools/documents_sqlite.py` | 100% | Complete coverage |
+| `mcp_server/tools/documents_tags.py` | 100% | Complete coverage |
+| `mcp_server/tools/documents_params.py` | 100% | Complete coverage |
+| `mcp_server/tools/tasks.py` | 100% | Complete coverage |
+
+> **Technical Implementation Details**: For architecture patterns, component details, and data flow, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).

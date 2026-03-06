@@ -709,13 +709,12 @@ class TestReportIngestResults:
         @click.command()
         def test_cmd():
             stats = {"new": 5, "updated": 3, "unchanged": 2, "errors": 2}
-            _report_ingest_results(10, stats, 5.5)
+            _report_ingest_results(10, stats, 5.5, deleted=1, no_delete=False)
 
         result = runner.invoke(test_cmd)
         assert result.exit_code == 0
         assert "Successfully ingested 10 documents" in result.output
-        assert "(5 new, 3 updated, 2 unchanged)" in result.output
-        assert "Errors: 2 files" in result.output
+        assert "(5 new, 3 updated, 2 unchanged, 2 errors, 1 deleted)" in result.output
         assert "Completed in 5.5 seconds" in result.output
 
 
@@ -765,6 +764,7 @@ class TestIngestCommand:
             updated=0,
             unchanged=1,
             errors=0,
+            deleted=0,
             processing_time_seconds=1.0,
             message="Dry run completed",
         )
@@ -830,6 +830,7 @@ class TestIngestCommand:
             updated=0,
             unchanged=0,
             errors=0,
+            deleted=0,
             processing_time_seconds=2.5,
             message="Ingestion completed successfully",
         )
@@ -847,7 +848,7 @@ class TestIngestCommand:
         assert result.exit_code == 0
         assert "Found 1 markdown files" in result.output
         assert "Successfully ingested 1 documents" in result.output
-        assert "(1 new, 0 updated, 0 unchanged)" in result.output
+        assert "(1 new, 0 updated, 0 unchanged, 0 errors, 0 deleted)" in result.output
         mock_ingestion_service.assert_called_once()
 
 

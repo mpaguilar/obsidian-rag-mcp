@@ -413,6 +413,11 @@ class MCPConfig(BaseModel):
         enable_health_check: Enable health check endpoint.
         stateless_http: Enable stateless mode for horizontal scaling.
         ingest_path: Default path for MCP ingest tool (default: "/data").
+        max_concurrent_sessions: Maximum number of concurrent sessions.
+        session_timeout_seconds: Session timeout for inactive sessions.
+        rate_limit_per_second: Maximum connections per second per IP.
+        rate_limit_window: Rate limit window in seconds.
+        enable_request_logging: Enable HTTP request/response logging.
 
     """
 
@@ -423,6 +428,11 @@ class MCPConfig(BaseModel):
     enable_health_check: bool = True
     stateless_http: bool = False
     ingest_path: str = "/data"
+    max_concurrent_sessions: int = 100
+    session_timeout_seconds: int = 300
+    rate_limit_per_second: float = 10.0
+    rate_limit_window: int = 60
+    enable_request_logging: bool = True
 
     @field_validator("port")
     @classmethod
@@ -431,6 +441,30 @@ class MCPConfig(BaseModel):
         if v < 1 or v > PORT_MAX:
             _msg = f"Port must be between 1 and 65535, got {v}"
             raise ValueError(_msg)
+        return v
+
+    @field_validator("max_concurrent_sessions")
+    @classmethod
+    def validate_max_concurrent(cls, v: int) -> int:
+        """Validate max concurrent sessions is positive."""
+        if v < 1:
+            return 100
+        return v
+
+    @field_validator("session_timeout_seconds")
+    @classmethod
+    def validate_session_timeout(cls, v: int) -> int:
+        """Validate session timeout is positive."""
+        if v < 1:
+            return 300
+        return v
+
+    @field_validator("rate_limit_per_second")
+    @classmethod
+    def validate_rate_limit(cls, v: float) -> float:
+        """Validate rate limit is positive."""
+        if v <= 0:
+            return 10.0
         return v
 
 

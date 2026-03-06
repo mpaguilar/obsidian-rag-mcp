@@ -2,6 +2,7 @@
 
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -16,15 +17,18 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from obsidian_rag.config import Settings
+from obsidian_rag.config import EndpointConfig, Settings
 from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.llm.base import EmbeddingProvider
 from obsidian_rag.llm.providers import ProviderFactory
+from obsidian_rag.mcp_server.middleware import SessionLoggingMiddleware
 from obsidian_rag.mcp_server.models import (
     HealthResponse,
     PropertyFilter,
+    SessionMetrics,
     TagFilter,
 )
+from obsidian_rag.mcp_server.session_manager import SessionManager
 from obsidian_rag.mcp_server.tools.documents import (
     get_all_tags as get_all_tags_tool,
 )
@@ -55,6 +59,9 @@ from obsidian_rag.mcp_server.tools.tasks import (
 )
 from obsidian_rag.services.ingestion import IngestionService
 
+# Global session manager instance
+_session_manager: SessionManager | None = None
+
 
 class DocumentTagParams(TypedDict, total=False):
     """Parameters for get_documents_by_tag tool."""
@@ -80,6 +87,86 @@ class QueryFilterParams:
 log = logging.getLogger(__name__)
 
 
+def _create_openai_provider(config: EndpointConfig) -> EmbeddingProvider:
+    """Create OpenAI embedding provider.
+
+    Args:
+        config: Endpoint configuration.
+
+    Returns:
+        OpenAI embedding provider instance.
+
+    """
+    return ProviderFactory.create_embedding_provider(
+        provider_name="openai",
+        api_key=config.api_key,
+        model=config.model,
+        base_url=config.base_url,
+    )
+
+
+def _create_openrouter_provider(config: EndpointConfig) -> EmbeddingProvider:
+    """Create OpenRouter embedding provider.
+
+    Args:
+        config: Endpoint configuration.
+
+    Returns:
+        OpenRouter embedding provider instance.
+
+    """
+    return ProviderFactory.create_embedding_provider(
+        provider_name="openrouter",
+        api_key=config.api_key,
+        model=config.model,
+        base_url=config.base_url,
+    )
+
+
+def _create_huggingface_provider(config: EndpointConfig) -> EmbeddingProvider:
+    """Create HuggingFace embedding provider.
+
+    Args:
+        config: Endpoint configuration.
+
+    Returns:
+        HuggingFace embedding provider instance.
+
+    """
+    return ProviderFactory.create_embedding_provider(
+        provider_name="huggingface",
+        model=config.model,
+    )
+
+
+def _get_provider_creator(
+    provider_name: str,
+) -> Callable[[EndpointConfig], EmbeddingProvider]:
+    """Get provider creation function for the given provider name.
+
+    Args:
+        provider_name: Name of the embedding provider.
+
+    Returns:
+        Function that creates the embedding provider.
+
+    Raises:
+        ValueError: If provider name is unknown.
+
+    """
+    creators: dict[str, Callable[[EndpointConfig], EmbeddingProvider]] = {
+        "openai": _create_openai_provider,
+        "openrouter": _create_openrouter_provider,
+        "huggingface": _create_huggingface_provider,
+    }
+
+    if provider_name not in creators:
+        _msg = f"Unknown embedding provider: {provider_name}"
+        raise ValueError(_msg)
+
+    return creators[provider_name]
+
+
 def _create_embedding_provider(
     settings: Settings,
 ) -> EmbeddingProvider | None:
@@ -102,13 +189,10 @@ def _create_embedding_provider(
         return None
 
     provider = None
+
     try:
-        provider = ProviderFactory.create_embedding_provider(
-            provider_name=embedding_config.provider,
-            api_key=embedding_config.api_key,
-            model=embedding_config.model,
-            base_url=embedding_config.base_url,
-        )
+        creator = _get_provider_creator(embedding_config.provider)
+        provider = creator(embedding_config)
     except (ValueError, ImportError, RuntimeError) as e:
         _msg = f"Failed to create embedding provider: {e}"
         log.warning(_msg)
@@ -667,8 +751,22 @@ def _ingest_handler(
     db_manager: DatabaseManager,
     embedding_provider: EmbeddingProvider | None,
     path_override: str | None,
+    *,
+    no_delete: bool = False,
 ) -> dict[str, object]:
-    """Handle ingest tool call."""
+    """Handle ingest tool call.
+
+    Args:
+        settings: Application settings.
+        db_manager: Database manager for sessions.
+        embedding_provider: Optional embedding provider.
+        path_override: Optional path override for ingestion.
+        no_delete: If True, skip deletion of orphaned documents.
+
+    Returns:
+        Dictionary with ingestion results including deleted count.
+
+    """
     _msg = "ingest handler starting"
     log.debug(_msg)
 
@@ -684,6 +782,7 @@ def _ingest_handler(
     result = ingestion_service.ingest_vault(
         vault_path=path,
         dry_run=False,
+        no_delete=no_delete,
     )
 
     _msg = f"ingest handler completed: {result.message}"
@@ -703,11 +802,46 @@ def _register_ingest_tools(
     @mcp.tool()
     def ingest(
         path: str | None = None,
+        *,
+        no_delete: bool = False,
     ) -> dict[str, object]:
-        """Ingest markdown files from the data directory into the database."""
-        _msg = f"Tool ingest called with path: {path}"
+        """Ingest markdown files from the data directory into the database.
+
+        Args:
+            path: Optional path to vault directory. Uses config default if not provided.
+            no_delete: If True, skip deletion of orphaned documents. Default is False.
+
+        Returns:
+            Dictionary with ingestion statistics including:
+            - total: Total files processed
+            - new: New documents created
+            - updated: Documents updated
+            - unchanged: Documents unchanged
+            - errors: Files that failed
+            - deleted: Orphaned documents deleted
+            - processing_time_seconds: Time taken
+            - message: Human-readable summary
+
+        """
+        _msg = f"Tool ingest called with path: {path}, no_delete: {no_delete}"
         log.info(_msg)
-        return _ingest_handler(settings, db_manager, embedding_provider, path)
+        return _ingest_handler(
+            settings,
+            db_manager,
+            embedding_provider,
+            path,
+            no_delete=no_delete,
+        )
+
+
+def _get_session_manager() -> SessionManager | None:
+    """Get the global session manager instance.
+
+    Returns:
+        SessionManager instance or None if not initialized.
+
+    """
+    return _session_manager
 
 
 def _register_health_check(
@@ -733,10 +867,26 @@ def _register_health_check(
 
         version = os.environ.get("OBSIDIAN_RAG_VERSION", "0.2.3")
 
+        # Get session metrics if available
+        session_metrics = SessionMetrics()
+        manager = _get_session_manager()
+        if manager:
+            metrics_dict = manager.get_metrics()
+            session_metrics = SessionMetrics(
+                total_created=metrics_dict.get("total_created", 0),
+                total_destroyed=metrics_dict.get("total_destroyed", 0),
+                active_count=metrics_dict.get("active_count", 0),
+                total_requests=metrics_dict.get("total_requests", 0),
+                peak_concurrent=metrics_dict.get("peak_concurrent", 0),
+                connection_rate=metrics_dict.get("connection_rate", 0.0),
+                active_sessions_by_ip=metrics_dict.get("active_sessions_by_ip", {}),
+            )
+
         health_data = HealthResponse(
             status="healthy",
             version=version,
             database=db_status,
+            sessions=session_metrics,
         ).model_dump()
 
         return JSONResponse(health_data)
@@ -781,13 +931,38 @@ def create_mcp_server(settings: Settings) -> FastMCP:
 
 
 def create_http_app(settings: Settings) -> Starlette:
-    """Create HTTP ASGI app for the MCP server."""
+    """Create HTTP ASGI app for the MCP server.
+
+    Args:
+        settings: Application settings.
+
+    Returns:
+        Starlette ASGI application.
+
+    """
     _msg = "Creating HTTP app"
+    log.info(_msg)
+
+    global _session_manager
+
+    # Create session manager with settings
+    _session_manager = SessionManager(
+        max_concurrent_sessions=settings.mcp.max_concurrent_sessions,
+        session_timeout_seconds=settings.mcp.session_timeout_seconds,
+        rate_limit_per_second=settings.mcp.rate_limit_per_second,
+        rate_limit_window=settings.mcp.rate_limit_window,
+    )
+
+    _msg = (
+        f"Session manager created: max_concurrent={settings.mcp.max_concurrent_sessions}, "
+        f"timeout={settings.mcp.session_timeout_seconds}s, "
+        f"rate_limit={settings.mcp.rate_limit_per_second}/sec"
+    )
     log.info(_msg)
 
     mcp = create_mcp_server(settings)
 
-    middleware = [
+    middleware: list[Middleware] = [
         Middleware(
             CORSMiddleware,
             allow_origins=settings.mcp.cors_origins,
@@ -802,6 +977,12 @@ def create_http_app(settings: Settings) -> Starlette:
             expose_headers=["mcp-session-id"],
         ),
     ]
+
+    # Add request logging middleware if enabled
+    if settings.mcp.enable_request_logging:
+        middleware.append(Middleware(SessionLoggingMiddleware))
+        _msg = "Session logging middleware enabled"
+        log.info(_msg)
 
     app = mcp.http_app(
         path="/",

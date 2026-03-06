@@ -1,8 +1,10 @@
 # Architecture: Obsidian RAG
 
+This document describes the architecture of Obsidian RAG for developers who want to understand or modify the codebase.
+
 ## System Overview
 
-The Obsidian RAG system is a Python library designed to ingest, store, and query Obsidian markdown documents with support for vector embeddings and task management.
+Obsidian RAG is a Python library designed to ingest, store, and query Obsidian markdown documents with support for vector embeddings and task management.
 
 ## Core Components
 
@@ -145,9 +147,10 @@ Entry point for all user interactions:
 
 **Commands:**
 - `ingest <path>`: Scan and ingest documents
-  - Options: `--dry-run`, `--verbose`
-  - Progress reporting: total, new, updated, skipped, errors
+  - Options: `--dry-run`, `--verbose`, `--no-delete`
+  - Progress reporting: total, new, updated, skipped, errors, deleted
   - Batch processing with configurable size
+  - Orphaned document deletion (disabled with `--no-delete`)
   
 - `query <search>`: Semantic search
   - Options: `--limit N`, `--format json/table`
@@ -174,12 +177,15 @@ Centralized service for document ingestion, shared by CLI and MCP server:
 ```python
 class IngestionService:
     def __init__(db_manager, embedding_provider, settings)
-    def ingest_vault(vault_path, dry_run=False, progress_callback=None, file_infos=None) -> IngestionResult
+    def ingest_vault(vault_path, dry_run=False, progress_callback=None, file_infos=None, no_delete=False) -> IngestionResult
     def _ingest_single_file(file_info, dry_run=False) -> str
     def _create_document(file_info, parsed_data) -> Document
     def _update_document(document, file_info, parsed_data)
     def _create_tasks(session, document, parsed_tasks)
     def _update_tasks(session, document, parsed_tasks)
+    def _delete_orphaned_documents(filesystem_paths, dry_run=False) -> tuple[int, int]
+    def _process_deletion_batches(orphaned_documents) -> tuple[int, int]
+    def _delete_batch(session, batch) -> tuple[int, int]
 ```
 
 **IngestionResult Dataclass:**
@@ -188,6 +194,7 @@ class IngestionService:
 - `updated`: Existing documents updated
 - `unchanged`: Unchanged documents (same checksum)
 - `errors`: Files that failed processing
+- `deleted`: Number of orphaned documents deleted from database
 - `processing_time_seconds`: Time taken
 - `message`: Human-readable summary
 
@@ -195,93 +202,7 @@ class IngestionService:
 - **CLI**: Uses service with progress callbacks and verbose output
 - **MCP**: Uses service with path override support, returns structured results
 
-## Data Flow
-
-### Ingestion Flow
-
-```
-File System → Scanner → FrontMatter Parser → Task Parser → Database
-                ↓              ↓                    ↓
-            Checksum    Document Model        Task Models
-            Check       + Embeddings          (via LLM Provider)
-```
-
-1. Scanner discovers `.md` files
-2. MD5 checksum calculated and compared with database
-3. If changed or new:
-   - FrontMatter extracted and parsed
-   - Tasks extracted from content
-   - Vector embeddings generated via LLM provider
-   - Document and tasks stored in PostgreSQL
-4. If deleted from filesystem: hard delete from database
-
-### Query Flow
-
-```
-CLI Query → Config → LLM Provider → Vector Generation → Database Search → Results
-```
-
-1. CLI command parsed with configuration
-2. For semantic search: query text converted to vector via LLM provider
-3. Database query executed with vector similarity
-4. Results formatted and returned
-
-## Design Decisions
-
-| Decision | Selection | Rationale |
-|----------|-----------|-----------|
-| Database | PostgreSQL + pg_vector | Industry standard, vector similarity support |
-| Embedding Provider | Configurable (OpenAI or HuggingFace) | Flexibility for cloud vs local use |
-| LLM Connectivity | litellm | Provider-agnostic, per CONVENTIONS.md |
-| Local Embeddings | langchain.embeddings.HuggingFaceEmbeddings | Standardized interface, per CONVENTIONS.md |
-| HTTP Client | httpx | Per CONVENTIONS.md preferred library |
-| Recurrence Library | dateutil.rrule with shims | RFC-compliant, maintain translation |
-| Checksum Algorithm | MD5 | Sufficient for change detection, fast |
-| Deleted Files | Hard delete | Files are source of truth, backed up separately |
-| Max File Size | 10MB | Balance capability with memory constraints |
-| Configuration Format | YAML | Human-readable, supports comments |
-| Config Precedence | CLI > Env > Config > Defaults | Industry standard, maximum flexibility |
-
-## Testing Architecture
-
-- pytest with branch coverage
-- Tests in top-level `tests/` directory mirroring source structure
-- Mock-based unit tests for database and LLM operations
-- All provider classes tested with mocked dependencies
-
-### Coverage Status
-
-| Module | Coverage | Notes |
-|--------|----------|-------|
-| `config.py` | 97% | Environment variable interpolation branches |
-| `parsing/` | 100% | All parsing modules fully covered |
-| `database/engine.py` | 100% | Complete coverage |
-| `database/models.py` | 100% | Complete coverage |
-| `llm/base.py` | 100% | Complete coverage |
-| `llm/providers.py` | 100% | Complete coverage |
-| `services/ingestion.py` | 100% | Complete coverage |
-| `cli.py` | 95% | Error handling and edge cases |
-| `mcp_server/__main__.py` | 100% | Complete coverage |
-| `mcp_server/server.py` | 71% | Tool registration and logging functions |
-| `mcp_server/tools/documents.py` | 94% | PostgreSQL-specific tag filtering requires integration testing |
-| `mcp_server/tools/documents_filters.py` | 99% | Single defensive branch |
-| `mcp_server/tools/documents_postgres.py` | 100% | Complete coverage |
-| `mcp_server/tools/documents_sqlite.py` | 100% | Complete coverage |
-| `mcp_server/tools/documents_tags.py` | 100% | Complete coverage |
-| `mcp_server/tools/documents_params.py` | 100% | Complete coverage |
-| `mcp_server/tools/tasks.py` | 100% | Complete coverage |
-
-### Running Tests
-
-```bash
-# Run all tests with coverage
-python -m pytest tests/ --cov=obsidian_rag --cov-branch --cov-report=term-missing
-
-# Run ruff checks
-ruff check obsidian_rag/ tests/
-```
-
-### 6. MCP Server Layer (`mcp_server/`)
+### 7. MCP Server Layer (`mcp_server/`)
 
 The MCP (Model Context Protocol) server provides remote access to Obsidian RAG functionality via HTTP transport.
 
@@ -291,7 +212,10 @@ FastMCP server configuration with:
 - HTTP transport for remote access
 - Bearer token authentication via `BearerTokenAuth`
 - CORS middleware for browser-based clients
-- Health check endpoint at `/health`
+- Health check endpoint at `/health` with session metrics
+- Session management with lifecycle logging and metrics
+- Rate limiting to prevent resource exhaustion
+- HTTP request/response logging middleware
 - Seven read-only tools for querying tasks, documents, and ingestion status
 
 **Server Creation:**
@@ -371,7 +295,8 @@ Pydantic models for request/response validation:
 - `QueryFilterParams`: Combined filter parameters for property and tag filtering
 
 **Health Model:**
-- `HealthResponse`: Health check status
+- `HealthResponse`: Health check status with session metrics
+- `SessionMetrics`: Session tracking metrics (total created/destroyed, active count, connection rate)
 
 #### Authentication
 
@@ -379,6 +304,27 @@ Bearer token authentication using `BearerTokenAuth`:
 - Token configured via `OBSIDIAN_RAG_MCP_TOKEN` env var or `mcp.token` config
 - All endpoints require valid Bearer token (401 for invalid/missing)
 - No per-tool permission granularity (all-or-nothing access)
+
+#### Session Management (`session_manager.py`)
+
+Session lifecycle tracking and connection protection:
+- **Session tracking**: Records session creation/destruction with duration metrics
+- **Rate limiting**: Per-IP connection rate limiting (default: 10/sec)
+- **Concurrent limits**: Maximum concurrent sessions (default: 100)
+- **Session timeout**: Automatic cleanup of inactive sessions (default: 300s)
+- **Metrics**: Total created/destroyed, active count, peak concurrent, connection rate
+
+Logged events:
+- Session creation: `Session created: <id> from <ip> (active: <count>)`
+- Session destruction: `Session destroyed: <id> (duration: <seconds>s, requests: <count>)`
+- Rate limit exceeded: `Rate limit exceeded for <ip>: <rate>/sec over <window>s`
+
+#### Middleware (`middleware.py`)
+
+HTTP request/response logging for debugging:
+- `SessionLoggingMiddleware`: Logs all HTTP requests/responses at DEBUG level
+- Records method, path, status code, and duration
+- Helps diagnose client connection behavior
 
 #### Configuration
 
@@ -389,6 +335,11 @@ MCP-specific configuration (`MCPConfig`):
 - `cors_origins`: Allowed CORS origins (default: ["*"])
 - `enable_health_check`: Enable `/health` endpoint (default: true)
 - `stateless_http`: Stateless mode for horizontal scaling (default: false)
+- `max_concurrent_sessions`: Maximum concurrent sessions (default: 100)
+- `session_timeout_seconds`: Session timeout in seconds (default: 300)
+- `rate_limit_per_second`: Max connections per second per IP (default: 10.0)
+- `rate_limit_window`: Rate limit window in seconds (default: 60)
+- `enable_request_logging`: Enable HTTP request/response logging (default: true)
 
 #### Docker Support
 
@@ -400,6 +351,61 @@ Dockerfile with configurable build scope:
 docker build -t obsidian-rag-mcp .
 docker run -p 8000:8000 -e OBSIDIAN_RAG_MCP_TOKEN=secret obsidian-rag-mcp
 ```
+
+#### LibreChat Integration
+
+Documentation for LibreChat MCP client configuration and known issues:
+- See `docs/librechat-mcp-client.md` for complete configuration guide
+- Documents known SSE stream disconnection errors (client-side issue)
+- Provides recommended configuration for LibreChat MCP servers
+- Explains session metrics and health check usage for troubleshooting
+
+## Data Flow
+
+### Ingestion Flow
+
+```
+File System → Scanner → FrontMatter Parser → Task Parser → Database
+                ↓              ↓                    ↓
+            Checksum    Document Model        Task Models
+            Check       + Embeddings          (via LLM Provider)
+```
+
+1. Scanner discovers `.md` files
+2. MD5 checksum calculated and compared with database
+3. If changed or new:
+   - FrontMatter extracted and parsed
+   - Tasks extracted from content
+   - Vector embeddings generated via LLM provider
+   - Document and tasks stored in PostgreSQL
+4. If deleted from filesystem: hard delete from database
+
+### Query Flow
+
+```
+CLI Query → Config → LLM Provider → Vector Generation → Database Search → Results
+```
+
+1. CLI command parsed with configuration
+2. For semantic search: query text converted to vector via LLM provider
+3. Database query executed with vector similarity
+4. Results formatted and returned
+
+## Design Decisions
+
+| Decision | Selection | Rationale |
+|----------|-----------|-----------|
+| Database | PostgreSQL + pg_vector | Industry standard, vector similarity support |
+| Embedding Provider | Configurable (OpenAI or HuggingFace) | Flexibility for cloud vs local use |
+| LLM Connectivity | litellm | Provider-agnostic, per CONVENTIONS.md |
+| Local Embeddings | langchain.embeddings.HuggingFaceEmbeddings | Standardized interface, per CONVENTIONS.md |
+| HTTP Client | httpx | Per CONVENTIONS.md preferred library |
+| Recurrence Library | dateutil.rrule with shims | RFC-compliant, maintain translation |
+| Checksum Algorithm | MD5 | Sufficient for change detection, fast |
+| Deleted Files | Hard delete | Files are source of truth, backed up separately |
+| Max File Size | 10MB | Balance capability with memory constraints |
+| Configuration Format | YAML | Human-readable, supports comments |
+| Config Precedence | CLI > Env > Config > Defaults | Industry standard, maximum flexibility |
 
 ## Dependencies
 
@@ -430,3 +436,51 @@ docker run -p 8000:8000 -e OBSIDIAN_RAG_MCP_TOKEN=secret obsidian-rag-mcp
 - Alembic for database migrations
 - Package installable via pip
 - Self-contained library for external application use
+
+## Development
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=obsidian_rag --cov-branch --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_cli.py
+```
+
+### Database Migrations
+
+This project uses Alembic for database schema migrations.
+
+```bash
+# Create a new migration (after modifying models.py)
+alembic revision --autogenerate -m "Description of changes"
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Apply specific migration
+alembic upgrade +1
+
+# Downgrade one migration
+alembic downgrade -1
+
+# View current migration version
+alembic current
+```
+
+**Note:** Always review auto-generated migrations before applying them.
+
+### Code Quality
+
+```bash
+# Run linting
+ruff check
+
+# Fix auto-fixable issues
+ruff check --fix
+```

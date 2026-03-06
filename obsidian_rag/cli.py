@@ -89,9 +89,6 @@ def cli(
         _msg = f"Config file specified: {config_file}"
         log.debug(_msg)
 
-    # Load settings
-    settings_kwargs = {}
-
     # Determine logging level: --log-level takes precedence over --verbose
     effective_log_level = None
     if log_level:
@@ -99,10 +96,14 @@ def cli(
     elif verbose:
         effective_log_level = "DEBUG"
 
+    # Load settings with explicit verbose flag and optional logging config
     if effective_log_level:
-        settings_kwargs["logging"] = {"level": effective_log_level}
-
-    settings = get_settings(**settings_kwargs)
+        settings = get_settings(
+            verbose=verbose,
+            logging={"level": effective_log_level},
+        )
+    else:
+        settings = get_settings(verbose=verbose)
 
     # Setup logging
     _setup_logging(settings.logging.level, settings.logging.format)
@@ -119,7 +120,7 @@ def _get_embedding_provider(settings: Settings) -> EmbeddingProvider:
     embedding_config = settings.get_endpoint_config("embedding")
     if embedding_config:
         result = ProviderFactory.create_embedding_provider(
-            embedding_config.provider,
+            embedding_config.provider,  # type: ignore[call-overload]
             api_key=embedding_config.api_key,
             model=embedding_config.model,
             base_url=embedding_config.base_url,
@@ -172,16 +173,37 @@ def _report_ingest_results(
     total: int,
     stats: dict[str, int],
     elapsed_time: float,
+    deleted: int,
+    no_delete: bool,  # noqa: FBT001
 ) -> None:
-    """Report ingestion results."""
+    """Report ingestion results.
+
+    Args:
+        total: Total number of files processed.
+        stats: Dictionary with 'new', 'updated', 'unchanged', 'errors' counts.
+        elapsed_time: Time taken to process in seconds.
+        deleted: Number of orphaned documents deleted.
+        no_delete: Whether deletion was skipped.
+
+    """
     _msg = "_report_ingest_results starting"
     log.debug(_msg)
-    click.echo(
-        f"\nSuccessfully ingested {total} documents "
-        f"({stats['new']} new, {stats['updated']} updated, {stats['unchanged']} unchanged)",
-    )
-    if stats["errors"] > 0:
-        click.echo(f"Errors: {stats['errors']} files")
+
+    # Build the base message
+    if no_delete:
+        result_msg = (
+            f"\nSuccessfully ingested {total} documents "
+            f"({stats['new']} new, {stats['updated']} updated, "
+            f"{stats['unchanged']} unchanged, {stats['errors']} errors, deletion skipped)"
+        )
+    else:
+        result_msg = (
+            f"\nSuccessfully ingested {total} documents "
+            f"({stats['new']} new, {stats['updated']} updated, "
+            f"{stats['unchanged']} unchanged, {stats['errors']} errors, {deleted} deleted)"
+        )
+
+    click.echo(result_msg)
     click.echo(f"Completed in {elapsed_time:.1f} seconds")
     _msg = "_report_ingest_results returning"
     log.debug(_msg)
@@ -194,12 +216,27 @@ def _report_ingest_results(
     is_flag=True,
     help="Show what would happen without writing to database.",
 )
+@click.option(
+    "--no-delete",
+    is_flag=True,
+    help="Skip deletion of documents not found in filesystem.",
+)
 @click.option("--verbose", is_flag=True, help="Show detailed progress.")
 @click.pass_context
-def ingest(ctx: click.Context, path: str, *, dry_run: bool, verbose: bool) -> None:
+def ingest(
+    ctx: click.Context,
+    path: str,
+    *,
+    dry_run: bool,
+    no_delete: bool,
+    verbose: bool,
+) -> None:
     """Ingest documents from an Obsidian vault.
 
     PATH is the path to the Obsidian vault directory.
+
+    By default, documents that exist in the database but not on the filesystem
+    will be deleted. Use --no-delete to preserve orphaned documents.
     """
     _msg = f"Starting ingestion from: {path}"
     log.info(_msg)
@@ -210,6 +247,9 @@ def ingest(ctx: click.Context, path: str, *, dry_run: bool, verbose: bool) -> No
 
     if dry_run:
         click.echo("DRY RUN: No changes will be written to the database")
+
+    if no_delete:
+        click.echo("Deletion phase skipped (--no-delete flag)")
 
     files = _scan_vault(vault_path)
     if not files:
@@ -238,6 +278,7 @@ def ingest(ctx: click.Context, path: str, *, dry_run: bool, verbose: bool) -> No
         file_infos=file_infos,
         dry_run=dry_run,
         progress_callback=_create_progress_callback(verbose=verbose),
+        no_delete=no_delete,
     )
 
     elapsed_time = time.time() - start_time
@@ -247,7 +288,7 @@ def ingest(ctx: click.Context, path: str, *, dry_run: bool, verbose: bool) -> No
         "unchanged": result.unchanged,
         "errors": result.errors,
     }
-    _report_ingest_results(result.total, stats, elapsed_time)
+    _report_ingest_results(result.total, stats, elapsed_time, result.deleted, no_delete)
 
 
 def _format_query_results_json(results: list) -> str:

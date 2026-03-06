@@ -37,6 +37,7 @@ class IngestionResult:
         updated: Number of existing documents updated.
         unchanged: Number of unchanged documents.
         errors: Number of files that failed processing.
+        deleted: Number of orphaned documents deleted from database.
         processing_time_seconds: Time taken to process all files.
         message: Human-readable summary message.
 
@@ -47,6 +48,7 @@ class IngestionResult:
     updated: int
     unchanged: int
     errors: int
+    deleted: int
     processing_time_seconds: float
     message: str
 
@@ -58,6 +60,7 @@ class IngestionResult:
             "updated": self.updated,
             "unchanged": self.unchanged,
             "errors": self.errors,
+            "deleted": self.deleted,
             "processing_time_seconds": self.processing_time_seconds,
             "message": self.message,
         }
@@ -187,6 +190,7 @@ class IngestionService:
         dry_run: bool = False,
         progress_callback: Callable[[int, int, int, int], None] | None = None,
         file_infos: list[FileInfo] | None = None,
+        no_delete: bool = False,
     ) -> IngestionResult:
         """Ingest all markdown files from a vault directory.
 
@@ -196,6 +200,7 @@ class IngestionService:
             progress_callback: Optional callback(current, total, successes, errors).
             file_infos: Optional pre-scanned file info objects. If provided,
                 vault_path is used only for reference and file_infos are processed directly.
+            no_delete: If True, skip deletion of orphaned documents (default: False).
 
         Returns:
             IngestionResult with statistics about the operation.
@@ -207,6 +212,7 @@ class IngestionService:
             Performs database operations for document and task creation/update.
             Uses file checksums to detect changes and avoid unnecessary updates.
             Each file is processed in its own database transaction.
+            Orphaned documents (in DB but not on filesystem) are deleted by default.
 
         """
         _msg = f"ingest_vault starting for path: {vault_path}"
@@ -228,6 +234,7 @@ class IngestionService:
                 updated=0,
                 unchanged=0,
                 errors=0,
+                deleted=0,
                 processing_time_seconds=elapsed,
                 message="No markdown files found in directory",
             )
@@ -238,20 +245,46 @@ class IngestionService:
             progress_callback=progress_callback,
         )
 
+        # Collect filesystem paths for deletion detection
+        filesystem_paths = {str(fi.path) for fi in file_info_list}
+
+        # Delete orphaned documents unless no_delete flag is set
+        deleted_count = 0
+        deletion_errors = 0
+        if not no_delete:
+            deleted_count, deletion_errors = self._delete_orphaned_documents(
+                filesystem_paths,
+                dry_run=dry_run,
+            )
+        else:
+            _msg = "Deletion phase skipped (no_delete=True)"
+            log.info(_msg)
+
         elapsed_time = time.time() - start_time
+
+        # Build message based on whether deletion was skipped
+        if no_delete:
+            message = (
+                f"Ingested {total} files: {stats['new']} new, "
+                f"{stats['updated']} updated, {stats['unchanged']} unchanged, "
+                f"{stats['errors']} errors, deletion skipped"
+            )
+        else:
+            message = (
+                f"Ingested {total} files: {stats['new']} new, "
+                f"{stats['updated']} updated, {stats['unchanged']} unchanged, "
+                f"{stats['errors']} errors, {deleted_count} deleted"
+            )
 
         result = IngestionResult(
             total=total,
             new=stats["new"],
             updated=stats["updated"],
             unchanged=stats["unchanged"],
-            errors=stats["errors"],
+            errors=stats["errors"] + deletion_errors,
+            deleted=deleted_count,
             processing_time_seconds=elapsed_time,
-            message=(
-                f"Ingested {total} files: {stats['new']} new, "
-                f"{stats['updated']} updated, {stats['unchanged']} unchanged, "
-                f"{stats['errors']} errors"
-            ),
+            message=message,
         )
 
         _msg = f"ingest_vault completed: {result.message}"
@@ -481,3 +514,125 @@ class IngestionService:
 
         _msg = "_update_tasks completed"
         log.debug(_msg)
+
+    def _delete_orphaned_documents(
+        self,
+        filesystem_paths: set[str],
+        *,
+        dry_run: bool = False,
+    ) -> tuple[int, int]:
+        """Delete documents from database that no longer exist on filesystem.
+
+        Args:
+            filesystem_paths: Set of file paths that exist on the filesystem.
+            dry_run: If True, don't actually delete (just count).
+
+        Returns:
+            Tuple of (deleted_count, error_count).
+
+        Notes:
+            Performs database operations for document deletion.
+            Tasks are automatically deleted via ON DELETE CASCADE.
+            Each deletion is logged at INFO level.
+            Errors are logged but do not stop processing.
+
+        """
+        _msg = "_delete_orphaned_documents starting"
+        log.debug(_msg)
+
+        # Query all documents and identify orphans
+        with self.db_manager.get_session() as session:
+            all_documents = session.query(Document).all()
+            orphaned_documents = [
+                doc for doc in all_documents if doc.file_path not in filesystem_paths
+            ]
+
+        if not orphaned_documents:
+            _msg = "No orphaned documents found"
+            log.debug(_msg)
+            return 0, 0
+
+        total_orphaned = len(orphaned_documents)
+        _msg = f"Found {total_orphaned} orphaned documents to delete"
+        log.info(_msg)
+
+        if dry_run:
+            _msg = f"Dry run mode - would delete {total_orphaned} orphaned documents"
+            log.info(_msg)
+            return total_orphaned, 0
+
+        # Process deletions in batches
+        return self._process_deletion_batches(orphaned_documents)
+
+    def _process_deletion_batches(
+        self,
+        orphaned_documents: list[Document],
+    ) -> tuple[int, int]:
+        """Process deletion of orphaned documents in batches.
+
+        Args:
+            orphaned_documents: List of documents to delete.
+
+        Returns:
+            Tuple of (deleted_count, error_count).
+
+        """
+        deleted_count = 0
+        error_count = 0
+        batch_size = 100
+
+        with self.db_manager.get_session() as session:
+            for i in range(0, len(orphaned_documents), batch_size):
+                batch = orphaned_documents[i : i + batch_size]
+                batch_deleted, batch_errors = self._delete_batch(session, batch)
+                deleted_count += batch_deleted
+                error_count += batch_errors
+
+        _msg = f"Deleted {deleted_count} orphaned documents ({error_count} errors)"
+        log.info(_msg)
+
+        _msg = "_delete_orphaned_documents returning"
+        log.debug(_msg)
+
+        return deleted_count, error_count
+
+    def _delete_batch(
+        self,
+        session: Session,
+        batch: list[Document],
+    ) -> tuple[int, int]:
+        """Delete a batch of documents.
+
+        Args:
+            session: Database session.
+            batch: List of documents to delete in this batch.
+
+        Returns:
+            Tuple of (deleted_count, error_count) for this batch.
+
+        """
+        deleted_count = 0
+
+        for document in batch:
+            try:
+                _msg = f"Deleting orphaned document: {document.file_path}"
+                log.info(_msg)
+                session.delete(document)
+                deleted_count += 1
+            except (OSError, RuntimeError) as e:
+                _msg = f"Failed to delete document {document.file_path}: {e}"
+                log.error(_msg)
+
+        # Commit the batch
+        try:
+            session.commit()
+            _msg = f"Deleted batch of {deleted_count} orphaned documents"
+            log.debug(_msg)
+        except (OSError, RuntimeError) as e:
+            _msg = f"Failed to commit deletion batch: {e}"
+            log.error(_msg)
+            session.rollback()
+            # All documents in batch failed
+            return 0, len(batch)
+
+        return deleted_count, len(batch) - deleted_count
