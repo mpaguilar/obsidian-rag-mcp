@@ -87,14 +87,17 @@ alembic upgrade head
 Scan and ingest markdown files from an Obsidian vault:
 
 ```bash
-# Basic ingestion
+# Basic ingestion (uses default "Obsidian Vault")
 obsidian-rag ingest /path/to/vault
 
+# Ingest to a specific vault
+obsidian-rag ingest /path/to/vault --vault "My Vault"
+
 # Dry run to preview changes without writing to database
-obsidian-rag ingest /path/to/vault --dry-run
+obsidian-rag ingest /path/to/vault --vault "My Vault" --dry-run
 
 # Verbose output for detailed progress
-obsidian-rag ingest /path/to/vault --verbose
+obsidian-rag ingest /path/to/vault --vault "My Vault" --verbose
 ```
 
 **Output:**
@@ -188,14 +191,14 @@ endpoints:
     model: text-embedding-3-small
     api_key: ${OPENAI_API_KEY}
     base_url: https://api.openai.com/v1
-  
+
   analysis:
     provider: openai
     model: gpt-4
     api_key: ${OPENAI_API_KEY}
     temperature: 0.7
     max_tokens: 2000
-  
+
   chat:
     provider: openai
     model: gpt-4
@@ -213,6 +216,13 @@ ingestion:
 logging:
   level: INFO
   format: text
+
+# Vault configuration (optional - default vault created automatically)
+vaults:
+  "Obsidian Vault":
+    container_path: "/data"
+    host_path: "/data"
+    description: "Default vault"
 ```
 
 ### Environment Variable Interpolation
@@ -243,6 +253,101 @@ export OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_API_KEY="sk-..."
 # Logging
 export OBSIDIAN_RAG_LOGGING_LEVEL="DEBUG"
 ```
+
+## Multi-Vault Configuration
+
+Obsidian RAG supports managing multiple vaults, each with its own documents and metadata. This is useful for separating personal notes from work documents, or managing different projects.
+
+### Vault Configuration Schema
+
+Each vault requires:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `container_path` | string | Yes | Path inside container/Docker for file operations |
+| `host_path` | string | No | Path on host system (defaults to `container_path`) |
+| `description` | string | No | Human-readable description of the vault |
+
+### Multi-Vault Example
+
+```yaml
+# .obsidian-rag.yaml
+vaults:
+  "Personal":
+    container_path: "/data/personal"
+    host_path: "/home/user/obsidian/personal"
+    description: "Personal knowledge base"
+
+  "Work":
+    container_path: "/data/work"
+    host_path: "/home/user/obsidian/work"
+    description: "Work notes and projects"
+
+  "Projects":
+    container_path: "/data/projects"
+    description: "Side projects and ideas"
+```
+
+### Vault Name Validation
+
+Vault names must follow these rules:
+
+- Must start with an alphanumeric character (a-z, A-Z, 0-9)
+- Can contain letters, numbers, spaces, hyphens (`-`), and underscores (`_`)
+- Maximum length: 100 characters
+- Names are case-sensitive
+
+**Valid vault names:**
+- `Personal`
+- `Work Vault`
+- `my-vault`
+- `notes_2024`
+
+**Invalid vault names:**
+- `Vault.Name` (contains period)
+- `Vault@Home` (contains special character)
+- ` My Vault` (starts with space)
+- (empty string)
+
+### Docker Path Mapping
+
+When running in Docker, paths inside the container may differ from host paths. Use `container_path` for the path inside Docker and `host_path` for the actual host filesystem path:
+
+```yaml
+vaults:
+  "Personal":
+    # Path inside Docker container where files are mounted
+    container_path: "/vaults/personal"
+    # Actual path on host system (used for Obsidian URIs)
+    host_path: "/home/user/Documents/Obsidian/Personal"
+    description: "Personal notes"
+```
+
+**Docker run example:**
+
+```bash
+docker run -p 8000:8000 \
+  -v /home/user/Documents/Obsidian/Personal:/vaults/personal \
+  -v /home/user/Documents/Obsidian/Work:/vaults/work \
+  -e OBSIDIAN_RAG_MCP_TOKEN=secret \
+  obsidian-rag-mcp
+```
+
+### Default Vault
+
+If no vaults are configured, a default vault named "Obsidian Vault" is automatically created with `container_path: "/data"`. To use the default vault, simply run:
+
+```bash
+obsidian-rag ingest /data
+```
+
+### MCP Vault Tools
+
+The MCP server provides vault management tools:
+
+- `list_vaults`: Query all vaults with document counts
+- Document tools support optional `vault_name` filtering
+- `ingest` tool requires a `vault_name` parameter
 
 ## MCP Server
 
@@ -318,7 +423,10 @@ This means you can run the MCP server on a completely different machine from whe
 
 ### Available MCP Tools
 
-The MCP server provides read-only tools for querying tasks and documents:
+The MCP server provides read-only tools for querying tasks, documents, and vaults:
+
+**Vault Tools:**
+- `list_vaults`: Query all vaults with document counts and metadata
 
 **Task Tools:**
 - `get_incomplete_tasks`: Query incomplete tasks with pagination
@@ -327,7 +435,11 @@ The MCP server provides read-only tools for querying tasks and documents:
 - `get_completed_tasks`: Query completed tasks with optional date filter
 
 **Document Tools:**
-- `query_documents`: Semantic search using vector similarity
+- `query_documents`: Semantic search using vector similarity with optional `vault_name` filter
+- `get_documents_by_tag`: Query documents by tags with optional `vault_name` filter
+- `get_documents_by_property`: Query documents by frontmatter properties with optional `vault_name` filter
+- `get_all_tags`: Query all unique document tags
+- `ingest`: Ingest documents from a vault (requires `vault_name` parameter)
 
 ### Connecting to the MCP Server
 

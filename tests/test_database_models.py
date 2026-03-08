@@ -13,6 +13,7 @@ from obsidian_rag.database.models import (
     Task,
     TaskPriority,
     TaskStatus,
+    Vault,
 )
 
 
@@ -33,8 +34,18 @@ class TestDocument:
 
     def test_create_document(self, db_session):
         """Test creating a document."""
+        # Create vault first
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
         doc = Document(
-            file_path="/test/file.md",
+            vault_id=vault.id,
+            file_path="file.md",
             file_name="file.md",
             content="Test content",
             checksum_md5="abc123",
@@ -45,13 +56,23 @@ class TestDocument:
         db_session.commit()
 
         assert doc.id is not None
-        assert doc.file_path == "/test/file.md"
+        assert doc.file_path == "file.md"
         assert doc.checksum_md5 == "abc123"
 
     def test_document_unique_file_path(self, db_session):
-        """Test that file_path must be unique."""
+        """Test that file_path must be unique per vault."""
+        # Create vault first
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
         doc1 = Document(
-            file_path="/test/file.md",
+            vault_id=vault.id,
+            file_path="file.md",
             file_name="file.md",
             content="Content 1",
             checksum_md5="abc123",
@@ -62,7 +83,8 @@ class TestDocument:
         db_session.commit()
 
         doc2 = Document(
-            file_path="/test/file.md",  # Same path
+            vault_id=vault.id,
+            file_path="file.md",  # Same path in same vault
             file_name="file.md",
             content="Content 2",
             checksum_md5="def456",
@@ -76,8 +98,18 @@ class TestDocument:
 
     def test_document_with_tags(self, db_session):
         """Test document with tags array."""
+        # Create vault first
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
         doc = Document(
-            file_path="/test/file.md",
+            vault_id=vault.id,
+            file_path="file.md",
             file_name="file.md",
             content="Test content",
             checksum_md5="abc123",
@@ -94,8 +126,18 @@ class TestDocument:
 
     def test_document_with_metadata(self, db_session):
         """Test document with frontmatter metadata."""
+        # Create vault first
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
         doc = Document(
-            file_path="/test/file.md",
+            vault_id=vault.id,
+            file_path="file.md",
             file_name="file.md",
             content="Test content",
             checksum_md5="abc123",
@@ -117,8 +159,18 @@ class TestTask:
 
     def test_create_task(self, db_session):
         """Test creating a task associated with a document."""
+        # Create vault first
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
         doc = Document(
-            file_path="/test/file.md",
+            vault_id=vault.id,
+            file_path="file.md",
             file_name="file.md",
             content="Test content",
             checksum_md5="abc123",
@@ -145,8 +197,18 @@ class TestTask:
 
     def test_task_all_status_values(self, db_session):
         """Test task with all status values."""
+        # Create vault first
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
         doc = Document(
-            file_path="/test/file.md",
+            vault_id=vault.id,
+            file_path="file.md",
             file_name="file.md",
             content="Test",
             checksum_md5="abc123",
@@ -181,8 +243,18 @@ class TestTask:
 
     def test_task_cascade_delete(self, db_session):
         """Test that tasks are deleted when document is deleted."""
+        # Create vault first
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
         doc = Document(
-            file_path="/test/file.md",
+            vault_id=vault.id,
+            file_path="file.md",
             file_name="file.md",
             content="Test",
             checksum_md5="abc123",
@@ -212,8 +284,18 @@ class TestTask:
 
     def test_task_with_all_fields(self, db_session):
         """Test task with all optional fields set."""
+        # Create vault first
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
         doc = Document(
-            file_path="/test/file.md",
+            vault_id=vault.id,
+            file_path="file.md",
             file_name="file.md",
             content="Test",
             checksum_md5="abc123",

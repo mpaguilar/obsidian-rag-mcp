@@ -755,3 +755,159 @@ class TestValidateEmbeddingDimensionCompatibilityEdgeCases:
         result = settings._get_expected_dimension()
 
         assert result is None
+
+
+class TestVaultConfigModelValidator:
+    """Test VaultConfig model validator for host_path default."""
+
+    def test_vault_config_default_host_path(self):
+        """Test host_path defaults to container_path when not provided (line 440)."""
+        from obsidian_rag.config import VaultConfig
+
+        config = VaultConfig(container_path="/data")
+        assert config.host_path == "/data"
+
+    def test_vault_config_explicit_host_path(self):
+        """Test host_path is used when explicitly provided."""
+        from obsidian_rag.config import VaultConfig
+
+        config = VaultConfig(container_path="/data", host_path="/host/data")
+        assert config.host_path == "/host/data"
+
+
+class TestMCPConfigValidators:
+    """Test MCPConfig field validators."""
+
+    def test_mcp_config_max_concurrent_default(self):
+        """Test max_concurrent_sessions returns default when v < 1 (lines 487-489)."""
+        from obsidian_rag.config import MCPConfig
+
+        config = MCPConfig(max_concurrent_sessions=0)
+        assert config.max_concurrent_sessions == 100
+
+        config = MCPConfig(max_concurrent_sessions=-5)
+        assert config.max_concurrent_sessions == 100
+
+    def test_mcp_config_session_timeout_default(self):
+        """Test session_timeout_seconds returns default when v < 1 (lines 495-497)."""
+        from obsidian_rag.config import MCPConfig
+
+        config = MCPConfig(session_timeout_seconds=0)
+        assert config.session_timeout_seconds == 300
+
+        config = MCPConfig(session_timeout_seconds=-10)
+        assert config.session_timeout_seconds == 300
+
+    def test_mcp_config_rate_limit_default(self):
+        """Test rate_limit_per_second returns default when v <= 0 (lines 503-505)."""
+        from obsidian_rag.config import MCPConfig
+
+        config = MCPConfig(rate_limit_per_second=0)
+        assert config.rate_limit_per_second == 10.0
+
+        config = MCPConfig(rate_limit_per_second=-5.0)
+        assert config.rate_limit_per_second == 10.0
+
+
+class TestSettingsVaultValidation:
+    """Test Settings vault validation."""
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_settings_creates_default_vault(self, mock_get_config):
+        """Test default vault created when no vaults configured (lines 803-810)."""
+        from obsidian_rag.config import Settings
+
+        mock_get_config.return_value = None
+
+        settings = Settings(vaults={})
+        assert "Obsidian Vault" in settings.vaults
+        assert settings.vaults["Obsidian Vault"].container_path == "/data"
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_settings_vault_name_pattern_invalid(self, mock_get_config):
+        """Test vault name with invalid pattern raises error (lines 772-777)."""
+        from obsidian_rag.config import Settings, VaultConfig
+
+        mock_get_config.return_value = None
+
+        with pytest.raises(ValueError) as exc_info:
+            Settings(vaults={"Invalid.Name": VaultConfig(container_path="/data")})
+
+        assert "Invalid vault name" in str(exc_info.value)
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_settings_vault_name_too_long(self, mock_get_config):
+        """Test vault name exceeding max length raises error (lines 780-783)."""
+        from obsidian_rag.config import Settings, VaultConfig
+
+        mock_get_config.return_value = None
+
+        long_name = "A" * 101  # Exceeds 100 char limit
+
+        with pytest.raises(ValueError) as exc_info:
+            Settings(vaults={long_name: VaultConfig(container_path="/data")})
+
+        assert "exceeds" in str(exc_info.value).lower()
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_settings_max_vaults_exceeded(self, mock_get_config):
+        """Test exceeding max vaults raises error (lines 814-815)."""
+        from obsidian_rag.config import Settings, VaultConfig
+
+        mock_get_config.return_value = None
+
+        # Create 101 vaults (max is 100)
+        vaults = {
+            f"Vault{i}": VaultConfig(container_path=f"/data{i}") for i in range(101)
+        }
+
+        with pytest.raises(ValueError) as exc_info:
+            Settings(vaults=vaults)
+
+        assert "Maximum" in str(exc_info.value)
+
+
+class TestSettingsVaultMethods:
+    """Test Settings vault helper methods."""
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_get_vault_returns_config(self, mock_get_config):
+        """Test get_vault returns vault config (line 833-835)."""
+        from obsidian_rag.config import Settings, VaultConfig
+
+        mock_get_config.return_value = None
+
+        settings = Settings(vaults={"TestVault": VaultConfig(container_path="/data")})
+
+        vault = settings.get_vault("TestVault")
+        assert vault is not None
+        assert vault.container_path == "/data"
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_get_vault_returns_none_for_missing(self, mock_get_config):
+        """Test get_vault returns None for non-existent vault."""
+        from obsidian_rag.config import Settings
+
+        mock_get_config.return_value = None
+
+        settings = Settings()  # Creates default vault
+        vault = settings.get_vault("NonExistent")
+        assert vault is None
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_get_vault_names(self, mock_get_config):
+        """Test get_vault_names returns list of names (line 844)."""
+        from obsidian_rag.config import Settings, VaultConfig
+
+        mock_get_config.return_value = None
+
+        settings = Settings(
+            vaults={
+                "Vault1": VaultConfig(container_path="/data1"),
+                "Vault2": VaultConfig(container_path="/data2"),
+            }
+        )
+
+        names = settings.get_vault_names()
+        # DEFAULT_CONFIG already has "Obsidian Vault", so we have 3 total
+        assert sorted(names) == ["Obsidian Vault", "Vault1", "Vault2"]

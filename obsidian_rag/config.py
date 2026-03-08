@@ -25,6 +25,12 @@ log = logging.getLogger(__name__)
 PGVECTOR_MAX_DIMENSION = 2000
 PORT_MAX = 65535
 
+# Vault name validation pattern: alphanumeric, spaces, hyphens, underscores
+# Must start with alphanumeric character
+VAULT_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9 _-]*$")
+MAX_VAULTS = 100
+MAX_VAULT_NAME_LENGTH = 100
+
 DEFAULT_CONFIG = {
     "endpoints": {
         "embedding": {
@@ -69,7 +75,13 @@ DEFAULT_CONFIG = {
         "cors_origins": ["*"],
         "enable_health_check": True,
         "stateless_http": False,
-        "ingest_path": "/data",
+    },
+    "vaults": {
+        "Obsidian Vault": {
+            "container_path": "/data",
+            "host_path": "/data",
+            "description": "Default vault",
+        },
     },
 }
 
@@ -402,6 +414,33 @@ class LoggingConfig(BaseModel):
     format: str = "text"
 
 
+class VaultConfig(BaseModel):
+    """Configuration for an Obsidian vault.
+
+    Attributes:
+        container_path: Path inside container/Docker for file operations.
+        host_path: Path on host system for link construction (defaults to container_path).
+        description: Optional description of the vault.
+
+    """
+
+    container_path: str
+    host_path: str | None = None
+    description: str | None = None
+
+    @model_validator(mode="after")
+    def set_default_host_path(self) -> "VaultConfig":
+        """Set host_path to container_path if not provided.
+
+        Returns:
+            The validated VaultConfig instance.
+
+        """
+        if self.host_path is None:
+            self.host_path = self.container_path
+        return self
+
+
 class MCPConfig(BaseModel):
     """Configuration for MCP server.
 
@@ -412,7 +451,6 @@ class MCPConfig(BaseModel):
         cors_origins: List of allowed CORS origins.
         enable_health_check: Enable health check endpoint.
         stateless_http: Enable stateless mode for horizontal scaling.
-        ingest_path: Default path for MCP ingest tool (default: "/data").
         max_concurrent_sessions: Maximum number of concurrent sessions.
         session_timeout_seconds: Session timeout for inactive sessions.
         rate_limit_per_second: Maximum connections per second per IP.
@@ -427,7 +465,6 @@ class MCPConfig(BaseModel):
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     enable_health_check: bool = True
     stateless_http: bool = False
-    ingest_path: str = "/data"
     max_concurrent_sessions: int = 100
     session_timeout_seconds: int = 300
     rate_limit_per_second: float = 10.0
@@ -483,6 +520,7 @@ class SettingsKwargs(TypedDict, total=False):
         ingestion: Document ingestion settings.
         logging: Logging configuration.
         mcp: MCP server configuration.
+        vaults: Dictionary of vault configurations.
 
     """
 
@@ -491,6 +529,7 @@ class SettingsKwargs(TypedDict, total=False):
     ingestion: dict[str, Any]
     logging: dict[str, Any]
     mcp: dict[str, Any]
+    vaults: dict[str, VaultConfig]
 
 
 class GetSettingsKwargs(TypedDict, total=False):
@@ -507,6 +546,7 @@ class GetSettingsKwargs(TypedDict, total=False):
         ingestion: Document ingestion settings.
         logging: Logging configuration.
         mcp: MCP server configuration.
+        vaults: Dictionary of vault configurations.
 
     """
 
@@ -516,6 +556,7 @@ class GetSettingsKwargs(TypedDict, total=False):
     ingestion: dict[str, Any]
     logging: dict[str, Any]
     mcp: dict[str, Any]
+    vaults: dict[str, VaultConfig]
 
 
 class Settings(BaseSettings):
@@ -540,6 +581,7 @@ class Settings(BaseSettings):
     ingestion: IngestionConfig = Field(default_factory=IngestionConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    vaults: dict[str, VaultConfig] = Field(default_factory=dict)
 
     def __init__(
         self,
@@ -715,6 +757,91 @@ class Settings(BaseSettings):
         )
 
         return self
+
+    def _validate_vault_name(self, vault_name: str) -> None:
+        """Validate a single vault name.
+
+        Args:
+            vault_name: Name of the vault to validate.
+
+        Raises:
+            ValueError: If vault name is invalid.
+
+        """
+        if not VAULT_NAME_PATTERN.match(vault_name):
+            _msg = (
+                f"Invalid vault name '{vault_name}'. "
+                "Vault names must start with an alphanumeric character "
+                "and contain only letters, numbers, spaces, hyphens, and underscores."
+            )
+            raise ValueError(_msg)
+
+        if len(vault_name) > MAX_VAULT_NAME_LENGTH:
+            _msg = (
+                f"Vault name '{vault_name}' exceeds {MAX_VAULT_NAME_LENGTH} characters"
+            )
+            raise ValueError(_msg)
+
+    @model_validator(mode="after")
+    def validate_vaults(self) -> "Settings":
+        """Validate vault configuration.
+
+        Checks that:
+        - Vault names match the allowed pattern
+        - Number of vaults does not exceed maximum
+        - If no vaults configured, default is created
+
+        Returns:
+            The validated Settings instance.
+
+        Raises:
+            ValueError: If vault configuration is invalid.
+
+        """
+        # If no vaults configured, create default
+        if not self.vaults:
+            self.vaults = {
+                "Obsidian Vault": VaultConfig(
+                    container_path="/data",
+                    host_path="/data",
+                    description="Default vault",
+                ),
+            }
+            return self
+
+        # Check maximum number of vaults
+        if len(self.vaults) > MAX_VAULTS:
+            _msg = f"Maximum {MAX_VAULTS} vaults allowed, got {len(self.vaults)}"
+            raise ValueError(_msg)
+
+        # Validate each vault name
+        for vault_name in self.vaults:
+            self._validate_vault_name(vault_name)
+
+        return self
+
+    def get_vault(self, vault_name: str) -> VaultConfig | None:
+        """Get vault configuration by name.
+
+        Args:
+            vault_name: Name of the vault.
+
+        Returns:
+            VaultConfig if found, None otherwise.
+
+        """
+        _msg = f"Getting vault config for: {vault_name}"
+        log.debug(_msg)
+        return self.vaults.get(vault_name)
+
+    def get_vault_names(self) -> list[str]:
+        """Get list of configured vault names.
+
+        Returns:
+            List of vault names.
+
+        """
+        return list(self.vaults.keys())
 
 
 def get_settings(**kwargs: Unpack[GetSettingsKwargs]) -> Settings:

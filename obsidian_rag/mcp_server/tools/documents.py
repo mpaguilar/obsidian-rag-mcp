@@ -9,7 +9,7 @@ dedicated submodules for PostgreSQL, SQLite, filters, and tags.
 import logging
 from typing import TYPE_CHECKING
 
-from obsidian_rag.database.models import Document
+from obsidian_rag.database.models import Document, Vault
 from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
     TagFilter,
@@ -45,30 +45,6 @@ log = logging.getLogger(__name__)
 # Maximum query complexity limits (re-exported for backward compatibility)
 MAX_PROPERTY_FILTERS = 10
 MAX_TAGS_PER_QUERY = 50
-
-
-def _get_relative_path(file_path: str, vault_root: str | None) -> str:
-    """Calculate relative path from vault root.
-
-    Args:
-        file_path: Absolute file path.
-        vault_root: Vault root path (or None if not set).
-
-    Returns:
-        Relative path starting with ./ if vault_root is set,
-        otherwise returns the original file_path.
-
-    """
-    if vault_root is None:
-        return file_path
-
-    prefix = vault_root.rstrip("/") + "/"
-    if file_path.startswith(prefix):
-        relative = file_path[len(prefix) :]
-        if not relative.startswith("./"):
-            relative = "./" + relative
-        return relative
-    return file_path
 
 
 def _glob_to_like(pattern: str) -> str:
@@ -114,9 +90,7 @@ def _build_document_list_response(
     """
     document_responses = []
     for doc in results:
-        relative_path = _get_relative_path(doc.file_path, doc.vault_root)
         doc_response = create_document_response(doc, 0.0)
-        doc_response.file_path = relative_path
         document_responses.append(doc_response)
 
     has_more = (offset + limit) < total_count
@@ -210,7 +184,7 @@ def query_documents(
 def get_documents_by_tag(
     session: "Session",
     tag_filter: TagFilter,
-    vault_root: str | None = None,
+    vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> DocumentListResponse:
@@ -219,7 +193,7 @@ def get_documents_by_tag(
     Args:
         session: Database session.
         tag_filter: Tag filter with include/exclude lists.
-        vault_root: Filter by specific vault root path (optional).
+        vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
 
@@ -231,8 +205,7 @@ def get_documents_by_tag(
 
     Notes:
         Tag matching is case-insensitive substring match.
-        File paths are returned relative to vault_root if available.
-        Relative paths always start with ./ (e.g., ./foo/bar.md).
+        File paths are returned as relative paths from vault root.
         For SQLite databases, filtering is done in Python.
 
     """
@@ -248,10 +221,12 @@ def get_documents_by_tag(
     dialect = session.bind.dialect.name if session.bind else "unknown"
     is_postgresql = dialect == "postgresql"
 
-    query = session.query(Document)
-
-    if vault_root is not None:
-        query = query.filter(Document.vault_root == vault_root)
+    # Build query with vault join if filtering by vault_name
+    if vault_name is not None:
+        query = session.query(Document).join(Vault)
+        query = query.filter(Vault.name == vault_name)
+    else:
+        query = session.query(Document)
 
     if is_postgresql:
         from obsidian_rag.mcp_server.tools.documents_tags import (
@@ -273,9 +248,7 @@ def get_documents_by_tag(
 
     document_responses = []
     for doc in results:
-        relative_path = _get_relative_path(doc.file_path, doc.vault_root)
         doc_response = create_document_response(doc, 0.0)
-        doc_response.file_path = relative_path
         document_responses.append(doc_response)
 
     has_more = (offset + limit) < total_count
@@ -296,7 +269,7 @@ def get_documents_by_property(
     session: "Session",
     property_filters: PropertyFilterParams | None = None,
     tag_filter: TagFilter | None = None,
-    vault_root: str | None = None,
+    vault_name: str | None = None,
     pagination: PaginationParams | None = None,
 ) -> DocumentListResponse:
     """Query documents filtered by frontmatter properties.
@@ -305,7 +278,7 @@ def get_documents_by_property(
         session: Database session.
         property_filters: Property filter parameters with include/exclude lists.
         tag_filter: Optional tag filter to also apply.
-        vault_root: Filter by specific vault root path (optional).
+        vault_name: Filter by specific vault name (optional).
         pagination: Pagination parameters (limit/offset).
 
     Returns:
@@ -350,7 +323,7 @@ def get_documents_by_property(
         session=session,
         property_filters=filter_params,
         tag_params=tag_params,
-        vault_root=vault_root,
+        vault_name=vault_name,
         pagination=pagination,
     )
 

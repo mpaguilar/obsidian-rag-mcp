@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from obsidian_rag.database.models import Base, Document
+from obsidian_rag.database.models import Base, Document, Vault
 from obsidian_rag.mcp_server.models import PropertyFilter, TagFilter
 from obsidian_rag.mcp_server.tools.documents_params import (
     PaginationParams,
@@ -46,9 +46,26 @@ def db_session(db_engine):
 @pytest.fixture
 def sample_documents(db_session):
     """Create sample documents for testing."""
+    # Create vaults first
+    vault1 = Vault(
+        id=uuid4(),
+        name="vault1",
+        container_path="/data/vault1",
+        host_path="/data/vault1",
+    )
+    vault2 = Vault(
+        id=uuid4(),
+        name="vault2",
+        container_path="/data/vault2",
+        host_path="/data/vault2",
+    )
+    db_session.add_all([vault1, vault2])
+    db_session.commit()
+
     docs = [
         Document(
             id=uuid4(),
+            vault_id=vault1.id,
             file_path="/data/vault1/work.md",
             file_name="work.md",
             content="# Work Document",
@@ -57,10 +74,10 @@ def sample_documents(db_session):
             modified_at_fs=datetime.now(),
             tags=["work", "urgent"],
             frontmatter_json={"status": "draft"},
-            vault_root="/data/vault1",
         ),
         Document(
             id=uuid4(),
+            vault_id=vault2.id,
             file_path="/data/vault2/personal.md",
             file_name="personal.md",
             content="# Personal Document",
@@ -69,7 +86,6 @@ def sample_documents(db_session):
             modified_at_fs=datetime.now(),
             tags=["personal", "ideas"],
             frontmatter_json={"status": "published"},
-            vault_root="/data/vault2",
         ),
     ]
     db_session.add_all(docs)
@@ -174,7 +190,7 @@ class TestGetDocumentsByPropertySqlite:
             session=db_session,
             property_filters=property_filters,
             tag_params=tag_params,
-            vault_root=None,
+            vault_name=None,
             pagination=pagination,
         )
 
@@ -196,7 +212,7 @@ class TestGetDocumentsByPropertySqlite:
             session=db_session,
             property_filters=property_filters,
             tag_params=tag_params,
-            vault_root="/data/vault1",
+            vault_name="vault1",
             pagination=pagination,
         )
 
@@ -223,7 +239,7 @@ class TestGetDocumentsByPropertySqlite:
             session=db_session,
             property_filters=property_filters,
             tag_params=tag_params,
-            vault_root=None,
+            vault_name=None,
             pagination=pagination,
         )
 
@@ -247,7 +263,7 @@ class TestGetDocumentsByPropertySqlite:
             session=db_session,
             property_filters=property_filters,
             tag_params=tag_params,
-            vault_root=None,
+            vault_name=None,
             pagination=pagination,
         )
 
@@ -268,7 +284,7 @@ class TestGetDocumentsByPropertySqlite:
             session=db_session,
             property_filters=property_filters,
             tag_params=tag_params,
-            vault_root=None,
+            vault_name=None,
             pagination=pagination,
         )
 

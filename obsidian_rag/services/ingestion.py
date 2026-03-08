@@ -2,6 +2,7 @@
 
 import logging
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,8 +10,9 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
+from obsidian_rag.config import VaultConfig
 from obsidian_rag.database.engine import DatabaseManager
-from obsidian_rag.database.models import Document, Task
+from obsidian_rag.database.models import Document, Task, Vault
 from obsidian_rag.llm.base import EmbeddingError, EmbeddingProvider
 from obsidian_rag.parsing.frontmatter import parse_frontmatter
 from obsidian_rag.parsing.scanner import (
@@ -25,6 +27,26 @@ if TYPE_CHECKING:
     from obsidian_rag.parsing.tasks import ParsedTask
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class IngestVaultOptions:
+    """Options for ingest_vault method.
+
+    Attributes:
+        vault: Vault configuration or vault name.
+        dry_run: If True, don't write to database.
+        progress_callback: Optional callback for progress updates.
+        file_infos: Optional pre-scanned file info objects.
+        no_delete: If True, skip deletion of orphaned documents.
+
+    """
+
+    vault: VaultConfig | str
+    dry_run: bool = False
+    progress_callback: Callable[[int, int, int, int], None] | None = None
+    file_infos: list[FileInfo] | None = None
+    no_delete: bool = False
 
 
 @dataclass
@@ -103,6 +125,171 @@ class IngestionService:
         _msg = "IngestionService initialized"
         log.debug(_msg)
 
+    def _resolve_vault_config(self, vault: VaultConfig | str) -> VaultConfig:
+        """Resolve vault configuration from name or config object.
+
+        Args:
+            vault: VaultConfig instance or vault name string.
+
+        Returns:
+            VaultConfig instance.
+
+        Raises:
+            ValueError: If vault name not found in configuration.
+
+        """
+        _msg = "_resolve_vault_config starting"
+        log.debug(_msg)
+
+        if isinstance(vault, VaultConfig):
+            _msg = "_resolve_vault_config returning VaultConfig instance"
+            log.debug(_msg)
+            return vault
+
+        # Look up vault by name
+        vault_config = self.settings.get_vault(vault)
+        if vault_config is None:
+            available = self.settings.get_vault_names()
+            _msg = (
+                f"Vault '{vault}' not found. Available vaults: {', '.join(available)}"
+            )
+            raise ValueError(_msg)
+
+        _msg = f"_resolve_vault_config returning config for vault: {vault}"
+        log.debug(_msg)
+        return vault_config
+
+    def _get_or_create_vault(
+        self,
+        vault_config: VaultConfig,
+        *,
+        dry_run: bool = False,
+    ) -> Vault | None:
+        """Get existing vault record or create new one.
+
+        Args:
+            vault_config: Vault configuration.
+            dry_run: If True, don't write to database.
+
+        Returns:
+            Vault record or None if dry_run.
+
+        """
+        _msg = "_get_or_create_vault starting"
+        log.debug(_msg)
+
+        if dry_run:
+            _msg = "_get_or_create_vault returning None (dry_run)"
+            log.debug(_msg)
+            return None
+
+        # Find vault by container_path (unique identifier)
+        with self.db_manager.get_session() as session:
+            vault = (
+                session.query(Vault)
+                .filter_by(container_path=vault_config.container_path)
+                .first()
+            )
+
+            if vault is None:
+                # Create new vault record
+                _msg = f"Creating new vault record for: {vault_config.container_path}"
+                log.info(_msg)
+
+                # Find vault name from config
+                vault_name = "Unknown"
+                for name, config in self.settings.vaults.items():
+                    if config.container_path == vault_config.container_path:
+                        vault_name = name
+                        break
+
+                vault = Vault(
+                    name=vault_name,
+                    description=vault_config.description,
+                    container_path=vault_config.container_path,
+                    host_path=vault_config.host_path or vault_config.container_path,
+                )
+                session.add(vault)
+                session.commit()
+                _msg = f"Created vault record with ID: {vault.id}"
+                log.info(_msg)
+            else:
+                _msg = f"Found existing vault record: {vault.id}"
+                log.debug(_msg)
+
+            # Return detached copy
+            return vault
+
+    def _compute_relative_path(self, file_path: Path, container_path: str) -> str:
+        """Compute relative path from file to vault root.
+
+        Args:
+            file_path: Absolute path to the file.
+            container_path: Vault container path.
+
+        Returns:
+            Relative path using forward slashes.
+
+        """
+        _msg = "_compute_relative_path starting"
+        log.debug(_msg)
+
+        container = Path(container_path).resolve()
+        resolved_file = file_path.resolve()
+
+        try:
+            relative = resolved_file.relative_to(container)
+            # Always use forward slashes for cross-platform consistency
+            result = str(relative).replace("\\", "/")
+        except ValueError:
+            # File is not under container path - should not happen if validated
+            result = str(file_path).replace("\\", "/")
+
+        _msg = f"_compute_relative_path returning: {result}"
+        log.debug(_msg)
+        return result
+
+    def _validate_files_in_vault(
+        self,
+        file_info_list: list[FileInfo],
+        vault_config: VaultConfig,
+    ) -> None:
+        """Validate all files are within the vault container path.
+
+        Args:
+            file_info_list: List of file info objects.
+            vault_config: Vault configuration.
+
+        Raises:
+            ValueError: If any file is outside the vault.
+
+        """
+        _msg = "_validate_files_in_vault starting"
+        log.debug(_msg)
+
+        container = Path(vault_config.container_path).resolve()
+
+        for file_info in file_info_list:
+            file_path = file_info.path.resolve()
+
+            # Check for path traversal
+            if ".." in str(file_info.path):
+                _msg = f"Path traversal detected: {file_info.path}"
+                raise ValueError(_msg)
+
+            # Check file is within vault
+            try:
+                file_path.relative_to(container)
+            except ValueError as _err:
+                _msg = (
+                    f"File {file_info.path} is outside vault container path "
+                    f"{vault_config.container_path}. All files must be within the vault directory."
+                )
+                raise ValueError(_msg) from _err
+
+        _msg = f"_validate_files_in_vault completed for {len(file_info_list)} files"
+        log.debug(_msg)
+
     def _get_file_info_list(
         self,
         vault_path: Path,
@@ -151,6 +338,8 @@ class IngestionService:
         self,
         file_info_list: list[FileInfo],
         *,
+        vault_record: Vault | None,
+        vault_config: VaultConfig,
         dry_run: bool,
         progress_callback: Callable[[int, int, int, int], None] | None,
     ) -> dict[str, int]:
@@ -158,6 +347,8 @@ class IngestionService:
 
         Args:
             file_info_list: List of FileInfo objects to process.
+            vault_record: Vault database record (None if dry_run).
+            vault_config: Vault configuration.
             dry_run: If True, don't write to database.
             progress_callback: Optional progress callback.
 
@@ -170,7 +361,12 @@ class IngestionService:
 
         for idx, file_info in enumerate(file_info_list):
             try:
-                result = self._ingest_single_file(file_info, dry_run=dry_run)
+                result = self._ingest_single_file(
+                    file_info,
+                    vault_record=vault_record,
+                    vault_config=vault_config,
+                    dry_run=dry_run,
+                )
                 stats[result] += 1
             except Exception as e:
                 _msg = f"Error processing file {file_info.path}: {e}"
@@ -186,44 +382,41 @@ class IngestionService:
     def ingest_vault(
         self,
         vault_path: Path,
-        *,
-        dry_run: bool = False,
-        progress_callback: Callable[[int, int, int, int], None] | None = None,
-        file_infos: list[FileInfo] | None = None,
-        no_delete: bool = False,
+        options: IngestVaultOptions,
     ) -> IngestionResult:
         """Ingest all markdown files from a vault directory.
 
         Args:
             vault_path: Path to the vault directory.
-            dry_run: If True, don't write to database (default: False).
-            progress_callback: Optional callback(current, total, successes, errors).
-            file_infos: Optional pre-scanned file info objects. If provided,
-                vault_path is used only for reference and file_infos are processed directly.
-            no_delete: If True, skip deletion of orphaned documents (default: False).
+            options: Ingestion options including vault config, dry_run, etc.
 
         Returns:
             IngestionResult with statistics about the operation.
 
         Raises:
-            ValueError: If vault_path is invalid.
+            ValueError: If vault_path is invalid or files are outside vault.
 
         Notes:
             Performs database operations for document and task creation/update.
             Uses file checksums to detect changes and avoid unnecessary updates.
             Each file is processed in its own database transaction.
             Orphaned documents (in DB but not on filesystem) are deleted by default.
+            Files outside the vault container_path are rejected.
 
         """
         _msg = f"ingest_vault starting for path: {vault_path}"
         log.info(_msg)
 
+        # Resolve vault configuration
+        vault_config = self._resolve_vault_config(options.vault)
+        vault_record = self._get_or_create_vault(vault_config, dry_run=options.dry_run)
+
         start_time = time.time()
 
         file_info_list, total = self._get_file_info_list(
             vault_path,
-            file_infos,
-            progress_callback,
+            options.file_infos,
+            options.progress_callback,
         )
 
         if total == 0:
@@ -239,31 +432,40 @@ class IngestionService:
                 message="No markdown files found in directory",
             )
 
+        # Validate all files are within vault
+        self._validate_files_in_vault(file_info_list, vault_config)
+
         stats = self._process_files_with_stats(
             file_info_list,
-            dry_run=dry_run,
-            progress_callback=progress_callback,
+            vault_record=vault_record,
+            vault_config=vault_config,
+            dry_run=options.dry_run,
+            progress_callback=options.progress_callback,
         )
 
-        # Collect filesystem paths for deletion detection
-        filesystem_paths = {str(fi.path) for fi in file_info_list}
+        # Collect filesystem paths for deletion detection (relative paths)
+        filesystem_paths = {
+            self._compute_relative_path(fi.path, vault_config.container_path)
+            for fi in file_info_list
+        }
 
         # Delete orphaned documents unless no_delete flag is set
         deleted_count = 0
         deletion_errors = 0
-        if not no_delete:
+        if not options.no_delete and vault_record is not None:
             deleted_count, deletion_errors = self._delete_orphaned_documents(
                 filesystem_paths,
-                dry_run=dry_run,
+                vault_id=vault_record.id,
+                dry_run=options.dry_run,
             )
         else:
-            _msg = "Deletion phase skipped (no_delete=True)"
+            _msg = "Deletion phase skipped (no_delete=True or dry_run)"
             log.info(_msg)
 
         elapsed_time = time.time() - start_time
 
         # Build message based on whether deletion was skipped
-        if no_delete:
+        if options.no_delete:
             message = (
                 f"Ingested {total} files: {stats['new']} new, "
                 f"{stats['updated']} updated, {stats['unchanged']} unchanged, "
@@ -296,12 +498,16 @@ class IngestionService:
         self,
         file_info: FileInfo,
         *,
+        vault_record: Vault | None,
+        vault_config: VaultConfig,
         dry_run: bool = False,
     ) -> str:
         """Ingest a single file.
 
         Args:
             file_info: File information including path, content, checksum.
+            vault_record: Vault database record (None if dry_run).
+            vault_config: Vault configuration.
             dry_run: If True, don't write to database.
 
         Returns:
@@ -314,6 +520,7 @@ class IngestionService:
             Performs database operations within a transaction per file.
             Parses frontmatter and tasks from file content.
             Generates embeddings if embedding_provider is configured.
+            Stores relative path instead of absolute path.
 
         """
         _msg = f"_ingest_single_file starting for: {file_info.path}"
@@ -325,16 +532,28 @@ class IngestionService:
         # Parse tasks
         parsed_tasks = parse_tasks_from_content(content)
 
+        # Compute relative path
+        relative_path = self._compute_relative_path(
+            file_info.path,
+            vault_config.container_path,
+        )
+
         if dry_run:
             _msg = "Dry run mode - simulating new document"
             log.debug(_msg)
             return "new"
 
+        if vault_record is None:
+            _msg = "No vault record available (should not happen outside dry_run)"
+            raise RuntimeError(_msg)
+
         # Process in a single transaction for this file
         with self.db_manager.get_session() as session:
-            # Check if document exists
+            # Check if document exists (by vault_id and relative path)
             existing = (
-                session.query(Document).filter_by(file_path=str(file_info.path)).first()
+                session.query(Document)
+                .filter_by(vault_id=vault_record.id, file_path=relative_path)
+                .first()
             )
 
             if existing:
@@ -356,7 +575,12 @@ class IngestionService:
                 _msg = "Creating new document"
                 log.debug(_msg)
                 parsed_data = (kind, tags, metadata, content)
-                document = self._create_document(file_info, parsed_data)
+                document = self._create_document(
+                    file_info,
+                    parsed_data,
+                    vault_id=vault_record.id,
+                    relative_path=relative_path,
+                )
                 session.add(document)
                 session.flush()  # Get document ID
                 self._create_tasks(session, document, parsed_tasks)
@@ -371,12 +595,17 @@ class IngestionService:
         self,
         file_info: FileInfo,
         parsed_data: tuple[str | None, list[str] | None, dict[str, Any], str],
+        *,
+        vault_id: uuid.UUID,
+        relative_path: str,
     ) -> Document:
         """Create a new Document instance.
 
         Args:
             file_info: File information.
             parsed_data: Tuple of (kind, tags, metadata, content).
+            vault_id: UUID of the vault.
+            relative_path: Relative path from vault root.
 
         Returns:
             New Document instance.
@@ -403,9 +632,13 @@ class IngestionService:
                 log.warning(_msg)
                 embedding = None
 
+        # Extract file name from relative path
+        file_name = Path(relative_path).name
+
         document = Document(
-            file_path=str(file_info.path),
-            file_name=file_info.name,
+            vault_id=vault_id,
+            file_path=relative_path,
+            file_name=file_name,
             content=content,
             content_vector=embedding,
             checksum_md5=file_info.checksum,
@@ -519,12 +752,14 @@ class IngestionService:
         self,
         filesystem_paths: set[str],
         *,
+        vault_id: uuid.UUID,
         dry_run: bool = False,
     ) -> tuple[int, int]:
         """Delete documents from database that no longer exist on filesystem.
 
         Args:
-            filesystem_paths: Set of file paths that exist on the filesystem.
+            filesystem_paths: Set of relative file paths that exist on the filesystem.
+            vault_id: UUID of the vault to filter by.
             dry_run: If True, don't actually delete (just count).
 
         Returns:
@@ -540,11 +775,11 @@ class IngestionService:
         _msg = "_delete_orphaned_documents starting"
         log.debug(_msg)
 
-        # Query all documents and identify orphans
+        # Query documents for this vault and identify orphans
         with self.db_manager.get_session() as session:
-            all_documents = session.query(Document).all()
+            vault_documents = session.query(Document).filter_by(vault_id=vault_id).all()
             orphaned_documents = [
-                doc for doc in all_documents if doc.file_path not in filesystem_paths
+                doc for doc in vault_documents if doc.file_path not in filesystem_paths
             ]
 
         if not orphaned_documents:

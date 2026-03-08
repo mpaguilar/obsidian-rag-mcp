@@ -28,10 +28,12 @@ obsidian_rag/                    # Main package
 ├── mcp_server/                  # MCP server layer
 │   ├── __init__.py
 │   ├── __main__.py              # Server entry point
+│   ├── handlers.py              # Request handlers for tools
 │   ├── middleware.py            # HTTP request/response logging middleware
 │   ├── models.py                # Pydantic request/response models
-│   ├── server.py                # FastMCP server setup
+│   ├── server.py                # FastMCP server setup and tool wrappers
 │   ├── session_manager.py       # Session lifecycle and metrics tracking
+│   ├── tool_definitions.py      # Tool implementations and MCPToolRegistry
 │   └── tools/                   # MCP tools
 │       ├── __init__.py
 │       ├── documents.py         # Document query tools (public API)
@@ -40,7 +42,8 @@ obsidian_rag/                    # Main package
 │       ├── documents_postgres.py # PostgreSQL-specific queries
 │       ├── documents_sqlite.py  # SQLite-specific queries
 │       ├── documents_tags.py    # Tag filtering logic
-│       └── tasks.py             # Task query tools
+│       ├── tasks.py             # Task query tools
+│       └── vaults.py            # Vault query tools
 ├── parsing/                     # Document parsing
 │   ├── __init__.py
 │   ├── frontmatter.py           # FrontMatter extraction
@@ -60,9 +63,27 @@ obsidian_rag/                    # Main package
 ## CLI Commands
 
 - `obsidian-rag [--log-level LEVEL] <command>` - Global options include `--log-level` (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-- `obsidian-rag ingest <path>` - Ingest documents from vault path
+- `obsidian-rag ingest --vault <name> <path>` - Ingest documents from vault path (vault must be configured)
 - `obsidian-rag query <search>` - Semantic search documents
 - `obsidian-rag tasks [options]` - Query tasks
+
+### Vault Support
+
+The CLI supports multiple vaults via the `--vault` parameter. Vaults must be configured in the config file:
+
+```yaml
+vaults:
+  "Personal":
+    container_path: "/data/personal"
+    host_path: "/home/user/obsidian/personal"
+    description: "Personal knowledge base"
+  "Work":
+    container_path: "/data/work"
+    host_path: "/home/user/obsidian/work"
+    description: "Work notes"
+```
+
+Vault names must contain only alphanumeric characters, spaces, hyphens, and underscores.
 
 ## Configuration
 
@@ -85,6 +106,24 @@ Config file locations (searched in order):
 - `endpoints.embedding.provider`: LLM provider for embeddings ('openai', 'openrouter', 'huggingface')
 - `endpoints.chat.provider`: LLM provider for chat/analysis ('openai', 'openrouter')
 
+### Vault Support
+
+The CLI supports multiple vaults via the `--vault` parameter. Vaults must be configured in the config file:
+
+```yaml
+vaults:
+  "Personal":
+    container_path: "/data/personal"
+    host_path: "/home/user/obsidian/personal"
+    description: "Personal knowledge base"
+  "Work":
+    container_path: "/data/work"
+    host_path: "/home/user/obsidian/work"
+    description: "Work notes"
+```
+
+Vault names must contain only alphanumeric characters, spaces, hyphens, and underscores.
+
 ## Development Standards
 
 - All code must pass ruff linting
@@ -105,29 +144,28 @@ Run ruff checks:
 ruff check obsidian_rag/ tests/
 ```
 
-### Coverage Status
-
-| Module | Coverage | Notes |
-|--------|----------|-------|
-| `config.py` | 97% | Environment variable interpolation branches |
-| `parsing/` | 100% | All parsing modules fully covered |
-| `database/engine.py` | 100% | Complete coverage |
-| `database/models.py` | 100% | Complete coverage |
-| `llm/base.py` | 100% | Complete coverage |
-| `llm/providers.py` | 100% | Complete coverage |
-| `services/ingestion.py` | 100% | Complete coverage |
-| `cli.py` | 95% | Error handling and edge cases |
-| `mcp_server/__main__.py` | 100% | Complete coverage |
-| `mcp_server/server.py` | 72% | Tool registration and logging functions |
-| `mcp_server/middleware.py` | 100% | Complete coverage |
-| `mcp_server/models.py` | 100% | Complete coverage |
-| `mcp_server/session_manager.py` | 98% | Defensive timing branches |
-| `mcp_server/tools/documents.py` | 94% | PostgreSQL-specific tag filtering requires integration testing |
-| `mcp_server/tools/documents_filters.py` | 99% | Single defensive branch |
-| `mcp_server/tools/documents_postgres.py` | 93% | SQLite-specific defensive branches |
-| `mcp_server/tools/documents_sqlite.py` | 100% | Complete coverage |
-| `mcp_server/tools/documents_tags.py` | 100% | Complete coverage |
-| `mcp_server/tools/documents_params.py` | 100% | Complete coverage |
-| `mcp_server/tools/tasks.py` | 100% | Complete coverage |
-
 > **Technical Implementation Details**: For architecture patterns, component details, and data flow, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
+
+## Checkpoint History
+
+### 011.obsidian-vaults (Completed 2025-03-08)
+
+**Objective:** Refactor `mcp_server/server.py` to eliminate nested functions and achieve 100% test coverage.
+
+**Changes Made:**
+- Extracted all tool implementations from nested functions to module-level functions
+- Created `tool_definitions.py` (485 lines) containing the `MCPToolRegistry` class and tool implementations
+- Refactored `server.py` to use a global registry pattern with `_get_registry()` and `_set_registry()`
+- All 11 MCP tools now defined at module level with proper `@mcp.tool()` registration in `_register_tools()`
+- Split tool implementations between `server.py` (619 lines) and `tool_definitions.py` to stay under 1000 line limit
+
+**Key Design Decision:**
+Used global registry pattern to maintain FastMCP compatibility while achieving testability. The `MCPToolRegistry` class holds dependencies (db_manager, embedding_provider, settings) and is initialized during `create_mcp_server()` before tool registration.
+
+**Verification:**
+- All 746 tests pass
+- `server.py`: 100% coverage (144 statements, 8 branches)
+- `tool_definitions.py`: 100% coverage (94 statements, 8 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All files under 1000 lines

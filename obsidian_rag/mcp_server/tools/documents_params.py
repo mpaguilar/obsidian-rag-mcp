@@ -93,7 +93,7 @@ class PropertyQueryParams:
         session: Database session.
         property_filters: Property filter parameters.
         tag_params: Tag filter parameters.
-        vault_root: Optional vault root filter.
+        vault_name: Optional vault name filter.
         pagination: Pagination parameters.
 
     """
@@ -101,5 +101,5 @@ class PropertyQueryParams:
     session: "Session"
     property_filters: PropertyFilterParams
     tag_params: TagFilterParams
-    vault_root: str | None
+    vault_name: str | None
     pagination: PaginationParams

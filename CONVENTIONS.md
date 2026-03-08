@@ -199,10 +199,11 @@ async def dashboard(request: Request) -> HTMLResponse:
 * Unit tests should be run with a logging level of DEBUG
 * Unit tests should be written before the code, and they should fail if the code is incorrect.
 * **100% test coverage is required, including branch coverage**
-    * Run with: `pytest --cov=myapp --cov-branch --cov-report=term-missing`
-    * All code paths and branches must be tested
+    * Run with: `pytest --cov=myapp --cov-branch --cov-report=term-missing --mypy`
+    * All code paths and branches must be tested, including defensive code paths, error handling, and edge cases.
     * There are no exceptions
-    * When writing code, priority should be given to testability.
+    * When writing code, priority should be given to testability. 
+    * Inner/nested functions are difficult to test, so don't use them.
 * IMPORTANT: Do not use duplicate file names for tests, even in separate paths. This causes errors.
     * All test files **must** have unique filenames
 

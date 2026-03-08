@@ -7,7 +7,7 @@ Uses native JSONB operators and vector similarity functions.
 import logging
 from typing import TYPE_CHECKING
 
-from obsidian_rag.database.models import Document
+from obsidian_rag.database.models import Document, Vault
 from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
     create_document_response,
@@ -198,13 +198,15 @@ def get_documents_by_property_postgresql(
     session = params.session
     property_filters = params.property_filters
     tag_params = params.tag_params
-    vault_root = params.vault_root
+    vault_name = params.vault_name
     pagination = params.pagination
 
-    query = session.query(Document)
-
-    if vault_root is not None:
-        query = query.filter(Document.vault_root == vault_root)
+    # Join with Vault if filtering by vault_name
+    if vault_name is not None:
+        query = session.query(Document).join(Vault)
+        query = query.filter(Vault.name == vault_name)
+    else:
+        query = session.query(Document)
 
     if property_filters.include_filters:
         for prop_filter in property_filters.include_filters:

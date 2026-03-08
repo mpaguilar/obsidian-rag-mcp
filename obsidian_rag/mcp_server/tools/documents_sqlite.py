@@ -6,7 +6,7 @@ Uses Python-based filtering since SQLite doesn't support JSONB or vector operati
 
 import logging
 
-from obsidian_rag.database.models import Document
+from obsidian_rag.database.models import Document, Vault
 from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
     create_document_response,
@@ -89,13 +89,15 @@ def get_documents_by_property_sqlite(
     session = params.session
     property_filters = params.property_filters
     tag_params = params.tag_params
-    vault_root = params.vault_root
+    vault_name = params.vault_name
     pagination = params.pagination
 
-    query = session.query(Document)
-
-    if vault_root is not None:
-        query = query.filter(Document.vault_root == vault_root)
+    # Join with Vault if filtering by vault_name
+    if vault_name is not None:
+        query = session.query(Document).join(Vault)
+        query = query.filter(Vault.name == vault_name)
+    else:
+        query = session.query(Document)
 
     query = query.order_by(Document.file_name)
     all_docs = query.all()

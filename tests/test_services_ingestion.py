@@ -1,15 +1,21 @@
 """Tests for the IngestionService."""
 
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from obsidian_rag.database.models import Document, Task
+from obsidian_rag.config import VaultConfig
+from obsidian_rag.database.models import Document, Task, Vault
 from obsidian_rag.llm.base import EmbeddingError
-from obsidian_rag.services.ingestion import IngestionResult, IngestionService
+from obsidian_rag.services.ingestion import (
+    IngestionResult,
+    IngestionService,
+    IngestVaultOptions,
+)
 
 if TYPE_CHECKING:
     from obsidian_rag.config import Settings
@@ -22,6 +28,14 @@ def mock_settings() -> "Settings":
     settings = MagicMock()
     settings.ingestion.batch_size = 100
     settings.ingestion.progress_interval = 10
+    settings.vaults = {
+        "test-vault": VaultConfig(
+            container_path="/test/vault",
+            host_path="/test/vault",
+        ),
+    }
+    settings.get_vault.return_value = settings.vaults["test-vault"]
+    settings.get_vault_names.return_value = ["test-vault"]
     return settings
 
 
@@ -37,6 +51,25 @@ def mock_embedding_provider() -> MagicMock:
     provider = MagicMock()
     provider.generate_embedding.return_value = [0.1, 0.2, 0.3]
     return provider
+
+
+@pytest.fixture
+def mock_vault_config() -> VaultConfig:
+    """Create mock vault config for testing."""
+    return VaultConfig(
+        container_path="/test/vault",
+        host_path="/test/vault",
+    )
+
+
+@pytest.fixture
+def mock_vault_record() -> MagicMock:
+    """Create mock vault record for testing."""
+    vault = MagicMock()
+    vault.id = uuid.uuid4()
+    vault.name = "test-vault"
+    vault.container_path = "/test/vault"
+    return vault
 
 
 @pytest.fixture
@@ -140,6 +173,118 @@ class TestIngestionServiceInit:
         assert service.settings is mock_settings
 
 
+class TestResolveVaultConfig:
+    """Test _resolve_vault_config method."""
+
+    def test_resolve_vault_config_with_config_object(
+        self,
+        ingestion_service: IngestionService,
+        mock_vault_config: VaultConfig,
+    ) -> None:
+        """Test resolving VaultConfig object returns itself."""
+        result = ingestion_service._resolve_vault_config(mock_vault_config)
+        assert result is mock_vault_config
+
+    def test_resolve_vault_config_with_name(
+        self,
+        ingestion_service: IngestionService,
+        mock_settings: "Settings",
+    ) -> None:
+        """Test resolving vault by name."""
+        result = ingestion_service._resolve_vault_config("test-vault")
+        assert result == mock_settings.vaults["test-vault"]
+
+    def test_resolve_vault_config_not_found(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test resolving non-existent vault raises error."""
+        # Configure mock to return None for non-existent vault
+        mock_settings = cast(MagicMock, ingestion_service.settings)
+        mock_settings.get_vault.return_value = None
+        mock_settings.get_vault_names.return_value = ["test-vault"]
+
+        with pytest.raises(ValueError, match="Vault 'nonexistent' not found"):
+            ingestion_service._resolve_vault_config("nonexistent")
+
+
+class TestComputeRelativePath:
+    """Test _compute_relative_path method."""
+
+    def test_compute_relative_path(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test computing relative path from file to vault root."""
+        file_path = Path("/test/vault/folder/note.md")
+        container_path = "/test/vault"
+
+        result = ingestion_service._compute_relative_path(file_path, container_path)
+
+        assert result == "folder/note.md"
+
+    def test_compute_relative_path_root_file(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test computing relative path for file in vault root."""
+        file_path = Path("/test/vault/note.md")
+        container_path = "/test/vault"
+
+        result = ingestion_service._compute_relative_path(file_path, container_path)
+
+        assert result == "note.md"
+
+
+class TestValidateFilesInVault:
+    """Test _validate_files_in_vault method."""
+
+    def test_validate_files_in_vault_success(
+        self,
+        ingestion_service: IngestionService,
+        mock_vault_config: VaultConfig,
+    ) -> None:
+        """Test validation passes for files within vault."""
+        mock_file_info = MagicMock()
+        mock_file_info.path = Path("/test/vault/note.md")
+
+        # Should not raise
+        ingestion_service._validate_files_in_vault(
+            [mock_file_info],
+            mock_vault_config,
+        )
+
+    def test_validate_files_in_vault_outside_vault(
+        self,
+        ingestion_service: IngestionService,
+        mock_vault_config: VaultConfig,
+    ) -> None:
+        """Test validation fails for files outside vault."""
+        mock_file_info = MagicMock()
+        mock_file_info.path = Path("/other/path/note.md")
+
+        with pytest.raises(ValueError, match="outside vault container path"):
+            ingestion_service._validate_files_in_vault(
+                [mock_file_info],
+                mock_vault_config,
+            )
+
+    def test_validate_files_in_vault_path_traversal(
+        self,
+        ingestion_service: IngestionService,
+        mock_vault_config: VaultConfig,
+    ) -> None:
+        """Test validation fails for path traversal attempt."""
+        mock_file_info = MagicMock()
+        mock_file_info.path = Path("/test/vault/../etc/passwd")
+
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            ingestion_service._validate_files_in_vault(
+                [mock_file_info],
+                mock_vault_config,
+            )
+
+
 class TestIngestVault:
     """Test ingest_vault method."""
 
@@ -147,12 +292,14 @@ class TestIngestVault:
         self,
         ingestion_service: IngestionService,
         tmp_path: Path,
+        mock_vault_config: VaultConfig,
     ) -> None:
         """Test ingesting empty directory returns zero counts."""
         with patch("obsidian_rag.services.ingestion.scan_markdown_files") as mock_scan:
             mock_scan.return_value = []
 
-            result = ingestion_service.ingest_vault(tmp_path)
+            options = IngestVaultOptions(vault=mock_vault_config)
+            result = ingestion_service.ingest_vault(tmp_path, options)
 
             assert result.total == 0
             assert result.new == 0
@@ -165,18 +312,29 @@ class TestIngestVault:
         self,
         ingestion_service: IngestionService,
         tmp_path: Path,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test ingesting with pre-provided file_infos."""
         mock_session = MagicMock()
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
+
+        # Create test file inside tmp_path
+        test_file = tmp_path / "test.md"
+        test_file.write_text("# Test\n\n- [ ] Task 1")
+
         file_info = MagicMock()
-        file_info.path = tmp_path / "test.md"
+        file_info.path = test_file
         file_info.name = "test.md"
         file_info.content = "# Test\n\n- [ ] Task 1"
         file_info.checksum = "abc123"
@@ -193,30 +351,43 @@ class TestIngestVault:
             ) as mock_parse_tasks:
                 mock_parse_tasks.return_value = []
 
-                result = ingestion_service.ingest_vault(
-                    vault_path=tmp_path,
-                    file_infos=[file_info],
-                )
+                with patch.object(
+                    ingestion_service,
+                    "_get_or_create_vault",
+                    return_value=mock_vault_record,
+                ):
+                    options = IngestVaultOptions(
+                        vault=vault_config,
+                        file_infos=[file_info],
+                    )
+                    result = ingestion_service.ingest_vault(tmp_path, options)
 
-                assert result.total == 1
-                assert result.new == 1
-                assert result.updated == 0
-                assert result.unchanged == 0
-                assert result.errors == 0
+                    assert result.total == 1
+                    assert result.new == 1
+                    assert result.updated == 0
+                    assert result.unchanged == 0
+                    assert result.errors == 0
 
     def test_ingest_vault_with_new_document(
         self,
         ingestion_service: IngestionService,
         tmp_path: Path,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test ingesting new document."""
         mock_session = MagicMock()
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
 
         test_file = tmp_path / "test.md"
         test_file.write_text("# Test Document\n\n- [ ] A task")
@@ -252,31 +423,44 @@ class TestIngestVault:
                     ) as mock_parse_tasks:
                         mock_parse_tasks.return_value = []
 
-                        result = ingestion_service.ingest_vault(tmp_path)
+                        with patch.object(
+                            ingestion_service,
+                            "_get_or_create_vault",
+                            return_value=mock_vault_record,
+                        ):
+                            options = IngestVaultOptions(vault=vault_config)
+                            result = ingestion_service.ingest_vault(tmp_path, options)
 
-                        assert result.total == 1
-                        assert result.new == 1
-                        assert result.updated == 0
-                        assert result.unchanged == 0
-                        assert result.errors == 0
+                            assert result.total == 1
+                            assert result.new == 1
+                            assert result.updated == 0
+                            assert result.unchanged == 0
+                            assert result.errors == 0
 
     def test_ingest_vault_with_unchanged_document(
         self,
         ingestion_service: IngestionService,
         tmp_path: Path,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test ingesting unchanged document."""
         mock_session = MagicMock()
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
         existing_doc = MagicMock()
         existing_doc.checksum_md5 = "abc123"
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = (
             existing_doc
+        )
+
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
         )
 
         test_file = tmp_path / "test.md"
@@ -301,25 +485,32 @@ class TestIngestVault:
                 ) as mock_parse_fm:
                     mock_parse_fm.return_value = (None, None, {}, "# Test Document")
 
-                    result = ingestion_service.ingest_vault(tmp_path)
+                    with patch.object(
+                        ingestion_service,
+                        "_get_or_create_vault",
+                        return_value=mock_vault_record,
+                    ):
+                        options = IngestVaultOptions(vault=vault_config)
+                        result = ingestion_service.ingest_vault(tmp_path, options)
 
-                    assert result.total == 1
-                    assert result.new == 0
-                    assert result.updated == 0
-                    assert result.unchanged == 1
-                    assert result.errors == 0
+                        assert result.total == 1
+                        assert result.new == 0
+                        assert result.updated == 0
+                        assert result.unchanged == 1
+                        assert result.errors == 0
 
     def test_ingest_vault_with_updated_document(
         self,
         ingestion_service: IngestionService,
         tmp_path: Path,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test ingesting updated document."""
         mock_session = MagicMock()
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
         existing_doc = MagicMock()
         existing_doc.checksum_md5 = "old_checksum"
@@ -327,6 +518,12 @@ class TestIngestVault:
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = (
             existing_doc
+        )
+
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
         )
 
         test_file = tmp_path / "test.md"
@@ -357,20 +554,33 @@ class TestIngestVault:
                     ) as mock_parse_tasks:
                         mock_parse_tasks.return_value = []
 
-                        result = ingestion_service.ingest_vault(tmp_path)
+                        with patch.object(
+                            ingestion_service,
+                            "_get_or_create_vault",
+                            return_value=mock_vault_record,
+                        ):
+                            options = IngestVaultOptions(vault=vault_config)
+                            result = ingestion_service.ingest_vault(tmp_path, options)
 
-                        assert result.total == 1
-                        assert result.new == 0
-                        assert result.updated == 1
-                        assert result.unchanged == 0
-                        assert result.errors == 0
+                            assert result.total == 1
+                            assert result.new == 0
+                            assert result.updated == 1
+                            assert result.unchanged == 0
+                            assert result.errors == 0
 
     def test_ingest_vault_with_file_error(
         self,
         ingestion_service: IngestionService,
         tmp_path: Path,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test that file errors are counted but don't stop processing."""
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
+
         test_file = tmp_path / "test.md"
         test_file.write_text("# Test")
 
@@ -392,13 +602,19 @@ class TestIngestVault:
                 ) as mock_parse_fm:
                     mock_parse_fm.side_effect = Exception("Parse error")
 
-                    result = ingestion_service.ingest_vault(tmp_path)
+                    with patch.object(
+                        ingestion_service,
+                        "_get_or_create_vault",
+                        return_value=mock_vault_record,
+                    ):
+                        options = IngestVaultOptions(vault=vault_config)
+                        result = ingestion_service.ingest_vault(tmp_path, options)
 
-                    assert result.total == 1
-                    assert result.new == 0
-                    assert result.updated == 0
-                    assert result.unchanged == 0
-                    assert result.errors == 1
+                        assert result.total == 1
+                        assert result.new == 0
+                        assert result.updated == 0
+                        assert result.unchanged == 0
+                        assert result.errors == 1
 
     def test_ingest_vault_dry_run(
         self,
@@ -406,6 +622,12 @@ class TestIngestVault:
         tmp_path: Path,
     ) -> None:
         """Test dry run mode doesn't write to database."""
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
+
         test_file = tmp_path / "test.md"
         test_file.write_text("# Test Document")
 
@@ -436,34 +658,47 @@ class TestIngestVault:
                 ) as mock_parse_fm:
                     mock_parse_fm.return_value = (None, None, {}, "# Test Document")
 
-                    result = ingestion_service.ingest_vault(
-                        tmp_path,
-                        dry_run=True,
-                    )
+                    with patch.object(
+                        ingestion_service,
+                        "_get_or_create_vault",
+                        return_value=None,  # dry_run returns None
+                    ):
+                        options = IngestVaultOptions(
+                            vault=vault_config,
+                            dry_run=True,
+                        )
+                        result = ingestion_service.ingest_vault(tmp_path, options)
 
-                    assert result.total == 1
-                    assert result.new == 1
-                    assert result.updated == 0
-                    assert result.unchanged == 0
-                    assert result.errors == 0
-                    assert result.deleted == 0
+                        assert result.total == 1
+                        assert result.new == 1
+                        assert result.updated == 0
+                        assert result.unchanged == 0
+                        assert result.errors == 0
+                        assert result.deleted == 0
 
-                    # Verify session.commit was never called (no writes)
-                    mock_session.commit.assert_not_called()
+                        # Verify session.commit was never called (no writes)
+                        mock_session.commit.assert_not_called()
 
     def test_ingest_vault_with_progress_callback(
         self,
         ingestion_service: IngestionService,
         tmp_path: Path,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test progress callback is called during ingestion."""
         mock_session = MagicMock()
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
 
         test_file = tmp_path / "test.md"
         test_file.write_text("# Test")
@@ -499,15 +734,21 @@ class TestIngestVault:
                     ) as mock_parse_tasks:
                         mock_parse_tasks.return_value = []
 
-                        ingestion_service.ingest_vault(
-                            tmp_path,
-                            progress_callback=progress_callback,
-                        )
+                        with patch.object(
+                            ingestion_service,
+                            "_get_or_create_vault",
+                            return_value=mock_vault_record,
+                        ):
+                            options = IngestVaultOptions(
+                                vault=vault_config,
+                                progress_callback=progress_callback,
+                            )
+                            ingestion_service.ingest_vault(tmp_path, options)
 
-                        assert len(progress_calls) > 0
-                        # Last call should have current=1, total=1
-                        assert progress_calls[-1][0] == 1
-                        assert progress_calls[-1][1] == 1
+                            assert len(progress_calls) > 0
+                            # Last call should have current=1, total=1
+                            assert progress_calls[-1][0] == 1
+                            assert progress_calls[-1][1] == 1
 
 
 class TestIngestSingleFile:
@@ -517,15 +758,22 @@ class TestIngestSingleFile:
         self,
         ingestion_service: IngestionService,
         tmp_path: Path,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test document creation with embedding generation."""
         mock_session = MagicMock()
         mock_session_context = MagicMock()
         mock_session_context.__enter__ = MagicMock(return_value=mock_session)
         mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
 
         mock_file_info = MagicMock()
         mock_file_info.path = tmp_path / "test.md"
@@ -545,7 +793,11 @@ class TestIngestSingleFile:
             ) as mock_parse_tasks:
                 mock_parse_tasks.return_value = []
 
-                result = ingestion_service._ingest_single_file(mock_file_info)
+                result = ingestion_service._ingest_single_file(
+                    mock_file_info,
+                    vault_record=mock_vault_record,
+                    vault_config=vault_config,
+                )
 
                 assert result == "new"
                 ingestion_service.embedding_provider.generate_embedding.assert_called_once_with(  # type: ignore[union-attr]
@@ -557,6 +809,7 @@ class TestIngestSingleFile:
         mock_db_manager: MagicMock,
         mock_settings: "Settings",
         tmp_path: Path,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test document creation without embedding provider."""
         service = IngestionService(
@@ -573,44 +826,10 @@ class TestIngestSingleFile:
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
-        mock_file_info = MagicMock()
-        mock_file_info.path = tmp_path / "test.md"
-        mock_file_info.name = "test.md"
-        mock_file_info.content = "Test content"
-        mock_file_info.checksum = "abc123"
-        mock_file_info.created_at = datetime.now(timezone.utc)
-        mock_file_info.modified_at = datetime.now(timezone.utc)
-
-        with patch(
-            "obsidian_rag.services.ingestion.parse_frontmatter"
-        ) as mock_parse_fm:
-            mock_parse_fm.return_value = (None, None, {}, "Test content")
-
-            with patch(
-                "obsidian_rag.services.ingestion.parse_tasks_from_content"
-            ) as mock_parse_tasks:
-                mock_parse_tasks.return_value = []
-
-                result = service._ingest_single_file(mock_file_info)
-
-                assert result == "new"
-
-    def test_embedding_generation_failure(
-        self,
-        ingestion_service: IngestionService,
-        tmp_path: Path,
-    ) -> None:
-        """Test that embedding failure doesn't block document creation."""
-        mock_session = MagicMock()
-        mock_session_context = MagicMock()
-        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
-        mock_session_context.__exit__ = MagicMock(return_value=None)
-        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]  # type: ignore[attr-defined]
-
-        mock_session.query.return_value.filter_by.return_value.first.return_value = None
-
-        ingestion_service.embedding_provider.generate_embedding.side_effect = (  # type: ignore[union-attr]
-            EmbeddingError("Embedding failed")
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
         )
 
         mock_file_info = MagicMock()
@@ -631,7 +850,62 @@ class TestIngestSingleFile:
             ) as mock_parse_tasks:
                 mock_parse_tasks.return_value = []
 
-                result = ingestion_service._ingest_single_file(mock_file_info)
+                result = service._ingest_single_file(
+                    mock_file_info,
+                    vault_record=mock_vault_record,
+                    vault_config=vault_config,
+                )
+
+                assert result == "new"
+
+    def test_embedding_generation_failure(
+        self,
+        ingestion_service: IngestionService,
+        tmp_path: Path,
+        mock_vault_record: MagicMock,
+    ) -> None:
+        """Test that embedding failure doesn't block document creation."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        ingestion_service.embedding_provider.generate_embedding.side_effect = (  # type: ignore[union-attr]
+            EmbeddingError("Embedding failed")
+        )
+
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
+
+        mock_file_info = MagicMock()
+        mock_file_info.path = tmp_path / "test.md"
+        mock_file_info.name = "test.md"
+        mock_file_info.content = "Test content"
+        mock_file_info.checksum = "abc123"
+        mock_file_info.created_at = datetime.now(timezone.utc)
+        mock_file_info.modified_at = datetime.now(timezone.utc)
+
+        with patch(
+            "obsidian_rag.services.ingestion.parse_frontmatter"
+        ) as mock_parse_fm:
+            mock_parse_fm.return_value = (None, None, {}, "Test content")
+
+            with patch(
+                "obsidian_rag.services.ingestion.parse_tasks_from_content"
+            ) as mock_parse_tasks:
+                mock_parse_tasks.return_value = []
+
+                result = ingestion_service._ingest_single_file(
+                    mock_file_info,
+                    vault_record=mock_vault_record,
+                    vault_config=vault_config,
+                )
 
                 assert result == "new"
 
@@ -709,6 +983,7 @@ class TestDeleteOrphanedDocuments:
     def test_delete_orphaned_documents_success(
         self,
         ingestion_service: IngestionService,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test orphaned documents are deleted from database."""
         mock_session = MagicMock()
@@ -719,17 +994,21 @@ class TestDeleteOrphanedDocuments:
 
         # Create mock documents - one orphaned, one not
         mock_doc1 = MagicMock()
-        mock_doc1.file_path = "/vault/orphaned.md"
+        mock_doc1.file_path = "orphaned.md"
         mock_doc2 = MagicMock()
-        mock_doc2.file_path = "/vault/existing.md"
+        mock_doc2.file_path = "existing.md"
 
-        mock_session.query.return_value.all.return_value = [mock_doc1, mock_doc2]
+        mock_session.query.return_value.filter_by.return_value.all.return_value = [
+            mock_doc1,
+            mock_doc2,
+        ]
 
         # Filesystem only has existing.md
-        filesystem_paths = {"/vault/existing.md"}
+        filesystem_paths = {"existing.md"}
 
         deleted_count, error_count = ingestion_service._delete_orphaned_documents(
-            filesystem_paths
+            filesystem_paths,
+            vault_id=mock_vault_record.id,
         )
 
         assert deleted_count == 1
@@ -740,6 +1019,7 @@ class TestDeleteOrphanedDocuments:
     def test_delete_orphaned_documents_empty_db(
         self,
         ingestion_service: IngestionService,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test deletion with empty database returns zero counts."""
         mock_session = MagicMock()
@@ -749,12 +1029,13 @@ class TestDeleteOrphanedDocuments:
         ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
         # Empty database
-        mock_session.query.return_value.all.return_value = []
+        mock_session.query.return_value.filter_by.return_value.all.return_value = []
 
-        filesystem_paths = {"/vault/file.md"}
+        filesystem_paths = {"file.md"}
 
         deleted_count, error_count = ingestion_service._delete_orphaned_documents(
-            filesystem_paths
+            filesystem_paths,
+            vault_id=mock_vault_record.id,
         )
 
         assert deleted_count == 0
@@ -764,6 +1045,7 @@ class TestDeleteOrphanedDocuments:
     def test_delete_orphaned_documents_no_orphans(
         self,
         ingestion_service: IngestionService,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test when all DB documents exist in filesystem."""
         mock_session = MagicMock()
@@ -773,15 +1055,18 @@ class TestDeleteOrphanedDocuments:
         ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
         mock_doc = MagicMock()
-        mock_doc.file_path = "/vault/existing.md"
+        mock_doc.file_path = "existing.md"
 
-        mock_session.query.return_value.all.return_value = [mock_doc]
+        mock_session.query.return_value.filter_by.return_value.all.return_value = [
+            mock_doc
+        ]
 
         # Filesystem has the same file
-        filesystem_paths = {"/vault/existing.md"}
+        filesystem_paths = {"existing.md"}
 
         deleted_count, error_count = ingestion_service._delete_orphaned_documents(
-            filesystem_paths
+            filesystem_paths,
+            vault_id=mock_vault_record.id,
         )
 
         assert deleted_count == 0
@@ -791,6 +1076,7 @@ class TestDeleteOrphanedDocuments:
     def test_delete_orphaned_documents_dry_run(
         self,
         ingestion_service: IngestionService,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test dry run mode doesn't actually delete."""
         mock_session = MagicMock()
@@ -800,14 +1086,17 @@ class TestDeleteOrphanedDocuments:
         ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
         mock_doc = MagicMock()
-        mock_doc.file_path = "/vault/orphaned.md"
+        mock_doc.file_path = "orphaned.md"
 
-        mock_session.query.return_value.all.return_value = [mock_doc]
+        mock_session.query.return_value.filter_by.return_value.all.return_value = [
+            mock_doc
+        ]
 
         filesystem_paths: set[str] = set()  # Empty filesystem
 
         deleted_count, error_count = ingestion_service._delete_orphaned_documents(
             filesystem_paths,
+            vault_id=mock_vault_record.id,
             dry_run=True,
         )
 
@@ -819,6 +1108,7 @@ class TestDeleteOrphanedDocuments:
     def test_delete_orphaned_documents_batch_processing(
         self,
         ingestion_service: IngestionService,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test documents are deleted in batches."""
         mock_session = MagicMock()
@@ -831,15 +1121,18 @@ class TestDeleteOrphanedDocuments:
         orphaned_docs = []
         for i in range(150):
             mock_doc = MagicMock()
-            mock_doc.file_path = f"/vault/orphaned{i}.md"
+            mock_doc.file_path = f"orphaned{i}.md"
             orphaned_docs.append(mock_doc)
 
-        mock_session.query.return_value.all.return_value = orphaned_docs
+        mock_session.query.return_value.filter_by.return_value.all.return_value = (
+            orphaned_docs
+        )
 
         filesystem_paths: set[str] = set()  # Empty filesystem
 
         deleted_count, error_count = ingestion_service._delete_orphaned_documents(
             filesystem_paths,
+            vault_id=mock_vault_record.id,
             dry_run=False,
         )
 
@@ -852,6 +1145,7 @@ class TestDeleteOrphanedDocuments:
         self,
         ingestion_service: IngestionService,
         tmp_path: Path,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test that ingest_vault reports deleted count in result."""
         mock_session = MagicMock()
@@ -862,9 +1156,17 @@ class TestDeleteOrphanedDocuments:
 
         # One document in DB (will be orphaned)
         mock_doc = MagicMock()
-        mock_doc.file_path = str(tmp_path / "old.md")
-        mock_session.query.return_value.all.return_value = [mock_doc]
+        mock_doc.file_path = "old.md"
+        mock_session.query.return_value.filter_by.return_value.all.return_value = [
+            mock_doc
+        ]
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
 
         # Create one file in filesystem
         test_file = tmp_path / "new.md"
@@ -888,15 +1190,22 @@ class TestDeleteOrphanedDocuments:
                 ) as mock_parse_fm:
                     mock_parse_fm.return_value = (None, None, {}, "# New Document")
 
-                    result = ingestion_service.ingest_vault(tmp_path)
+                    with patch.object(
+                        ingestion_service,
+                        "_get_or_create_vault",
+                        return_value=mock_vault_record,
+                    ):
+                        options = IngestVaultOptions(vault=vault_config)
+                        result = ingestion_service.ingest_vault(tmp_path, options)
 
-                    assert result.deleted == 1
-                    assert "1 deleted" in result.message
+                        assert result.deleted == 1
+                        assert "1 deleted" in result.message
 
     def test_ingest_vault_with_no_delete_flag(
         self,
         ingestion_service: IngestionService,
         tmp_path: Path,
+        mock_vault_record: MagicMock,
     ) -> None:
         """Test that no_delete flag skips deletion phase."""
         mock_session = MagicMock()
@@ -907,6 +1216,12 @@ class TestDeleteOrphanedDocuments:
 
         # Document exists in DB (would be orphaned)
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        # Create vault config using tmp_path as container_path
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
 
         # Create file in filesystem
         test_file = tmp_path / "test.md"
@@ -930,13 +1245,19 @@ class TestDeleteOrphanedDocuments:
                 ) as mock_parse_fm:
                     mock_parse_fm.return_value = (None, None, {}, "# Test Document")
 
-                    result = ingestion_service.ingest_vault(
-                        tmp_path,
-                        no_delete=True,
-                    )
+                    with patch.object(
+                        ingestion_service,
+                        "_get_or_create_vault",
+                        return_value=mock_vault_record,
+                    ):
+                        options = IngestVaultOptions(
+                            vault=vault_config,
+                            no_delete=True,
+                        )
+                        result = ingestion_service.ingest_vault(tmp_path, options)
 
-                    assert result.deleted == 0
-                    assert "deletion skipped" in result.message
+                        assert result.deleted == 0
+                        assert "deletion skipped" in result.message
 
     def test_delete_batch_with_commit_failure(
         self,
@@ -947,9 +1268,9 @@ class TestDeleteOrphanedDocuments:
 
         # Create mock documents
         mock_doc1 = MagicMock()
-        mock_doc1.file_path = "/vault/doc1.md"
+        mock_doc1.file_path = "doc1.md"
         mock_doc2 = MagicMock()
-        mock_doc2.file_path = "/vault/doc2.md"
+        mock_doc2.file_path = "doc2.md"
         batch = [mock_doc1, mock_doc2]
 
         # Simulate commit failure
@@ -964,3 +1285,140 @@ class TestDeleteOrphanedDocuments:
         assert deleted_count == 0
         assert error_count == 2
         mock_session.commit.assert_called_once()
+
+
+class TestGetOrCreateVault:
+    """Test _get_or_create_vault method."""
+
+    def test_get_or_create_vault_dry_run(
+        self,
+        ingestion_service: IngestionService,
+        mock_vault_config: VaultConfig,
+    ) -> None:
+        """Test dry run returns None."""
+        result = ingestion_service._get_or_create_vault(
+            mock_vault_config,
+            dry_run=True,
+        )
+        assert result is None
+
+    def test_get_or_create_vault_existing(
+        self,
+        ingestion_service: IngestionService,
+        mock_vault_config: VaultConfig,
+        mock_vault_record: MagicMock,
+    ) -> None:
+        """Test getting existing vault record."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = (
+            mock_vault_record
+        )
+
+        result = ingestion_service._get_or_create_vault(mock_vault_config)
+
+        assert result is mock_vault_record
+        mock_session.add.assert_not_called()
+
+    def test_get_or_create_vault_new(
+        self,
+        ingestion_service: IngestionService,
+        mock_vault_config: VaultConfig,
+    ) -> None:
+        """Test creating new vault record."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        result = ingestion_service._get_or_create_vault(mock_vault_config)
+
+        assert result is not None
+        assert isinstance(result, Vault)
+        mock_session.add.assert_called_once()
+        mock_session.commit.assert_called_once()
+
+
+class TestComputeRelativePathExceptions:
+    """Test _compute_relative_path exception handling (lines 244-246)."""
+
+    def test_compute_relative_path_outside_vault(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test relative path when file is outside vault container."""
+        # File path that is not under the container path
+        file_path = Path("/outside/vault/note.md")
+        container_path = "/test/vault"
+
+        result = ingestion_service._compute_relative_path(file_path, container_path)
+
+        # Should return absolute path with forward slashes
+        assert result == "/outside/vault/note.md"
+
+
+class TestIngestSingleFileExceptions:
+    """Test _ingest_single_file exception handling (lines 547-548)."""
+
+    def test_ingest_single_file_no_vault_record(
+        self,
+        ingestion_service: IngestionService,
+        mock_vault_config: VaultConfig,
+    ) -> None:
+        """Test RuntimeError when vault_record is None outside dry_run (lines 547-548)."""
+        mock_file_info = MagicMock()
+        mock_file_info.path = Path("/test/vault/note.md")
+        mock_file_info.checksum_md5 = "abc123"
+        mock_file_info.content = "# Test content"
+
+        with patch("obsidian_rag.services.ingestion.parse_frontmatter") as mock_parse:
+            mock_parse.return_value = ("note", ["tag"], {}, "content")
+
+            with pytest.raises(RuntimeError) as exc_info:
+                ingestion_service._ingest_single_file(
+                    mock_file_info,
+                    vault_record=None,
+                    vault_config=mock_vault_config,
+                    dry_run=False,
+                )
+
+        assert "No vault record available" in str(exc_info.value)
+
+
+class TestDeleteBatchExceptions:
+    """Test _delete_batch exception handling (lines 857-859)."""
+
+    def test_delete_batch_document_delete_failure(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test handling of individual document deletion failure (lines 857-859)."""
+        mock_session = MagicMock()
+
+        # Create mock documents where one fails to delete
+        mock_doc1 = MagicMock()
+        mock_doc1.file_path = "doc1.md"
+        mock_doc2 = MagicMock()
+        mock_doc2.file_path = "doc2.md"
+
+        # First delete succeeds, second fails
+        mock_session.delete.side_effect = [None, RuntimeError("Delete failed")]
+
+        batch = [mock_doc1, mock_doc2]
+
+        deleted_count, error_count = ingestion_service._delete_batch(
+            mock_session,
+            batch,  # type: ignore[arg-type]
+        )
+
+        # One deleted successfully, one failed
+        assert deleted_count == 1
+        assert error_count == 1
+        assert mock_session.delete.call_count == 2

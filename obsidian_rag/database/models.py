@@ -91,12 +91,61 @@ class TaskPriority(PyEnum):
     LOWEST = "lowest"
 
 
+class Vault(Base):
+    """Represents an Obsidian vault.
+
+    Attributes:
+        id: Unique identifier (UUID).
+        name: Vault name (unique, max 100 chars).
+        description: Optional vault description.
+        container_path: Path inside container/Docker for file operations.
+        host_path: Path on host system for link construction.
+        created_at: When the vault record was created.
+        documents: Related documents (one-to-many relationship).
+
+    """
+
+    __tablename__ = "vaults"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    name: Mapped[str] = mapped_column(
+        String(100),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    container_path: Mapped[str] = mapped_column(Text, nullable=False)
+    host_path: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+    )
+
+    # Relationships
+    documents: Mapped[list["Document"]] = relationship(
+        "Document",
+        back_populates="vault",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        """Return string representation of the vault."""
+        return f"<Vault(id={self.id}, name={self.name})>"
+
+
 class Document(Base):
     """Represents an Obsidian markdown document.
 
     Attributes:
         id: Unique identifier (UUID).
-        file_path: Absolute path to the file (unique).
+        vault_id: Foreign key to the parent vault.
+        file_path: Relative path from vault root (unique per vault).
         file_name: Name of the file.
         content: Full text content of the document.
         content_vector: Vector embedding of the content (pg_vector).
@@ -107,7 +156,7 @@ class Document(Base):
         kind: Document kind from FrontMatter.
         tags: Array of tags from FrontMatter.
         frontmatter_json: All other FrontMatter properties as JSON.
-        vault_root: Root path of the vault during ingestion (for relative paths).
+        vault: Parent vault relationship.
         tasks: Related tasks (one-to-many relationship).
 
     """
@@ -119,9 +168,13 @@ class Document(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
+    vault_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vaults.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     file_path: Mapped[str] = mapped_column(
         Text,
-        unique=True,
         nullable=False,
         index=True,
     )
@@ -142,13 +195,17 @@ class Document(Base):
     kind: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list[str] | None] = mapped_column(ArrayType, nullable=True)
     frontmatter_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    vault_root: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
+    vault: Mapped["Vault"] = relationship("Vault", back_populates="documents")
     tasks: Mapped[list["Task"]] = relationship(
         "Task",
         back_populates="document",
         cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("vault_id", "file_path", name="uq_document_vault_path"),
     )
 
     def __repr__(self) -> str:

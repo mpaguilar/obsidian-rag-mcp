@@ -1,6 +1,7 @@
 """Pydantic models for MCP request/response schemas."""
 
 import logging
+import urllib.parse
 import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Literal
@@ -107,12 +108,50 @@ class TaskListResponse(BaseModel):
     next_offset: int | None
 
 
+class VaultResponse(BaseModel):
+    """Response model for a single vault.
+
+    Attributes:
+        id: Unique vault identifier (UUID).
+        name: Vault name.
+        description: Optional vault description.
+        host_path: Path on host system for link construction.
+        document_count: Number of documents in the vault.
+
+    """
+
+    id: uuid.UUID
+    name: str
+    description: str | None
+    host_path: str
+    document_count: int
+
+
+class VaultListResponse(BaseModel):
+    """Response model for vault list queries with pagination.
+
+    Attributes:
+        results: List of vault responses.
+        total_count: Total number of vaults.
+        has_more: Whether more results are available.
+        next_offset: Offset for the next page (or None if no more results).
+
+    """
+
+    results: list[VaultResponse]
+    total_count: int
+    has_more: bool
+    next_offset: int | None
+
+
 class DocumentResponse(BaseModel):
     """Response model for a single document.
 
     Attributes:
         id: Unique document identifier (UUID).
-        file_path: Absolute path to the document file.
+        vault_name: Name of the vault containing this document.
+        file_path: Relative path from vault root.
+        relative_path: Relative path from vault root (same as file_path).
         file_name: Name of the document file.
         content: Full text content of the document.
         kind: Document kind from FrontMatter (or None).
@@ -120,11 +159,14 @@ class DocumentResponse(BaseModel):
         similarity_score: Cosine distance score (lower is better).
         created_at_fs: Filesystem creation timestamp.
         modified_at_fs: Filesystem modification timestamp.
+        obsidian_uri: Obsidian URI for opening the document.
 
     """
 
     id: uuid.UUID
+    vault_name: str
     file_path: str
+    relative_path: str
     file_name: str
     content: str
     kind: str | None
@@ -132,6 +174,7 @@ class DocumentResponse(BaseModel):
     similarity_score: float
     created_at_fs: datetime
     modified_at_fs: datetime
+    obsidian_uri: str
 
 
 class DocumentListResponse(BaseModel):
@@ -257,6 +300,53 @@ def _validate_offset(offset: int) -> int:
 if TYPE_CHECKING:
     from obsidian_rag.database.models import Document as DocumentModel
     from obsidian_rag.database.models import Task as TaskModel
+    from obsidian_rag.database.models import Vault as VaultModel
+
+
+def _build_obsidian_uri(vault_name: str, relative_path: str) -> str:
+    """Build Obsidian URI for opening a document.
+
+    Args:
+        vault_name: Name of the vault.
+        relative_path: Relative path to the document.
+
+    Returns:
+        Obsidian URI string.
+
+    """
+    # URL-encode vault name and file path
+    encoded_vault = urllib.parse.quote(vault_name)
+    encoded_path = urllib.parse.quote(relative_path)
+    return f"obsidian://open?vault={encoded_vault}&file={encoded_path}"
+
+
+def create_vault_response(
+    vault: "VaultModel",
+    document_count: int,
+) -> VaultResponse:
+    """Create a VaultResponse from database model.
+
+    Args:
+        vault: Vault model instance.
+        document_count: Number of documents in the vault.
+
+    Returns:
+        VaultResponse populated from the model.
+
+    """
+    _msg = "create_vault_response starting"
+    log.debug(_msg)
+
+    result = VaultResponse(
+        id=vault.id,
+        name=vault.name,
+        description=vault.description,
+        host_path=vault.host_path,
+        document_count=document_count,
+    )
+    _msg = "create_vault_response returning"
+    log.debug(_msg)
+    return result
 
 
 def create_task_response(
@@ -309,9 +399,18 @@ def create_document_response(
     _msg = "create_document_response starting"
     log.debug(_msg)
 
+    # Get vault name from the vault relationship
+    vault_name = document.vault.name if document.vault else "Unknown"
+    relative_path = document.file_path
+
+    # Build Obsidian URI
+    obsidian_uri = _build_obsidian_uri(vault_name, relative_path)
+
     result = DocumentResponse(
         id=document.id,
-        file_path=document.file_path,
+        vault_name=vault_name,
+        file_path=relative_path,
+        relative_path=relative_path,
         file_name=document.file_name,
         content=document.content,
         kind=document.kind,
@@ -319,6 +418,7 @@ def create_document_response(
         similarity_score=similarity_score,
         created_at_fs=document.created_at_fs,
         modified_at_fs=document.modified_at_fs,
+        obsidian_uri=obsidian_uri,
     )
     _msg = "create_document_response returning"
     log.debug(_msg)

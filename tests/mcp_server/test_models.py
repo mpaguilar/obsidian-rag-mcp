@@ -13,10 +13,12 @@ from obsidian_rag.mcp_server.models import (
     TagListResponse,
     TaskListResponse,
     TaskResponse,
+    VaultResponse,
     _validate_limit,
     _validate_offset,
     create_document_response,
     create_task_response,
+    create_vault_response,
 )
 
 
@@ -135,7 +137,9 @@ class TestDocumentResponse:
         now = datetime.now()
         response = DocumentResponse(
             id=doc_id,
-            file_path="/path/to/doc.md",
+            vault_name="Test Vault",
+            file_path="path/to/doc.md",
+            relative_path="path/to/doc.md",
             file_name="doc.md",
             content="# Test Content",
             kind="article",
@@ -143,10 +147,13 @@ class TestDocumentResponse:
             similarity_score=0.15,
             created_at_fs=now,
             modified_at_fs=now,
+            obsidian_uri="obsidian://open?vault=Test%20Vault&file=path%2Fto%2Fdoc.md",
         )
 
         assert response.id == doc_id
-        assert response.file_path == "/path/to/doc.md"
+        assert response.vault_name == "Test Vault"
+        assert response.file_path == "path/to/doc.md"
+        assert response.relative_path == "path/to/doc.md"
         assert response.file_name == "doc.md"
         assert response.content == "# Test Content"
         assert response.kind == "article"
@@ -154,6 +161,10 @@ class TestDocumentResponse:
         assert response.similarity_score == 0.15
         assert response.created_at_fs == now
         assert response.modified_at_fs == now
+        assert (
+            response.obsidian_uri
+            == "obsidian://open?vault=Test%20Vault&file=path%2Fto%2Fdoc.md"
+        )
 
     def test_document_response_optional_fields(self):
         """Test DocumentResponse with optional fields as None."""
@@ -161,7 +172,9 @@ class TestDocumentResponse:
         now = datetime.now()
         response = DocumentResponse(
             id=doc_id,
-            file_path="/path/to/doc.md",
+            vault_name="Test Vault",
+            file_path="path/to/doc.md",
+            relative_path="path/to/doc.md",
             file_name="doc.md",
             content="Content",
             kind=None,
@@ -169,6 +182,7 @@ class TestDocumentResponse:
             similarity_score=0.5,
             created_at_fs=now,
             modified_at_fs=now,
+            obsidian_uri="obsidian://open?vault=Test%20Vault&file=path%2Fto%2Fdoc.md",
         )
 
         assert response.kind is None
@@ -183,7 +197,9 @@ class TestDocumentListResponse:
         now = datetime.now()
         doc = DocumentResponse(
             id=uuid.uuid4(),
-            file_path="/path/doc.md",
+            vault_name="Test Vault",
+            file_path="path/doc.md",
+            relative_path="path/doc.md",
             file_name="doc.md",
             content="Content",
             kind=None,
@@ -191,6 +207,7 @@ class TestDocumentListResponse:
             similarity_score=0.1,
             created_at_fs=now,
             modified_at_fs=now,
+            obsidian_uri="obsidian://open?vault=Test%20Vault&file=path%2Fdoc.md",
         )
 
         response = DocumentListResponse(
@@ -340,18 +357,29 @@ class MockTask:
         self.tags: list[str] = ["tag1"]
 
 
+class MockVault:
+    """Mock vault object for testing."""
+
+    def __init__(self):
+        self.id: uuid.UUID = uuid.uuid4()
+        self.name: str = "Test Vault"
+        self.description: str = "Test description"
+        self.host_path: str = "/test/path"
+
+
 class MockDocument:
     """Mock document object for testing."""
 
     def __init__(self):
         self.id: uuid.UUID = uuid.uuid4()
-        self.file_path: str = "/path/to/doc.md"
+        self.file_path: str = "path/to/doc.md"
         self.file_name: str = "doc.md"
         self.content: str = "# Content"
         self.kind: str = "article"
         self.tags: list[str] = ["tag1", "tag2"]
         self.created_at_fs: datetime = datetime.now()
         self.modified_at_fs: datetime = datetime.now()
+        self.vault: MockVault = MockVault()
 
 
 class TestCreateTaskResponse:
@@ -438,3 +466,76 @@ class TestTagListResponse:
         assert response.total_count == 10
         assert response.has_more is True
         assert response.next_offset == 2
+
+
+class TestVaultResponse:
+    """Tests for VaultResponse model."""
+
+    def test_vault_response_creation(self):
+        """Test creating a VaultResponse with all fields."""
+        vault_id = uuid.uuid4()
+        response = VaultResponse(
+            id=vault_id,
+            name="Personal Vault",
+            description="My personal knowledge base",
+            host_path="/home/user/personal",
+            document_count=42,
+        )
+
+        assert response.id == vault_id
+        assert response.name == "Personal Vault"
+        assert response.description == "My personal knowledge base"
+        assert response.host_path == "/home/user/personal"
+        assert response.document_count == 42
+
+    def test_vault_response_minimal(self):
+        """Test creating a VaultResponse with minimal fields."""
+        vault_id = uuid.uuid4()
+        response = VaultResponse(
+            id=vault_id,
+            name="Work",
+            description=None,
+            host_path="/data/work",
+            document_count=0,
+        )
+
+        assert response.id == vault_id
+        assert response.name == "Work"
+        assert response.description is None
+        assert response.host_path == "/data/work"
+        assert response.document_count == 0
+
+
+class TestCreateVaultResponse:
+    """Tests for create_vault_response function."""
+
+    def test_create_vault_response(self):
+        """Test creating a VaultResponse from mock vault model."""
+        vault = MockVault()
+        document_count = 10
+
+        response = create_vault_response(vault, document_count)  # type: ignore[arg-type]
+
+        assert response.id == vault.id
+        assert response.name == vault.name
+        assert response.description == vault.description
+        assert response.host_path == vault.host_path
+        assert response.document_count == document_count
+
+    def test_create_vault_response_zero_documents(self):
+        """Test creating a VaultResponse with zero documents."""
+        vault = MockVault()
+        document_count = 0
+
+        response = create_vault_response(vault, document_count)  # type: ignore[arg-type]
+
+        assert response.document_count == 0
+
+    def test_create_vault_response_large_count(self):
+        """Test creating a VaultResponse with large document count."""
+        vault = MockVault()
+        document_count = 999999
+
+        response = create_vault_response(vault, document_count)  # type: ignore[arg-type]
+
+        assert response.document_count == 999999

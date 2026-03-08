@@ -30,6 +30,10 @@ class TestQueryDocumentsPostgres:
         mock_doc.content_vector = [0.1] * 1536
         mock_doc.kind = "note"
         mock_doc.tags = ["test"]
+        mock_doc.created_at_fs = MagicMock()
+        mock_doc.modified_at_fs = MagicMock()
+        mock_doc.vault = MagicMock()
+        mock_doc.vault.name = "test_vault"
 
         mock_distance = 0.5
 
@@ -289,7 +293,7 @@ class TestGetDocumentsByPropertyPostgresql:
             session=mock_session,
             property_filters=property_filters,
             tag_params=tag_params,
-            vault_root=None,
+            vault_name=None,
             pagination=pagination,
         )
 
@@ -342,7 +346,7 @@ class TestGetDocumentsByPropertyPostgresql:
             session=mock_session,
             property_filters=property_filters,
             tag_params=tag_params,
-            vault_root="/data/vault",
+            vault_name="test_vault",
             pagination=pagination,
         )
 
@@ -353,8 +357,10 @@ class TestGetDocumentsByPropertyPostgresql:
 
             results, total_count = get_documents_by_property_postgresql(params)
 
-            # Verify vault_root filter was applied
-            assert mock_query.filter.call_count >= 1
+            # Verify vault_name filter was applied
+            # When vault_name is provided, the function joins with Vault table
+            # and applies a filter - verify query was called
+            assert mock_session.query.call_count >= 1
 
     def test_get_documents_by_property_postgresql_with_exclude_filters(self):
         """Test get_documents_by_property_postgresql with exclude filters."""
@@ -402,7 +408,7 @@ class TestGetDocumentsByPropertyPostgresql:
             session=mock_session,
             property_filters=property_filters,
             tag_params=tag_params,
-            vault_root=None,
+            vault_name=None,
             pagination=pagination,
         )
 

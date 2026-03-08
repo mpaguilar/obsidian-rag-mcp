@@ -13,6 +13,7 @@ from obsidian_rag.database.models import (
     Document,
     Task,
     TaskStatus,
+    Vault,
 )
 from obsidian_rag.mcp_server.tools.tasks import (
     get_completed_tasks,
@@ -45,8 +46,19 @@ def sample_document(db_session):
     """Create a sample document for testing."""
     from datetime import datetime
 
+    # Create vault first
+    vault = Vault(
+        id=uuid.uuid4(),
+        name="test_vault",
+        container_path="/test",
+        host_path="/test",
+    )
+    db_session.add(vault)
+    db_session.commit()
+
     doc = Document(
         id=uuid.uuid4(),
+        vault_id=vault.id,
         file_path="/test/doc.md",
         file_name="doc.md",
         content="# Test",

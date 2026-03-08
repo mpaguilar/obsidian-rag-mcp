@@ -4,7 +4,9 @@ import json
 import logging
 import sys
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 import click
@@ -19,9 +21,19 @@ from obsidian_rag.parsing.scanner import (
     process_files_in_batches,
     scan_markdown_files,
 )
-from obsidian_rag.services.ingestion import IngestionService
+from obsidian_rag.services.ingestion import IngestionService, IngestVaultOptions
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class IngestOptions:
+    """Options for the ingest command."""
+
+    vault: str
+    dry_run: bool
+    no_delete: bool
+    verbose: bool
 
 
 def _setup_logging(level: str, format_type: str) -> None:
@@ -153,20 +165,33 @@ def _scan_vault(vault_path: Path) -> list:
         return result
 
 
-def _create_progress_callback(*, verbose: bool):
-    """Create progress callback function."""
-    _msg = "_create_progress_callback starting"
+def progress_callback(
+    current: int,
+    total: int,
+    successes: int,
+    errors: int,
+    *,
+    verbose: bool = False,
+) -> None:
+    """Report progress during file processing.
+
+    Args:
+        current: Current file number being processed.
+        total: Total number of files to process.
+        successes: Number of successfully processed files.
+        errors: Number of files that failed processing.
+        verbose: Whether to print progress messages.
+
+    """
+    _msg = "progress_callback starting"
     log.debug(_msg)
 
-    def callback(current: int, total: int, successes: int, errors: int) -> None:
-        if verbose:
-            click.echo(
-                f"Progress: {current}/{total} files processed ({successes} successful, {errors} errors)",
-            )
+    if verbose:
+        _msg = f"Progress: {current}/{total} files processed ({successes} successful, {errors} errors)"
+        click.echo(_msg)
 
-    _msg = "_create_progress_callback returning"
+    _msg = "progress_callback returning"
     log.debug(_msg)
-    return callback
 
 
 def _report_ingest_results(
@@ -209,46 +234,65 @@ def _report_ingest_results(
     log.debug(_msg)
 
 
-@cli.command()
-@click.argument("path", type=click.Path(exists=True))
-@click.option(
-    "--dry-run",
-    is_flag=True,
-    help="Show what would happen without writing to database.",
-)
-@click.option(
-    "--no-delete",
-    is_flag=True,
-    help="Skip deletion of documents not found in filesystem.",
-)
-@click.option("--verbose", is_flag=True, help="Show detailed progress.")
-@click.pass_context
-def ingest(
-    ctx: click.Context,
-    path: str,
-    *,
-    dry_run: bool,
-    no_delete: bool,
-    verbose: bool,
-) -> None:
-    """Ingest documents from an Obsidian vault.
+def _validate_vault_config(settings: Settings, vault: str, path: str) -> None:
+    """Validate vault configuration and path match.
 
-    PATH is the path to the Obsidian vault directory.
+    Args:
+        settings: Application settings.
+        vault: Vault name.
+        path: Vault path.
 
-    By default, documents that exist in the database but not on the filesystem
-    will be deleted. Use --no-delete to preserve orphaned documents.
+    Raises:
+        SystemExit: If validation fails.
+
     """
-    _msg = f"Starting ingestion from: {path}"
-    log.info(_msg)
-
-    settings = ctx.obj["settings"]
     vault_path = Path(path)
+    vault_config = settings.get_vault(vault)
+
+    if vault_config is None:
+        available = settings.get_vault_names()
+        _msg = (
+            f"Vault '{vault}' not found in configuration. "
+            f"Available vaults: {', '.join(available)}"
+        )
+        click.echo(f"Error: {_msg}", err=True)
+        sys.exit(1)
+
+    # Validate path matches vault container_path (with trailing slash normalization)
+    normalized_input = vault_path.resolve()
+    normalized_config = Path(vault_config.container_path).resolve()
+
+    if normalized_input != normalized_config:
+        _msg = (
+            f"Path '{path}' does not match vault '{vault}' container path "
+            f"'{vault_config.container_path}'. "
+            "The path must match the configured container_path exactly."
+        )
+        click.echo(f"Error: {_msg}", err=True)
+        sys.exit(1)
+
+
+def _run_ingestion(
+    settings: Settings,
+    vault_path: Path,
+    vault: str,
+    options: IngestOptions,
+) -> None:
+    """Run the ingestion process.
+
+    Args:
+        settings: Application settings.
+        vault_path: Path to vault.
+        vault: Vault name.
+        options: Ingestion options.
+
+    """
     db_manager = DatabaseManager(settings.database.url)
 
-    if dry_run:
+    if options.dry_run:
         click.echo("DRY RUN: No changes will be written to the database")
 
-    if no_delete:
+    if options.no_delete:
         click.echo("Deletion phase skipped (--no-delete flag)")
 
     files = _scan_vault(vault_path)
@@ -263,7 +307,7 @@ def ingest(
         files,
         batch_size=settings.ingestion.batch_size,
         progress_interval=settings.ingestion.progress_interval,
-        progress_callback=_create_progress_callback(verbose=verbose),
+        progress_callback=partial(progress_callback, verbose=options.verbose),
     )
 
     embedding_provider = _get_embedding_provider(settings)
@@ -273,13 +317,14 @@ def ingest(
         settings=settings,
     )
 
-    result = ingestion_service.ingest_vault(
-        vault_path=vault_path,
+    ingest_options = IngestVaultOptions(
+        vault=vault,
         file_infos=file_infos,
-        dry_run=dry_run,
-        progress_callback=_create_progress_callback(verbose=verbose),
-        no_delete=no_delete,
+        dry_run=options.dry_run,
+        progress_callback=partial(progress_callback, verbose=options.verbose),
+        no_delete=options.no_delete,
     )
+    result = ingestion_service.ingest_vault(vault_path, ingest_options)
 
     elapsed_time = time.time() - start_time
     stats = {
@@ -288,7 +333,60 @@ def ingest(
         "unchanged": result.unchanged,
         "errors": result.errors,
     }
-    _report_ingest_results(result.total, stats, elapsed_time, result.deleted, no_delete)
+    _report_ingest_results(
+        result.total, stats, elapsed_time, result.deleted, options.no_delete
+    )
+
+
+@cli.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option(
+    "--vault",
+    required=True,
+    help="Name of the vault to ingest into (as configured in config file).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would happen without writing to database.",
+)
+@click.option(
+    "--no-delete",
+    is_flag=True,
+    help="Skip deletion of documents not found in filesystem.",
+)
+@click.option("--verbose", is_flag=True, help="Show detailed progress.")
+def ingest(
+    path: str,
+    *,
+    vault: str,
+    dry_run: bool,
+    no_delete: bool,
+    verbose: bool,
+) -> None:
+    """Ingest documents from an Obsidian vault.
+
+    PATH is the path to the Obsidian vault directory. This must match the
+    container_path configured for the specified vault.
+
+    By default, documents that exist in the database but not on the filesystem
+    will be deleted. Use --no-delete to preserve orphaned documents.
+    """
+    _msg = f"Starting ingestion from: {path}"
+    log.info(_msg)
+
+    ctx = click.get_current_context()
+    settings = ctx.obj["settings"]
+    vault_path = Path(path)
+    options = IngestOptions(
+        vault=vault,
+        dry_run=dry_run,
+        no_delete=no_delete,
+        verbose=verbose,
+    )
+
+    _validate_vault_config(settings, vault, path)
+    _run_ingestion(settings, vault_path, vault, options)
 
 
 def _format_query_results_json(results: list) -> str:

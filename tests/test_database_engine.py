@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from obsidian_rag.database.engine import DatabaseManager
-from obsidian_rag.database.models import Base, Document
+from obsidian_rag.database.models import Base, Document, Vault
 
 
 class TestDatabaseManager:
@@ -49,9 +49,18 @@ class TestDatabaseManager:
 
         with manager.get_session() as session:
             assert session is not None
+            # Create vault first
+            vault = Vault(
+                name="Test Vault",
+                container_path="/test",
+                host_path="/test",
+            )
+            session.add(vault)
+            session.flush()
             # Add a document
             doc = Document(
-                file_path="/test/file.md",
+                vault_id=vault.id,
+                file_path="file.md",
                 file_name="file.md",
                 content="Test",
                 checksum_md5="abc123",
@@ -64,7 +73,7 @@ class TestDatabaseManager:
         with manager.get_session() as session:
             result = session.query(Document).first()
             assert result is not None
-            assert result.file_path == "/test/file.md"
+            assert result.file_path == "file.md"
 
     def test_get_session_rollback_on_error(self):
         """Test that session rolls back on error."""
@@ -72,10 +81,19 @@ class TestDatabaseManager:
         manager = DatabaseManager(db_url)
         manager.create_tables()
 
-        # Create a document first
+        # Create vault first
         with manager.get_session() as session:
+            vault = Vault(
+                name="Test Vault",
+                container_path="/test",
+                host_path="/test",
+            )
+            session.add(vault)
+            session.flush()
+            # Create a document first
             doc = Document(
-                file_path="/test/file.md",
+                vault_id=vault.id,
+                file_path="file.md",
                 file_name="file.md",
                 content="Test",
                 checksum_md5="abc123",
@@ -87,8 +105,16 @@ class TestDatabaseManager:
         # Try to add duplicate (should fail due to unique constraint)
         try:
             with manager.get_session() as session:
+                # Get the vault first
+                vault_result = session.query(Vault).first()
+                from typing import cast
+
+                vault_queried = cast(
+                    Vault, vault_result
+                )  # We know vault exists from test setup
                 doc2 = Document(
-                    file_path="/test/file.md",  # Same path
+                    vault_id=vault_queried.id,
+                    file_path="file.md",  # Same path in same vault
                     file_name="file.md",
                     content="Test 2",
                     checksum_md5="def456",

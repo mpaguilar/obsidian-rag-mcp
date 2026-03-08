@@ -28,9 +28,18 @@ The `content_vector` column uses HNSW (Hierarchical Navigable Small World) index
 
 #### Models (`models.py`)
 
+**vaults table:**
+- `id` (UUID, PK)
+- `name` (VARCHAR(100), UNIQUE, indexed)
+- `description` (TEXT, nullable)
+- `container_path` (TEXT) - path inside container/Docker
+- `host_path` (TEXT) - path on host system
+- `created_at` (TIMESTAMP)
+
 **documents table:**
 - `id` (UUID, PK)
-- `file_path` (TEXT, UNIQUE, indexed)
+- `vault_id` (UUID, FK → vaults.id, ON DELETE CASCADE)
+- `file_path` (TEXT, indexed) - relative to vault root
 - `file_name` (TEXT, indexed)
 - `content` (TEXT)
 - `content_vector` (VECTOR(N) - configurable dimension, default 1536)
@@ -41,7 +50,6 @@ The `content_vector` column uses HNSW (Hierarchical Navigable Small World) index
 - `kind` (TEXT, nullable) - from FrontMatter
 - `tags` (TEXT[], nullable) - from FrontMatter, deduplicated
 - `frontmatter_json` (JSONB) - all other FrontMatter properties
-- `vault_root` (TEXT, nullable) - root path of vault during ingestion
 
 **tasks table:**
 - `id` (UUID, PK)
@@ -177,9 +185,13 @@ Centralized service for document ingestion, shared by CLI and MCP server:
 ```python
 class IngestionService:
     def __init__(db_manager, embedding_provider, settings)
-    def ingest_vault(vault_path, dry_run=False, progress_callback=None, file_infos=None, no_delete=False) -> IngestionResult
-    def _ingest_single_file(file_info, dry_run=False) -> str
-    def _create_document(file_info, parsed_data) -> Document
+    def ingest_vault(options: IngestVaultOptions) -> IngestionResult
+    def _resolve_vault_config(vault: VaultConfig | str) -> VaultConfig
+    def _compute_relative_path(file_path: Path, container_path: str) -> str
+    def _validate_files_in_vault(file_infos: list[FileInfo], container_path: str) -> None
+    def _get_or_create_vault(session, vault_config: VaultConfig) -> Vault
+    def _ingest_single_file(file_info, vault_id: UUID, dry_run=False) -> str
+    def _create_document(file_info, vault_id: UUID, parsed_data) -> Document
     def _update_document(document, file_info, parsed_data)
     def _create_tasks(session, document, parsed_tasks)
     def _update_tasks(session, document, parsed_tasks)
@@ -206,7 +218,7 @@ class IngestionService:
 
 The MCP (Model Context Protocol) server provides remote access to Obsidian RAG functionality via HTTP transport.
 
-#### Server (`server.py`)
+#### Server (`server.py` and `tool_definitions.py`)
 
 FastMCP server configuration with:
 - HTTP transport for remote access
@@ -216,7 +228,18 @@ FastMCP server configuration with:
 - Session management with lifecycle logging and metrics
 - Rate limiting to prevent resource exhaustion
 - HTTP request/response logging middleware
-- Seven read-only tools for querying tasks, documents, and ingestion status
+- Eleven read-only tools for querying tasks, documents, vaults, and ingestion status
+
+**Architecture Pattern - Global Registry:**
+To achieve 100% test coverage while maintaining FastMCP compatibility, the server uses a global registry pattern:
+
+- `MCPToolRegistry` class (`tool_definitions.py`): Holds dependencies (db_manager, embedding_provider, settings)
+- Module-level `_tool_registry` variable: Initialized during `create_mcp_server()` before tool registration
+- `_get_registry()` / `_set_registry()` functions: Access and mutate the global registry
+- Tool wrappers (`server.py`): Module-level functions that call `_get_registry()` to access dependencies
+- Tool implementations (`tool_definitions.py`): Module-level functions containing the actual business logic
+
+This pattern eliminates nested functions (which are untestable) while allowing tools to access runtime-created dependencies.
 
 **Server Creation:**
 ```python
@@ -246,6 +269,12 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 - `get_documents_by_tag`: Query documents by tags with include/exclude lists and match_mode ("all" or "any")
 - `get_documents_by_property`: Query documents by frontmatter properties with include/exclude filters
 - `get_all_tags`: Query all unique document tags with optional glob pattern filtering
+
+**Vault Tools:**
+- `list_vaults`: List all vaults with document counts and metadata
+
+**Vault Tools:**
+- `list_vaults`: List all vaults with document counts and metadata
 
 **Property Filter Operators:**
 - `equals`: Exact match (case-insensitive)
@@ -288,6 +317,10 @@ Pydantic models for request/response validation:
 
 **Tag Models:**
 - `TagListResponse`: Paginated list of unique tags
+
+**Vault Models:**
+- `VaultResponse`: Single vault with metadata and document count
+- `VaultListResponse`: Paginated vault list
 
 **Filter Models:**
 - `PropertyFilter`: Filter for document frontmatter properties with path, operator, and value
