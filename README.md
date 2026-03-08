@@ -1,4 +1,4 @@
-# Obsidian RAG
+# Obsidian RAG/MCP
 
 CLI tool for ingesting Obsidian markdown documents into PostgreSQL with vector embeddings and semantic search capabilities.
 
@@ -36,6 +36,7 @@ Obsidian RAG provides a complete pipeline for:
 - **Extracting** tasks from markdown content with metadata parsing
 - **Searching** documents using semantic similarity with vector embeddings
 - **Querying** tasks with flexible filtering
+- **MCP** using streamable-http transport. All functions are available to your chat client.
 
 ## Installation
 
@@ -666,8 +667,4 @@ For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
 
 ## License
 
-[Add your license information here]
-
-## Contributing
-
-[Add contribution guidelines here]
+MIT © 2026 MP Aguilar
