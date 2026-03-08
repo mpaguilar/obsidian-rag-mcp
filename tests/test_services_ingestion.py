@@ -795,7 +795,7 @@ class TestIngestSingleFile:
 
                 result = ingestion_service._ingest_single_file(
                     mock_file_info,
-                    vault_record=mock_vault_record,
+                    vault_id=mock_vault_record.id,
                     vault_config=vault_config,
                 )
 
@@ -852,7 +852,7 @@ class TestIngestSingleFile:
 
                 result = service._ingest_single_file(
                     mock_file_info,
-                    vault_record=mock_vault_record,
+                    vault_id=mock_vault_record.id,
                     vault_config=vault_config,
                 )
 
@@ -903,7 +903,7 @@ class TestIngestSingleFile:
 
                 result = ingestion_service._ingest_single_file(
                     mock_file_info,
-                    vault_record=mock_vault_record,
+                    vault_id=mock_vault_record.id,
                     vault_config=vault_config,
                 )
 
@@ -1321,7 +1321,7 @@ class TestGetOrCreateVault:
 
         result = ingestion_service._get_or_create_vault(mock_vault_config)
 
-        assert result is mock_vault_record
+        assert result == mock_vault_record.id
         mock_session.add.assert_not_called()
 
     def test_get_or_create_vault_new(
@@ -1338,10 +1338,17 @@ class TestGetOrCreateVault:
 
         mock_session.query.return_value.filter_by.return_value.first.return_value = None
 
+        # Mock the Vault object that gets added to session
+        mock_vault = MagicMock()
+        test_uuid = uuid.uuid4()
+        mock_vault.id = test_uuid
+        mock_session.add.side_effect = lambda x: setattr(x, "id", test_uuid)
+
         result = ingestion_service._get_or_create_vault(mock_vault_config)
 
         assert result is not None
-        assert isinstance(result, Vault)
+        assert isinstance(result, uuid.UUID)
+        assert result == test_uuid
         mock_session.add.assert_called_once()
         mock_session.commit.assert_called_once()
 
@@ -1384,12 +1391,12 @@ class TestIngestSingleFileExceptions:
             with pytest.raises(RuntimeError) as exc_info:
                 ingestion_service._ingest_single_file(
                     mock_file_info,
-                    vault_record=None,
+                    vault_id=None,
                     vault_config=mock_vault_config,
                     dry_run=False,
                 )
 
-        assert "No vault record available" in str(exc_info.value)
+        assert "No vault ID available" in str(exc_info.value)
 
 
 class TestDeleteBatchExceptions:

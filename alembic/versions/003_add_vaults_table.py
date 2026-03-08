@@ -7,12 +7,13 @@ Create Date: 2026-03-07 00:00:00.000000
 """
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "003_add_vaults_table"
-down_revision = "002_add_vault_root_and_indexes"
+down_revision = "002"
 branch_labels = None
 depends_on = None
 
@@ -88,6 +89,15 @@ def downgrade() -> None:
     op.add_column(
         "documents",
         sa.Column("vault_root", sa.Text(), nullable=True),
+    )
+
+    # Recreate indexes that were dropped when vault_root column was removed
+    # These indexes are needed for migration 002's state to be valid
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_documents_vault_root ON documents (vault_root)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_documents_tags ON documents USING gin (tags)"
     )
 
     # Remove foreign key and vault_id column

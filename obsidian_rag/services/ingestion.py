@@ -164,7 +164,7 @@ class IngestionService:
         vault_config: VaultConfig,
         *,
         dry_run: bool = False,
-    ) -> Vault | None:
+    ) -> uuid.UUID | None:
         """Get existing vault record or create new one.
 
         Args:
@@ -172,7 +172,7 @@ class IngestionService:
             dry_run: If True, don't write to database.
 
         Returns:
-            Vault record or None if dry_run.
+            Vault ID (UUID) or None if dry_run.
 
         """
         _msg = "_get_or_create_vault starting"
@@ -211,14 +211,15 @@ class IngestionService:
                 )
                 session.add(vault)
                 session.commit()
-                _msg = f"Created vault record with ID: {vault.id}"
+                vault_id = vault.id
+                _msg = f"Created vault record with ID: {vault_id}"
                 log.info(_msg)
             else:
-                _msg = f"Found existing vault record: {vault.id}"
+                vault_id = vault.id
+                _msg = f"Found existing vault record: {vault_id}"
                 log.debug(_msg)
 
-            # Return detached copy
-            return vault
+            return vault_id
 
     def _compute_relative_path(self, file_path: Path, container_path: str) -> str:
         """Compute relative path from file to vault root.
@@ -338,7 +339,7 @@ class IngestionService:
         self,
         file_info_list: list[FileInfo],
         *,
-        vault_record: Vault | None,
+        vault_id: uuid.UUID | None,
         vault_config: VaultConfig,
         dry_run: bool,
         progress_callback: Callable[[int, int, int, int], None] | None,
@@ -347,7 +348,7 @@ class IngestionService:
 
         Args:
             file_info_list: List of FileInfo objects to process.
-            vault_record: Vault database record (None if dry_run).
+            vault_id: Vault ID (UUID) or None if dry_run.
             vault_config: Vault configuration.
             dry_run: If True, don't write to database.
             progress_callback: Optional progress callback.
@@ -363,7 +364,7 @@ class IngestionService:
             try:
                 result = self._ingest_single_file(
                     file_info,
-                    vault_record=vault_record,
+                    vault_id=vault_id,
                     vault_config=vault_config,
                     dry_run=dry_run,
                 )
@@ -409,7 +410,7 @@ class IngestionService:
 
         # Resolve vault configuration
         vault_config = self._resolve_vault_config(options.vault)
-        vault_record = self._get_or_create_vault(vault_config, dry_run=options.dry_run)
+        vault_id = self._get_or_create_vault(vault_config, dry_run=options.dry_run)
 
         start_time = time.time()
 
@@ -437,7 +438,7 @@ class IngestionService:
 
         stats = self._process_files_with_stats(
             file_info_list,
-            vault_record=vault_record,
+            vault_id=vault_id,
             vault_config=vault_config,
             dry_run=options.dry_run,
             progress_callback=options.progress_callback,
@@ -452,10 +453,10 @@ class IngestionService:
         # Delete orphaned documents unless no_delete flag is set
         deleted_count = 0
         deletion_errors = 0
-        if not options.no_delete and vault_record is not None:
+        if not options.no_delete and vault_id is not None:
             deleted_count, deletion_errors = self._delete_orphaned_documents(
                 filesystem_paths,
-                vault_id=vault_record.id,
+                vault_id=vault_id,
                 dry_run=options.dry_run,
             )
         else:
@@ -498,7 +499,7 @@ class IngestionService:
         self,
         file_info: FileInfo,
         *,
-        vault_record: Vault | None,
+        vault_id: uuid.UUID | None,
         vault_config: VaultConfig,
         dry_run: bool = False,
     ) -> str:
@@ -506,7 +507,7 @@ class IngestionService:
 
         Args:
             file_info: File information including path, content, checksum.
-            vault_record: Vault database record (None if dry_run).
+            vault_id: Vault ID (UUID) or None if dry_run.
             vault_config: Vault configuration.
             dry_run: If True, don't write to database.
 
@@ -543,8 +544,8 @@ class IngestionService:
             log.debug(_msg)
             return "new"
 
-        if vault_record is None:
-            _msg = "No vault record available (should not happen outside dry_run)"
+        if vault_id is None:
+            _msg = "No vault ID available (should not happen outside dry_run)"
             raise RuntimeError(_msg)
 
         # Process in a single transaction for this file
@@ -552,7 +553,7 @@ class IngestionService:
             # Check if document exists (by vault_id and relative path)
             existing = (
                 session.query(Document)
-                .filter_by(vault_id=vault_record.id, file_path=relative_path)
+                .filter_by(vault_id=vault_id, file_path=relative_path)
                 .first()
             )
 
@@ -578,7 +579,7 @@ class IngestionService:
                 document = self._create_document(
                     file_info,
                     parsed_data,
-                    vault_id=vault_record.id,
+                    vault_id=vault_id,
                     relative_path=relative_path,
                 )
                 session.add(document)

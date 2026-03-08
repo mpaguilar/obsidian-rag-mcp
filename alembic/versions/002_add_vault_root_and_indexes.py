@@ -7,8 +7,8 @@ Create Date: 2026-03-04
 """
 
 import sqlalchemy as sa
+
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "002"
@@ -32,8 +32,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Remove vault_root column and indexes."""
-    # Drop indexes
-    op.drop_index("ix_documents_vault_root", table_name="documents")
+    # Drop indexes using IF EXISTS for idempotency
+    # This handles cases where indexes may not exist (e.g., after migration 003 downgrade)
+    op.execute("DROP INDEX IF EXISTS ix_documents_vault_root")
     op.execute("DROP INDEX IF EXISTS ix_documents_tags")
 
     # Drop column
