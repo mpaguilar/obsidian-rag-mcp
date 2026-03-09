@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import date, datetime
+from typing import Any
 
 import pytest
 
@@ -375,7 +376,7 @@ class MockDocument:
         self.file_path: str = "path/to/doc.md"
         self.file_name: str = "doc.md"
         self.content: str = "# Content"
-        self.kind: str = "article"
+        self.frontmatter_json: dict[str, Any] | None = {"kind": "article"}
         self.tags: list[str] = ["tag1", "tag2"]
         self.created_at_fs: datetime = datetime.now()
         self.modified_at_fs: datetime = datetime.now()
@@ -417,11 +418,29 @@ class TestCreateDocumentResponse:
         assert response.file_path == doc.file_path
         assert response.file_name == doc.file_name
         assert response.content == doc.content
-        assert response.kind == doc.kind
+        assert response.kind == "article"  # From frontmatter_json
         assert response.tags == doc.tags
         assert response.similarity_score == similarity
         assert response.created_at_fs == doc.created_at_fs
         assert response.modified_at_fs == doc.modified_at_fs
+
+    def test_create_document_response_without_kind(self):
+        """Test creating a DocumentResponse without kind in frontmatter."""
+        doc = MockDocument()
+        doc.frontmatter_json = {}  # No kind
+
+        response = create_document_response(doc, 0.5)  # type: ignore[arg-type]
+
+        assert response.kind is None
+
+    def test_create_document_response_with_none_frontmatter(self):
+        """Test creating a DocumentResponse with None frontmatter_json."""
+        doc = MockDocument()
+        doc.frontmatter_json = None
+
+        response = create_document_response(doc, 0.5)  # type: ignore[arg-type]
+
+        assert response.kind is None
 
 
 class TestTagListResponse:

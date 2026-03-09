@@ -393,3 +393,190 @@ class TestGetNestedValueAdditional:
 
         result = get_nested_value(None, "status")
         assert result is None
+
+    def test_get_nested_value_non_dict_current(self):
+        """Test get_nested_value when current is not a dict (line 247)."""
+        from obsidian_rag.mcp_server.tools.documents_filters import get_nested_value
+
+        # Try to access nested path on a string value
+        data = {"name": "John"}  # "name" maps to a string, not a dict
+        result = get_nested_value(data, "name.first")
+        assert result is None
+
+
+class TestKindFiltering:
+    """Tests for filtering documents by kind using property filters."""
+
+    @pytest.fixture
+    def db_session(self):
+        """Create a test database session."""
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        yield session
+        session.close()
+        Base.metadata.drop_all(engine)
+
+    def test_filter_by_kind_equals(self, db_session):
+        """Test filtering documents by kind with equals operator."""
+        from datetime import datetime
+        from obsidian_rag.database.models import Vault
+        from obsidian_rag.mcp_server.models import PropertyFilter
+        from obsidian_rag.mcp_server.tools.documents_filters import (
+            matches_property_filter,
+        )
+
+        # Create vault
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
+        # Create documents with different kinds
+        doc1 = Document(
+            vault_id=vault.id,
+            file_path="note1.md",
+            file_name="note1.md",
+            content="Content 1",
+            checksum_md5="abc123",
+            created_at_fs=datetime.now(),
+            modified_at_fs=datetime.now(),
+            frontmatter_json={"kind": "note"},
+        )
+        doc2 = Document(
+            vault_id=vault.id,
+            file_path="article1.md",
+            file_name="article1.md",
+            content="Content 2",
+            checksum_md5="def456",
+            created_at_fs=datetime.now(),
+            modified_at_fs=datetime.now(),
+            frontmatter_json={"kind": "article"},
+        )
+        doc3 = Document(
+            vault_id=vault.id,
+            file_path="no_kind.md",
+            file_name="no_kind.md",
+            content="Content 3",
+            checksum_md5="ghi789",
+            created_at_fs=datetime.now(),
+            modified_at_fs=datetime.now(),
+            frontmatter_json={},
+        )
+        db_session.add_all([doc1, doc2, doc3])
+        db_session.commit()
+
+        # Filter by kind=note using matches_property_filter
+        filter_obj = PropertyFilter(path="kind", operator="equals", value="note")
+        results = [
+            doc
+            for doc in [doc1, doc2, doc3]
+            if matches_property_filter(doc, filter_obj)
+        ]
+
+        assert len(results) == 1
+        assert results[0].file_path == "note1.md"
+
+    def test_filter_by_kind_exists(self, db_session):
+        """Test filtering documents by kind with exists operator."""
+        from datetime import datetime
+        from obsidian_rag.database.models import Vault
+        from obsidian_rag.mcp_server.models import PropertyFilter
+        from obsidian_rag.mcp_server.tools.documents_filters import (
+            matches_property_filter,
+        )
+
+        # Create vault and documents
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
+        doc1 = Document(
+            vault_id=vault.id,
+            file_path="with_kind.md",
+            file_name="with_kind.md",
+            content="Content",
+            checksum_md5="abc123",
+            created_at_fs=datetime.now(),
+            modified_at_fs=datetime.now(),
+            frontmatter_json={"kind": "note"},
+        )
+        doc2 = Document(
+            vault_id=vault.id,
+            file_path="without_kind.md",
+            file_name="without_kind.md",
+            content="Content",
+            checksum_md5="def456",
+            created_at_fs=datetime.now(),
+            modified_at_fs=datetime.now(),
+            frontmatter_json={"other": "value"},
+        )
+        db_session.add_all([doc1, doc2])
+        db_session.commit()
+
+        # Filter by kind exists using matches_property_filter
+        filter_obj = PropertyFilter(path="kind", operator="exists")
+        results = [
+            doc for doc in [doc1, doc2] if matches_property_filter(doc, filter_obj)
+        ]
+
+        assert len(results) == 1
+        assert results[0].file_path == "with_kind.md"
+
+    def test_filter_by_kind_contains(self, db_session):
+        """Test filtering documents by kind with contains operator."""
+        from datetime import datetime
+        from obsidian_rag.database.models import Vault
+        from obsidian_rag.mcp_server.models import PropertyFilter
+        from obsidian_rag.mcp_server.tools.documents_filters import (
+            matches_property_filter,
+        )
+
+        # Create vault and documents
+        vault = Vault(
+            name="Test Vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.flush()
+
+        doc1 = Document(
+            vault_id=vault.id,
+            file_path="daily_note.md",
+            file_name="daily_note.md",
+            content="Content",
+            checksum_md5="abc123",
+            created_at_fs=datetime.now(),
+            modified_at_fs=datetime.now(),
+            frontmatter_json={"kind": "daily_note"},
+        )
+        doc2 = Document(
+            vault_id=vault.id,
+            file_path="meeting_note.md",
+            file_name="meeting_note.md",
+            content="Content",
+            checksum_md5="def456",
+            created_at_fs=datetime.now(),
+            modified_at_fs=datetime.now(),
+            frontmatter_json={"kind": "meeting_note"},
+        )
+        db_session.add_all([doc1, doc2])
+        db_session.commit()
+
+        # Filter by kind contains "daily" using matches_property_filter
+        filter_obj = PropertyFilter(path="kind", operator="contains", value="daily")
+        results = [
+            doc for doc in [doc1, doc2] if matches_property_filter(doc, filter_obj)
+        ]
+
+        assert len(results) == 1
+        assert results[0].file_path == "daily_note.md"

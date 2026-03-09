@@ -395,6 +395,9 @@ def create_document_response(
     Returns:
         DocumentResponse populated from the model.
 
+    Notes:
+        The 'kind' field is now derived from frontmatter_json for backward compatibility.
+
     """
     _msg = "create_document_response starting"
     log.debug(_msg)
@@ -406,6 +409,11 @@ def create_document_response(
     # Build Obsidian URI
     obsidian_uri = _build_obsidian_uri(vault_name, relative_path)
 
+    # Derive kind from frontmatter_json for backward compatibility
+    kind = None
+    if document.frontmatter_json:
+        kind = document.frontmatter_json.get("kind")
+
     result = DocumentResponse(
         id=document.id,
         vault_name=vault_name,
@@ -413,7 +421,7 @@ def create_document_response(
         relative_path=relative_path,
         file_name=document.file_name,
         content=document.content,
-        kind=document.kind,
+        kind=kind,
         tags=document.tags or [],
         similarity_score=similarity_score,
         created_at_fs=document.created_at_fs,

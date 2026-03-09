@@ -1114,6 +1114,33 @@ class TestTaskToolHandlers:
             call_kwargs = mock_tool.call_args.kwargs
             assert call_kwargs["completed_since"] is None
 
+    def test_get_completed_tasks_handler_without_date(self):
+        """Test _get_completed_tasks_handler without date (None)."""
+        from obsidian_rag.mcp_server.handlers import _get_completed_tasks_handler
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        with patch(
+            "obsidian_rag.mcp_server.handlers.get_completed_tasks_tool"
+        ) as mock_tool:
+            mock_result = MagicMock()
+            mock_result.model_dump.return_value = {"tasks": []}
+            mock_tool.return_value = mock_result
+
+            result = _get_completed_tasks_handler(mock_db_manager, 20, 0, None)
+
+            assert result == {"tasks": []}
+            mock_tool.assert_called_once()
+            call_kwargs = mock_tool.call_args.kwargs
+            assert call_kwargs["completed_since"] is None
+
 
 class TestDocumentHandlers:
     """Tests for document tool handlers."""

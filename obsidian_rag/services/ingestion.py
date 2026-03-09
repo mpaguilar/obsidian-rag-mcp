@@ -528,7 +528,7 @@ class IngestionService:
         log.debug(_msg)
 
         # Parse frontmatter and content
-        kind, tags, metadata, content = parse_frontmatter(file_info.content)
+        tags, metadata, content = parse_frontmatter(file_info.content)
 
         # Parse tasks
         parsed_tasks = parse_tasks_from_content(content)
@@ -567,7 +567,7 @@ class IngestionService:
                 # Update existing document
                 _msg = "Updating existing document"
                 log.debug(_msg)
-                parsed_data = (kind, tags, metadata, content)
+                parsed_data = (tags, metadata, content)
                 self._update_document(existing, file_info, parsed_data)
                 self._update_tasks(session, existing, parsed_tasks)
                 result = "updated"
@@ -575,7 +575,7 @@ class IngestionService:
                 # Create new document
                 _msg = "Creating new document"
                 log.debug(_msg)
-                parsed_data = (kind, tags, metadata, content)
+                parsed_data = (tags, metadata, content)
                 document = self._create_document(
                     file_info,
                     parsed_data,
@@ -595,7 +595,7 @@ class IngestionService:
     def _create_document(
         self,
         file_info: FileInfo,
-        parsed_data: tuple[str | None, list[str] | None, dict[str, Any], str],
+        parsed_data: tuple[list[str] | None, dict[str, Any], str],
         *,
         vault_id: uuid.UUID,
         relative_path: str,
@@ -604,7 +604,7 @@ class IngestionService:
 
         Args:
             file_info: File information.
-            parsed_data: Tuple of (kind, tags, metadata, content).
+            parsed_data: Tuple of (tags, metadata, content).
             vault_id: UUID of the vault.
             relative_path: Relative path from vault root.
 
@@ -614,12 +614,13 @@ class IngestionService:
         Notes:
             Generates embeddings using the configured embedding provider.
             Network access may occur when calling external embedding APIs.
+            The 'kind' field is now stored in frontmatter_json via metadata.
 
         """
         _msg = "_create_document starting"
         log.debug(_msg)
 
-        kind, tags, metadata, content = parsed_data
+        tags, metadata, content = parsed_data
 
         # Generate embedding
         embedding = None
@@ -645,7 +646,6 @@ class IngestionService:
             checksum_md5=file_info.checksum,
             created_at_fs=file_info.created_at,
             modified_at_fs=file_info.modified_at,
-            kind=kind,
             tags=tags,
             frontmatter_json=metadata,
         )
@@ -659,25 +659,24 @@ class IngestionService:
         self,
         document: Document,
         file_info: FileInfo,
-        parsed_data: tuple[str | None, list[str] | None, dict[str, Any], str],
+        parsed_data: tuple[list[str] | None, dict[str, Any], str],
     ) -> None:
         """Update an existing Document instance.
 
         Args:
             document: Existing document to update.
             file_info: File information.
-            parsed_data: Tuple of (kind, tags, metadata, content).
+            parsed_data: Tuple of (tags, metadata, content).
 
         """
         _msg = "_update_document starting"
         log.debug(_msg)
 
-        kind, tags, metadata, content = parsed_data
+        tags, metadata, content = parsed_data
 
         document.content = content
         document.checksum_md5 = file_info.checksum
         document.modified_at_fs = file_info.modified_at
-        document.kind = kind
         document.tags = tags
         document.frontmatter_json = metadata
 

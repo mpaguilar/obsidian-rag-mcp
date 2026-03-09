@@ -47,9 +47,8 @@ The `content_vector` column uses HNSW (Hierarchical Navigable Small World) index
 - `created_at_fs` (TIMESTAMP) - filesystem creation date
 - `modified_at_fs` (TIMESTAMP) - filesystem modification date
 - `ingested_at` (TIMESTAMP) - when we last ingested
-- `kind` (TEXT, nullable) - from FrontMatter
 - `tags` (TEXT[], nullable) - from FrontMatter, deduplicated
-- `frontmatter_json` (JSONB) - all other FrontMatter properties
+- `frontmatter_json` (JSONB) - all FrontMatter properties including `kind`
 
 **tasks table:**
 - `id` (UUID, PK)
@@ -78,7 +77,8 @@ Database connection management using SQLAlchemy with:
 #### FrontMatter Extraction (`frontmatter.py`)
 
 - Extracts YAML frontmatter from markdown documents
-- Supports `kind` (string), `tags` (string or list), and arbitrary metadata
+- `tags` are extracted separately and normalized (string or list)
+- All other properties including `kind` are stored in `frontmatter_json`
 - Handles corrupted frontmatter gracefully (logs warning, continues)
 
 #### Task Parsing (`tasks.py`)

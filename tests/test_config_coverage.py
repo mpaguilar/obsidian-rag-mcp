@@ -86,7 +86,7 @@ class TestSettingsDefaultVault:
     @patch("obsidian_rag.config._get_config_file_path")
     def test_settings_creates_default_vault_when_empty(self, mock_get_config):
         """Test that Settings creates default vault when none configured (lines 803-810)."""
-        from obsidian_rag.config import Settings
+        from obsidian_rag.config import Settings, VaultConfig
 
         mock_get_config.return_value = None
 
@@ -147,4 +147,3 @@ class TestSettingsDefaultVault:
         # Positive value should be returned as-is (line 505)
         config = MCPConfig(rate_limit_per_second=20.0)
         assert config.rate_limit_per_second == 20.0
-

@@ -910,7 +910,7 @@ class TestFormatQueryResults:
         mock_doc = MagicMock()
         mock_doc.file_path = "/path/to/doc.md"
         mock_doc.file_name = "doc.md"
-        mock_doc.kind = "note"
+        mock_doc.frontmatter_json = {"kind": "note"}
         mock_doc.tags = ["work", "urgent"]
 
         results = [(mock_doc, 0.5)]
@@ -931,7 +931,7 @@ class TestFormatQueryResults:
         mock_doc = MagicMock()
         mock_doc.file_name = "doc.md"
         mock_doc.file_path = "/path/to/doc.md"
-        mock_doc.kind = "project"
+        mock_doc.frontmatter_json = {"kind": "project"}
         mock_doc.tags = ["work", "urgent"]
 
         results = [(mock_doc, 0.75)]
@@ -996,7 +996,7 @@ class TestQueryCommand:
         mock_doc = MagicMock()
         mock_doc.file_path = "/path/to/doc.md"
         mock_doc.file_name = "doc.md"
-        mock_doc.kind = None
+        mock_doc.frontmatter_json = None
         mock_doc.tags = None
 
         mock_session = MagicMock()
@@ -1250,7 +1250,7 @@ class TestQueryCommandCoverage:
         mock_doc = MagicMock()
         mock_doc.file_name = "test.md"
         mock_doc.file_path = "path/to/test.md"
-        mock_doc.kind = "note"  # Triggers line 407->409 branch
+        mock_doc.frontmatter_json = {"kind": "note"}  # Triggers line 407->409 branch
         mock_doc.tags = ["tag1", "tag2"]  # Triggers line 409->411 branch
 
         mock_session = MagicMock()
@@ -1433,7 +1433,7 @@ class TestFormatQueryResultsTableCoverage:
         mock_doc = MagicMock()
         mock_doc.file_name = "test.md"
         mock_doc.file_path = "path/to/test.md"
-        mock_doc.kind = None  # Branch not taken
+        mock_doc.frontmatter_json = None  # Branch not taken
         mock_doc.tags = []  # Branch not taken (falsy)
 
         results = [(mock_doc, 0.5)]

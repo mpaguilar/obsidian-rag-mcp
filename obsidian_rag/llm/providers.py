@@ -220,21 +220,21 @@ class ProviderFactory:
     def create_embedding_provider(
         provider_name: Literal["openai"],
         **config: Unpack[OpenAIProviderConfig],
-    ) -> EmbeddingProvider: ...
+    ) -> EmbeddingProvider: ...  # pragma: no cover
 
     @overload
     @staticmethod
     def create_embedding_provider(
         provider_name: Literal["huggingface"],
         **config: Unpack[HuggingFaceProviderConfig],
-    ) -> EmbeddingProvider: ...
+    ) -> EmbeddingProvider: ...  # pragma: no cover
 
     @overload
     @staticmethod
     def create_embedding_provider(
         provider_name: Literal["openrouter"],
         **config: Unpack[OpenRouterProviderConfig],
-    ) -> EmbeddingProvider: ...
+    ) -> EmbeddingProvider: ...  # pragma: no cover
 
     @staticmethod
     def create_embedding_provider(
@@ -281,14 +281,14 @@ class ProviderFactory:
     def create_chat_provider(
         provider_name: Literal["openai"],
         **config: Unpack[OpenAIProviderConfig],
-    ) -> ChatProvider: ...
+    ) -> ChatProvider: ...  # pragma: no cover
 
     @overload
     @staticmethod
     def create_chat_provider(
         provider_name: Literal["openrouter"],
         **config: Unpack[OpenRouterProviderConfig],
-    ) -> ChatProvider: ...
+    ) -> ChatProvider: ...  # pragma: no cover
 
     @staticmethod
     def create_chat_provider(

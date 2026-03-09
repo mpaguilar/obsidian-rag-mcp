@@ -153,9 +153,8 @@ class Document(Base):
         created_at_fs: Filesystem creation timestamp.
         modified_at_fs: Filesystem modification timestamp.
         ingested_at: When the document was last ingested.
-        kind: Document kind from FrontMatter.
         tags: Array of tags from FrontMatter.
-        frontmatter_json: All other FrontMatter properties as JSON.
+        frontmatter_json: All FrontMatter properties as JSON (includes 'kind').
         vault: Parent vault relationship.
         tasks: Related tasks (one-to-many relationship).
 
@@ -192,7 +191,6 @@ class Document(Base):
         nullable=False,
         default=lambda: datetime.now(UTC),
     )
-    kind: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list[str] | None] = mapped_column(ArrayType, nullable=True)
     frontmatter_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 

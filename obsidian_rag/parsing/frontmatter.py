@@ -177,23 +177,22 @@ def normalize_tags(tags: object) -> list[str] | None:
 
 def parse_frontmatter(
     content: str,
-) -> tuple[str | None, list[str] | None, dict[str, Any], str]:
+) -> tuple[list[str] | None, dict[str, Any], str]:
     """Parse FrontMatter and extract structured data.
 
     Args:
         content: The full markdown document content.
 
     Returns:
-        Tuple of (kind, tags, metadata, remaining_content).
-        - kind: The 'kind' field from FrontMatter (or None)
+        Tuple of (tags, metadata, remaining_content).
         - tags: Normalized list of tags (or None)
-        - metadata: All other FrontMatter fields as dict
+        - metadata: All FrontMatter fields as dict (includes 'kind' if present)
         - remaining_content: Content without FrontMatter
 
     Notes:
-        The 'kind' field is extracted as a dedicated column.
+        The 'kind' field is now included in the metadata dict.
         The 'tags' field is normalized to a list and deduplicated.
-        All other fields are stored in metadata_json.
+        All other fields are stored in metadata.
 
     """
     _msg = "Parsing FrontMatter content"
@@ -204,22 +203,17 @@ def parse_frontmatter(
     if not frontmatter:
         _msg = "No FrontMatter found, returning empty values"
         log.debug(_msg)
-        return None, None, {}, remaining
+        return None, {}, remaining
 
-    # Extract kind (dedicated field)
-    kind = frontmatter.get("kind")
-    if kind is not None:
-        kind = str(kind).strip()
-
-    # Extract and normalize tags
+    # Extract and normalize tags (removed from frontmatter)
     tags = normalize_tags(frontmatter.get("tags"))
 
-    # Everything else goes into metadata_json
-    metadata = {k: v for k, v in frontmatter.items() if k not in ("kind", "tags")}
+    # Everything else goes into metadata (now includes 'kind')
+    metadata = {k: v for k, v in frontmatter.items() if k != "tags"}
 
     # Serialize metadata to handle date/datetime objects from YAML parsing
     metadata = _serialize_dict_for_json(metadata)
 
-    _msg = f"Parsed FrontMatter: kind={kind}, tags_count={len(tags) if tags else 0}, metadata_keys={len(metadata)}"
+    _msg = f"Parsed FrontMatter: tags_count={len(tags) if tags else 0}, metadata_keys={len(metadata)}"
     log.debug(_msg)
-    return kind, tags, metadata, remaining
+    return tags, metadata, remaining

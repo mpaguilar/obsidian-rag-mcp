@@ -344,7 +344,7 @@ class TestIngestVault:
         with patch(
             "obsidian_rag.services.ingestion.parse_frontmatter"
         ) as mock_parse_fm:
-            mock_parse_fm.return_value = (None, None, {}, "# Test\n\n- [ ] Task 1")
+            mock_parse_fm.return_value = (None, {}, "# Test\n\n- [ ] Task 1")
 
             with patch(
                 "obsidian_rag.services.ingestion.parse_tasks_from_content"
@@ -412,7 +412,6 @@ class TestIngestVault:
                     "obsidian_rag.services.ingestion.parse_frontmatter"
                 ) as mock_parse_fm:
                     mock_parse_fm.return_value = (
-                        None,
                         None,
                         {},
                         "# Test Document\n\n- [ ] A task",
@@ -483,7 +482,7 @@ class TestIngestVault:
                 with patch(
                     "obsidian_rag.services.ingestion.parse_frontmatter"
                 ) as mock_parse_fm:
-                    mock_parse_fm.return_value = (None, None, {}, "# Test Document")
+                    mock_parse_fm.return_value = (None, {}, "# Test Document")
 
                     with patch.object(
                         ingestion_service,
@@ -547,7 +546,7 @@ class TestIngestVault:
                 with patch(
                     "obsidian_rag.services.ingestion.parse_frontmatter"
                 ) as mock_parse_fm:
-                    mock_parse_fm.return_value = (None, None, {}, "# Updated Document")
+                    mock_parse_fm.return_value = (None, {}, "# Updated Document")
 
                     with patch(
                         "obsidian_rag.services.ingestion.parse_tasks_from_content"
@@ -656,7 +655,7 @@ class TestIngestVault:
                 with patch(
                     "obsidian_rag.services.ingestion.parse_frontmatter"
                 ) as mock_parse_fm:
-                    mock_parse_fm.return_value = (None, None, {}, "# Test Document")
+                    mock_parse_fm.return_value = (None, {}, "# Test Document")
 
                     with patch.object(
                         ingestion_service,
@@ -727,7 +726,7 @@ class TestIngestVault:
                 with patch(
                     "obsidian_rag.services.ingestion.parse_frontmatter"
                 ) as mock_parse_fm:
-                    mock_parse_fm.return_value = (None, None, {}, "# Test")
+                    mock_parse_fm.return_value = (None, {}, "# Test")
 
                     with patch(
                         "obsidian_rag.services.ingestion.parse_tasks_from_content"
@@ -786,7 +785,7 @@ class TestIngestSingleFile:
         with patch(
             "obsidian_rag.services.ingestion.parse_frontmatter"
         ) as mock_parse_fm:
-            mock_parse_fm.return_value = (None, None, {}, "Test content")
+            mock_parse_fm.return_value = (None, {}, "Test content")
 
             with patch(
                 "obsidian_rag.services.ingestion.parse_tasks_from_content"
@@ -843,7 +842,7 @@ class TestIngestSingleFile:
         with patch(
             "obsidian_rag.services.ingestion.parse_frontmatter"
         ) as mock_parse_fm:
-            mock_parse_fm.return_value = (None, None, {}, "Test content")
+            mock_parse_fm.return_value = (None, {}, "Test content")
 
             with patch(
                 "obsidian_rag.services.ingestion.parse_tasks_from_content"
@@ -894,7 +893,7 @@ class TestIngestSingleFile:
         with patch(
             "obsidian_rag.services.ingestion.parse_frontmatter"
         ) as mock_parse_fm:
-            mock_parse_fm.return_value = (None, None, {}, "Test content")
+            mock_parse_fm.return_value = (None, {}, "Test content")
 
             with patch(
                 "obsidian_rag.services.ingestion.parse_tasks_from_content"
@@ -1188,7 +1187,7 @@ class TestDeleteOrphanedDocuments:
                 with patch(
                     "obsidian_rag.services.ingestion.parse_frontmatter"
                 ) as mock_parse_fm:
-                    mock_parse_fm.return_value = (None, None, {}, "# New Document")
+                    mock_parse_fm.return_value = (None, {}, "# New Document")
 
                     with patch.object(
                         ingestion_service,
@@ -1243,7 +1242,7 @@ class TestDeleteOrphanedDocuments:
                 with patch(
                     "obsidian_rag.services.ingestion.parse_frontmatter"
                 ) as mock_parse_fm:
-                    mock_parse_fm.return_value = (None, None, {}, "# Test Document")
+                    mock_parse_fm.return_value = (None, {}, "# Test Document")
 
                     with patch.object(
                         ingestion_service,
@@ -1352,6 +1351,92 @@ class TestGetOrCreateVault:
         mock_session.add.assert_called_once()
         mock_session.commit.assert_called_once()
 
+    def test_get_or_create_vault_name_not_in_settings(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test creating vault when name not found in settings (uses 'Unknown')."""
+        from obsidian_rag.config import VaultConfig
+
+        # Create a vault config with a path that won't match any settings
+        unmatched_config = VaultConfig(
+            container_path="/unmatched/path",
+            host_path="/unmatched/path",
+        )
+
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        # Mock empty settings.vaults
+        mock_settings = cast(MagicMock, ingestion_service.settings)
+        mock_settings.vaults = {}
+
+        # Mock the Vault object that gets added to session
+        mock_vault = MagicMock()
+        test_uuid = uuid.uuid4()
+        mock_vault.id = test_uuid
+        mock_session.add.side_effect = lambda x: setattr(x, "id", test_uuid)
+
+        result = ingestion_service._get_or_create_vault(unmatched_config)
+
+        assert result is not None
+        assert isinstance(result, uuid.UUID)
+        assert result == test_uuid
+        mock_session.add.assert_called_once()
+        # Verify the vault was created with name "Unknown"
+        added_vault = mock_session.add.call_args[0][0]
+        assert added_vault.name == "Unknown"
+
+    def test_get_or_create_vault_multiple_settings_loop(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test vault lookup loops through multiple settings entries."""
+        from obsidian_rag.config import VaultConfig
+
+        # Create a vault config that matches the second entry
+        target_config = VaultConfig(
+            container_path="/target/path",
+            host_path="/target/path",
+        )
+
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        # Mock settings with multiple vaults - target is second
+        mock_settings = cast(MagicMock, ingestion_service.settings)
+        mock_settings.vaults = {
+            "First Vault": VaultConfig(
+                container_path="/first/path",
+                host_path="/first/path",
+            ),
+            "Target Vault": target_config,
+        }
+
+        # Mock the Vault object that gets added to session
+        mock_vault = MagicMock()
+        test_uuid = uuid.uuid4()
+        mock_vault.id = test_uuid
+        mock_session.add.side_effect = lambda x: setattr(x, "id", test_uuid)
+
+        result = ingestion_service._get_or_create_vault(target_config)
+
+        assert result is not None
+        assert isinstance(result, uuid.UUID)
+        # Verify the vault was created with the correct name from settings
+        added_vault = mock_session.add.call_args[0][0]
+        assert added_vault.name == "Target Vault"
+
 
 class TestComputeRelativePathExceptions:
     """Test _compute_relative_path exception handling (lines 244-246)."""
@@ -1386,7 +1471,7 @@ class TestIngestSingleFileExceptions:
         mock_file_info.content = "# Test content"
 
         with patch("obsidian_rag.services.ingestion.parse_frontmatter") as mock_parse:
-            mock_parse.return_value = ("note", ["tag"], {}, "content")
+            mock_parse.return_value = (["tag"], {"kind": "note"}, "content")
 
             with pytest.raises(RuntimeError) as exc_info:
                 ingestion_service._ingest_single_file(

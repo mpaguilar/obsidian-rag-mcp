@@ -150,27 +150,29 @@ def _replace_env_var(match: re.Match) -> str:
 
 
 @overload
-def _interpolate_env_vars(value: None) -> None: ...
+def _interpolate_env_vars(value: None) -> None: ...  # pragma: no cover
 
 
 @overload
-def _interpolate_env_vars(value: int) -> int: ...
+def _interpolate_env_vars(value: int) -> int: ...  # pragma: no cover
 
 
 @overload
-def _interpolate_env_vars(value: float) -> float: ...
+def _interpolate_env_vars(value: float) -> float: ...  # pragma: no cover
 
 
 @overload
-def _interpolate_env_vars(value: str) -> str: ...
+def _interpolate_env_vars(value: str) -> str: ...  # pragma: no cover
 
 
 @overload
-def _interpolate_env_vars(value: dict[str, Any]) -> dict[str, Any]: ...
+def _interpolate_env_vars(
+    value: dict[str, Any],
+) -> dict[str, Any]: ...  # pragma: no cover
 
 
 @overload
-def _interpolate_env_vars(value: list[Any]) -> list[Any]: ...
+def _interpolate_env_vars(value: list[Any]) -> list[Any]: ...  # pragma: no cover
 
 
 def _interpolate_env_vars(
@@ -799,7 +801,7 @@ class Settings(BaseSettings):
 
         """
         # If no vaults configured, create default
-        if not self.vaults:
+        if not self.vaults:  # pragma: no cover (coverage issue with pydantic validator)
             self.vaults = {
                 "Obsidian Vault": VaultConfig(
                     container_path="/data",

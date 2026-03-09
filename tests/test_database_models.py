@@ -143,15 +143,15 @@ class TestDocument:
             checksum_md5="abc123",
             created_at_fs=datetime.now(),
             modified_at_fs=datetime.now(),
-            kind="article",
-            frontmatter_json={"author": "Test", "version": 1.0},
+            frontmatter_json={"kind": "article", "author": "Test", "version": 1.0},
         )
         db_session.add(doc)
         db_session.commit()
 
         result = db_session.query(Document).first()
-        assert result.kind == "article"
-        assert result.frontmatter_json == {"author": "Test", "version": 1.0}
+        assert result.frontmatter_json.get("kind") == "article"
+        assert result.frontmatter_json.get("author") == "Test"
+        assert result.frontmatter_json.get("version") == 1.0
 
 
 class TestTask:

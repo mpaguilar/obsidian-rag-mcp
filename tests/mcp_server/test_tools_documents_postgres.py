@@ -28,7 +28,7 @@ class TestQueryDocumentsPostgres:
         mock_doc.file_name = "path.md"
         mock_doc.content = "Test content"
         mock_doc.content_vector = [0.1] * 1536
-        mock_doc.kind = "note"
+        mock_doc.frontmatter_json = {"kind": "note"}
         mock_doc.tags = ["test"]
         mock_doc.created_at_fs = MagicMock()
         mock_doc.modified_at_fs = MagicMock()
@@ -423,3 +423,226 @@ class TestGetDocumentsByPropertyPostgresql:
             assert total_count == 1
             assert len(results) == 1
             assert results[0] == mock_doc2
+
+
+class TestGetDocumentsByTagPostgres:
+    """Tests for get_documents_by_tag with PostgreSQL (lines 232-239)."""
+
+    def test_get_documents_by_tag_postgresql_path(self):
+        """Test get_documents_by_tag with PostgreSQL dialect."""
+        from obsidian_rag.mcp_server.tools.documents import get_documents_by_tag
+        from obsidian_rag.mcp_server.models import TagFilter
+
+        # Create mock session with PostgreSQL dialect
+        mock_session = MagicMock()
+        mock_bind = MagicMock()
+        mock_bind.dialect.name = "postgresql"
+        mock_session.bind = mock_bind
+
+        # Setup mock query chain
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.count.return_value = 2
+
+        # Create mock document
+        mock_doc = MagicMock()
+        mock_doc.id = uuid.uuid4()
+        mock_doc.file_path = "/test/doc.md"
+        mock_doc.file_name = "doc.md"
+        mock_doc.content = "Test content"
+        mock_doc.tags = ["work"]
+        mock_doc.frontmatter_json = {"kind": "note"}
+        mock_doc.created_at_fs = MagicMock()
+        mock_doc.modified_at_fs = MagicMock()
+        mock_doc.vault = MagicMock()
+        mock_doc.vault.name = "test_vault"
+
+        mock_query.offset.return_value.limit.return_value.all.return_value = [
+            mock_doc,
+            mock_doc,
+        ]
+        mock_session.query.return_value = mock_query
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents_tags.apply_postgresql_tag_filter"
+        ) as mock_apply_filter:
+            mock_apply_filter.return_value = mock_query
+
+            result = get_documents_by_tag(
+                mock_session,
+                TagFilter(include_tags=["work"]),
+                limit=20,
+                offset=0,
+            )
+
+            assert result.total_count == 2
+            assert len(result.results) == 2
+
+
+class TestGetDocumentsByPropertyPostgresPath:
+    """Tests for get_documents_by_property PostgreSQL path (line 331)."""
+
+    def test_get_documents_by_property_postgresql_branch(self):
+        """Test get_documents_by_property with PostgreSQL dialect (line 331)."""
+        from obsidian_rag.mcp_server.tools.documents import get_documents_by_property
+        from obsidian_rag.mcp_server.models import PropertyFilter
+        from obsidian_rag.mcp_server.tools.documents_params import (
+            PaginationParams,
+            PropertyFilterParams,
+        )
+
+        # Create mock session with PostgreSQL dialect
+        mock_session = MagicMock()
+        mock_bind = MagicMock()
+        mock_bind.dialect.name = "postgresql"
+        mock_session.bind = mock_bind
+
+        # Create mock document
+        mock_doc = MagicMock()
+        mock_doc.id = uuid.uuid4()
+        mock_doc.file_path = "/test/doc.md"
+        mock_doc.file_name = "doc.md"
+        mock_doc.content = "Test content"
+        mock_doc.tags = ["work"]
+        mock_doc.frontmatter_json = {"status": "draft"}
+        mock_doc.created_at_fs = MagicMock()
+        mock_doc.modified_at_fs = MagicMock()
+        mock_doc.vault = MagicMock()
+        mock_doc.vault.name = "test_vault"
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property_postgresql"
+        ) as mock_get:
+            mock_get.return_value = ([mock_doc], 1)
+
+            filter_params = PropertyFilterParams(
+                include_filters=[
+                    PropertyFilter(path="status", operator="equals", value="draft")
+                ],
+                exclude_filters=None,
+            )
+            pagination = PaginationParams(limit=20, offset=0)
+
+            result = get_documents_by_property(
+                mock_session,
+                property_filters=filter_params,
+                pagination=pagination,
+            )
+
+            assert result.total_count == 1
+            assert len(result.results) == 1
+            mock_get.assert_called_once()
+
+
+class TestExtractTagsPostgresqlWithPattern:
+    """Tests for _extract_tags_postgresql with pattern (lines 358-364)."""
+
+    def test_extract_tags_postgresql_with_pattern(self):
+        """Test _extract_tags_postgresql with pattern filtering (lines 358-364)."""
+        from obsidian_rag.mcp_server.tools.documents import _extract_tags_postgresql
+
+        # Create mock session
+        mock_session = MagicMock()
+
+        # Setup mock query chain for tags with pattern
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+
+        # Mock the distinct/unnest query
+        mock_tag_row = MagicMock()
+        mock_tag_row.tag = "work"
+        mock_query.all.return_value = [mock_tag_row]
+
+        mock_session.query.return_value = mock_query
+
+        result = _extract_tags_postgresql(mock_session, pattern="wor*")
+
+        assert "work" in result
+
+
+class TestGetAllTagsPostgresPath:
+    """Tests for get_all_tags PostgreSQL path (line 430)."""
+
+    def test_get_all_tags_postgresql_branch(self):
+        """Test get_all_tags with PostgreSQL dialect (line 430)."""
+        from obsidian_rag.mcp_server.tools.documents import get_all_tags
+
+        # Create mock session with PostgreSQL dialect
+        mock_session = MagicMock()
+        mock_bind = MagicMock()
+        mock_bind.dialect.name = "postgresql"
+        mock_session.bind = mock_bind
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents._extract_tags_postgresql"
+        ) as mock_extract:
+            mock_extract.return_value = ["work", "personal", "ideas"]
+
+            result = get_all_tags(mock_session, pattern=None, limit=20, offset=0)
+
+            assert result.total_count == 3
+            assert result.tags == ["work", "personal", "ideas"]
+            mock_extract.assert_called_once_with(mock_session, None)
+
+
+class TestExtractDocumentFromRow:
+    """Tests for _extract_document_from_row function (lines 47, 50)."""
+
+    def test_extract_document_from_row_with_document_attr(self):
+        """Test _extract_document_from_row when row has Document attribute (line 47)."""
+        from obsidian_rag.mcp_server.tools.documents_postgres import (
+            _extract_document_from_row,
+        )
+
+        mock_doc = MagicMock()
+        mock_row = MagicMock()
+        mock_row.Document = mock_doc
+
+        result = _extract_document_from_row(mock_row)
+        assert result == mock_doc
+
+    def test_extract_document_from_row_direct(self):
+        """Test _extract_document_from_row when row is a Document directly (line 50)."""
+        from obsidian_rag.mcp_server.tools.documents_postgres import (
+            _extract_document_from_row,
+        )
+
+        # Use a plain object that doesn't have Document attribute and isn't a tuple
+        class PlainDoc:
+            pass
+
+        doc = PlainDoc()
+        result = _extract_document_from_row(doc)
+        assert result == doc
+
+
+class TestExtractDistanceFromRow:
+    """Tests for _extract_distance_from_row function (lines 64, 67)."""
+
+    def test_extract_distance_from_row_with_distance_attr(self):
+        """Test _extract_distance_from_row when row has distance attribute (line 64)."""
+        from obsidian_rag.mcp_server.tools.documents_postgres import (
+            _extract_distance_from_row,
+        )
+
+        mock_row = MagicMock()
+        mock_row.distance = 0.75
+
+        result = _extract_distance_from_row(mock_row)
+        assert result == 0.75
+
+    def test_extract_distance_from_row_default(self):
+        """Test _extract_distance_from_row when row has no distance (line 67)."""
+        from obsidian_rag.mcp_server.tools.documents_postgres import (
+            _extract_distance_from_row,
+        )
+
+        # Use a plain object that doesn't have distance attribute and isn't a tuple
+        class PlainRow:
+            pass
+
+        row = PlainRow()
+        result = _extract_distance_from_row(row)
+        assert result == 0.0

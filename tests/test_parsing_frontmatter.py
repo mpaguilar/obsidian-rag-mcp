@@ -109,11 +109,11 @@ author: John Doe
 
 Body content.
 """
-        kind, tags, metadata, remaining = parse_frontmatter(content)
+        tags, metadata, remaining = parse_frontmatter(content)
 
-        assert kind == "article"
+        assert metadata.get("kind") == "article"
         assert tags == ["python", "testing"]
-        assert metadata == {"author": "John Doe"}
+        assert metadata.get("author") == "John Doe"
         assert remaining == "Body content.\n"
 
     def test_parses_kind_only(self):
@@ -124,18 +124,17 @@ kind: note
 
 Content.
 """
-        kind, tags, metadata, remaining = parse_frontmatter(content)
+        tags, metadata, remaining = parse_frontmatter(content)
 
-        assert kind == "note"
+        assert metadata.get("kind") == "note"
         assert tags is None
-        assert metadata == {}
+        assert metadata == {"kind": "note"}
 
     def test_no_frontmatter(self):
         """Test parsing content without frontmatter."""
         content = "Just content."
-        kind, tags, metadata, remaining = parse_frontmatter(content)
+        tags, metadata, remaining = parse_frontmatter(content)
 
-        assert kind is None
         assert tags is None
         assert metadata == {}
         assert remaining == content
@@ -148,7 +147,7 @@ tags: "python, testing"
 
 Content.
 """
-        kind, tags, metadata, remaining = parse_frontmatter(content)
+        tags, metadata, remaining = parse_frontmatter(content)
 
         assert tags == ["python", "testing"]
 
@@ -211,6 +210,28 @@ Content.
         assert result == ["1", "2", "3"]
 
 
+class TestSerializeDictForJson:
+    """Test cases for _serialize_dict_for_json function."""
+
+    def test_serializes_list_in_dict(self):
+        """Test that lists in dict are serialized with _serialize_for_json."""
+        from obsidian_rag.parsing.frontmatter import _serialize_dict_for_json
+        from datetime import date
+
+        data = {"items": [date(2024, 3, 15), "string", 42]}
+        result = _serialize_dict_for_json(data)
+        assert result == {"items": ["2024-03-15", "string", 42]}
+
+    def test_serializes_nested_dict(self):
+        """Test that nested dicts are recursively serialized."""
+        from obsidian_rag.parsing.frontmatter import _serialize_dict_for_json
+        from datetime import date
+
+        data = {"outer": {"inner": date(2024, 3, 15)}}
+        result = _serialize_dict_for_json(data)
+        assert result == {"outer": {"inner": "2024-03-15"}}
+
+
 class TestSerializeForJson:
     """Test cases for _serialize_for_json function."""
 
@@ -266,7 +287,7 @@ date: 2024-03-15
 
 Content here.
 """
-        kind, tags, metadata, remaining = parse_frontmatter(content)
+        tags, metadata, remaining = parse_frontmatter(content)
 
         assert metadata["date"] == "2024-03-15"
         assert isinstance(metadata["date"], str)
@@ -282,7 +303,7 @@ schedule:
 
 Content here.
 """
-        kind, tags, metadata, remaining = parse_frontmatter(content)
+        tags, metadata, remaining = parse_frontmatter(content)
 
         assert metadata["schedule"]["start"] == "2024-03-15"
         assert metadata["schedule"]["end"] == "2024-04-01"

@@ -65,7 +65,7 @@ def sample_document(db_session):
         checksum_md5="abc123",
         created_at_fs=datetime.now(),
         modified_at_fs=datetime.now(),
-        kind="article",
+        frontmatter_json={"kind": "article"},
         tags=["project", "test"],
     )
     db_session.add(doc)

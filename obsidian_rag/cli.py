@@ -398,7 +398,7 @@ def _format_query_results_json(results: list) -> str:
             "file_path": str(doc.file_path),
             "file_name": doc.file_name,
             "distance": float(dist),
-            "kind": doc.kind,
+            "kind": doc.frontmatter_json.get("kind") if doc.frontmatter_json else None,
             "tags": doc.tags,
         }
         for doc, dist in results
@@ -418,8 +418,9 @@ def _format_query_results_table(results: list) -> str:
         lines.append(f"File: {doc.file_name}")
         lines.append(f"Path: {doc.file_path}")
         lines.append(f"Distance: {float(dist):.4f}")
-        if doc.kind:
-            lines.append(f"Kind: {doc.kind}")
+        kind = doc.frontmatter_json.get("kind") if doc.frontmatter_json else None
+        if kind:
+            lines.append(f"Kind: {kind}")
         if doc.tags:
             lines.append(f"Tags: {', '.join(doc.tags)}")
         lines.append("")

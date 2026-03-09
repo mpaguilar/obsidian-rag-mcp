@@ -94,6 +94,21 @@ class TestSessionMetrics:
 
         assert rate == 0.0
 
+    def test_get_connection_rate_zero_window(self):
+        """Test get_connection_rate returns 0 when actual_window <= 0."""
+        metrics = SessionMetrics()
+        import time
+        from unittest.mock import patch
+
+        # Add a connection
+        metrics.connection_history.append(time.time())
+
+        # Mock time.time() to return same value, making actual_window = 0
+        with patch("time.time", return_value=metrics.connection_history[0]):
+            rate = metrics.get_connection_rate(window_seconds=60)
+
+        assert rate == 0.0
+
 
 class TestSessionManager:
     """Tests for SessionManager class."""
@@ -165,6 +180,22 @@ class TestSessionManager:
 
         # Different IP should succeed even when first IP is rate limited
         result = manager.create_session("session-2", "192.168.1.2")
+
+        assert result is True
+
+    def test_check_rate_limit_not_recent(self):
+        """Test _check_rate_limit returns True when no recent history."""
+        from collections import deque
+
+        manager = SessionManager(rate_limit_window=60)
+        import time
+
+        # Add old history entry (outside window)
+        old_time = time.time() - 120  # 2 minutes ago
+        manager._rate_limit_history["192.168.1.1"] = deque([old_time], maxlen=1000)
+
+        # Should return True (not rate limited) because no recent entries
+        result = manager._check_rate_limit("192.168.1.1")
 
         assert result is True
 
