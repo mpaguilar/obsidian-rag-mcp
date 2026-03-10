@@ -355,7 +355,7 @@ def _extract_tags_postgresql(session: "Session", pattern: str | None) -> list[st
         func.distinct(func.unnest(Document.tags)).label("tag"),
     ).filter(Document.tags.isnot(None))
 
-    if pattern is not None:  # pragma: no cover (PostgreSQL-only)
+    if pattern is not None:
         like_pattern = _glob_to_like(pattern)
         tags_query = tags_query.filter(
             func.lower(func.unnest(Document.tags)).ilike(func.lower(like_pattern)),

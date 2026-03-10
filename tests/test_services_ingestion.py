@@ -993,14 +993,19 @@ class TestDeleteOrphanedDocuments:
 
         # Create mock documents - one orphaned, one not
         mock_doc1 = MagicMock()
+        mock_doc1.id = uuid.uuid4()
         mock_doc1.file_path = "orphaned.md"
         mock_doc2 = MagicMock()
+        mock_doc2.id = uuid.uuid4()
         mock_doc2.file_path = "existing.md"
 
         mock_session.query.return_value.filter_by.return_value.all.return_value = [
             mock_doc1,
             mock_doc2,
         ]
+
+        # Mock session.get() to return the document for deletion
+        mock_session.get.return_value = mock_doc1
 
         # Filesystem only has existing.md
         filesystem_paths = {"existing.md"}
@@ -1012,6 +1017,7 @@ class TestDeleteOrphanedDocuments:
 
         assert deleted_count == 1
         assert error_count == 0
+        mock_session.get.assert_called_once_with(Document, mock_doc1.id)
         mock_session.delete.assert_called_once_with(mock_doc1)
         mock_session.commit.assert_called_once()
 
@@ -1265,19 +1271,22 @@ class TestDeleteOrphanedDocuments:
         """Test batch deletion when commit fails."""
         mock_session = MagicMock()
 
-        # Create mock documents
+        # Create mock document info tuples (id, file_path)
+        doc1_id = uuid.uuid4()
+        doc2_id = uuid.uuid4()
+        batch = [(doc1_id, "doc1.md"), (doc2_id, "doc2.md")]
+
+        # Mock session.get() to return mock documents
         mock_doc1 = MagicMock()
-        mock_doc1.file_path = "doc1.md"
         mock_doc2 = MagicMock()
-        mock_doc2.file_path = "doc2.md"
-        batch = [mock_doc1, mock_doc2]
+        mock_session.get.side_effect = [mock_doc1, mock_doc2]
 
         # Simulate commit failure
         mock_session.commit.side_effect = RuntimeError("Database error")
 
         deleted_count, error_count = ingestion_service._delete_batch(
             mock_session,
-            batch,  # type: ignore[arg-type]
+            batch,
         )
 
         # When commit fails, all documents in batch are marked as failed
@@ -1494,23 +1503,52 @@ class TestDeleteBatchExceptions:
         """Test handling of individual document deletion failure (lines 857-859)."""
         mock_session = MagicMock()
 
+        # Create mock document info tuples (id, file_path)
+        doc1_id = uuid.uuid4()
+        doc2_id = uuid.uuid4()
+        batch = [(doc1_id, "doc1.md"), (doc2_id, "doc2.md")]
+
         # Create mock documents where one fails to delete
         mock_doc1 = MagicMock()
-        mock_doc1.file_path = "doc1.md"
         mock_doc2 = MagicMock()
-        mock_doc2.file_path = "doc2.md"
+
+        # Mock session.get() to return documents
+        mock_session.get.side_effect = [mock_doc1, mock_doc2]
 
         # First delete succeeds, second fails
         mock_session.delete.side_effect = [None, RuntimeError("Delete failed")]
 
-        batch = [mock_doc1, mock_doc2]
-
         deleted_count, error_count = ingestion_service._delete_batch(
             mock_session,
-            batch,  # type: ignore[arg-type]
+            batch,
         )
 
         # One deleted successfully, one failed
         assert deleted_count == 1
         assert error_count == 1
         assert mock_session.delete.call_count == 2
+
+    def test_delete_batch_document_not_found(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test handling when document is not found in session during deletion."""
+        mock_session = MagicMock()
+
+        # Create mock document info tuple (id, file_path)
+        doc_id = uuid.uuid4()
+        batch = [(doc_id, "missing.md")]
+
+        # Mock session.get() to return None (document not found)
+        mock_session.get.return_value = None
+
+        deleted_count, error_count = ingestion_service._delete_batch(
+            mock_session,
+            batch,
+        )
+
+        # Document not found, counted as error
+        assert deleted_count == 0
+        assert error_count == 1
+        mock_session.get.assert_called_once_with(Document, doc_id)
+        mock_session.delete.assert_not_called()

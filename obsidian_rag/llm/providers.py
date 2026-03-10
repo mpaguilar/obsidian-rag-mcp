@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack, overload
+from typing import Any, TypedDict
 
 from obsidian_rag.llm.base import (
     ChatError,
@@ -10,9 +10,6 @@ from obsidian_rag.llm.base import (
     EmbeddingError,
     EmbeddingProvider,
 )
-
-if TYPE_CHECKING:
-    pass
 
 # Optional dependencies - will be None if not installed
 litellm: Any = None
@@ -208,44 +205,186 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         return self._dimension
 
 
+# Individual factory functions for type-safe provider creation
+# These replace the overloaded create_embedding_provider method
+
+
+def create_openai_embedding_provider(
+    api_key: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+) -> "OpenAIEmbeddingProvider":
+    """Create an OpenAI embedding provider.
+
+    Args:
+        api_key: OpenAI API key. If None, uses OPENAI_API_KEY env var.
+        model: Model name. Defaults to text-embedding-3-small.
+        base_url: Optional custom base URL for API.
+
+    Returns:
+        OpenAIEmbeddingProvider instance.
+
+    Raises:
+        ImportError: If litellm package is not installed.
+        ValueError: If API key is not provided.
+
+    """
+    _msg = "Creating OpenAI embedding provider"
+    log.debug(_msg)
+    return OpenAIEmbeddingProvider(
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+    )
+
+
+def create_huggingface_embedding_provider(
+    model: str | None = None,
+    device: str | None = None,
+) -> "HuggingFaceEmbeddingProvider":
+    """Create a HuggingFace embedding provider.
+
+    Args:
+        model: Model name. Defaults to all-MiniLM-L6-v2.
+        device: Device to use ('cpu', 'cuda', etc.). Auto-detected if None.
+
+    Returns:
+        HuggingFaceEmbeddingProvider instance.
+
+    Raises:
+        ImportError: If langchain-huggingface package is not installed.
+
+    """
+    _msg = "Creating HuggingFace embedding provider"
+    log.debug(_msg)
+    return HuggingFaceEmbeddingProvider(
+        model=model,
+        device=device,
+    )
+
+
+def create_openrouter_embedding_provider(
+    api_key: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+) -> "OpenRouterEmbeddingProvider":
+    """Create an OpenRouter embedding provider.
+
+    Args:
+        api_key: OpenRouter API key. If None, uses OPENROUTER_API_KEY env var.
+        model: Model name. Defaults to qwen/qwen3-embedding-8b.
+        base_url: Optional custom base URL for API.
+
+    Returns:
+        OpenRouterEmbeddingProvider instance.
+
+    Raises:
+        ImportError: If litellm package is not installed.
+        ValueError: If API key is not provided.
+
+    """
+    _msg = "Creating OpenRouter embedding provider"
+    log.debug(_msg)
+    return OpenRouterEmbeddingProvider(
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+    )
+
+
+def create_openai_chat_provider(
+    api_key: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+) -> "OpenAIChatProvider":
+    """Create an OpenAI chat provider.
+
+    Args:
+        api_key: OpenAI API key. If None, uses OPENAI_API_KEY env var.
+        model: Model name. Defaults to gpt-4.
+        base_url: Optional custom base URL for API.
+        temperature: Sampling temperature.
+        max_tokens: Maximum tokens to generate.
+
+    Returns:
+        OpenAIChatProvider instance.
+
+    Raises:
+        ImportError: If litellm package is not installed.
+        ValueError: If API key is not provided.
+
+    """
+    _msg = "Creating OpenAI chat provider"
+    log.debug(_msg)
+    return OpenAIChatProvider(
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
+def create_openrouter_chat_provider(
+    api_key: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+) -> "OpenRouterChatProvider":
+    """Create an OpenRouter chat provider.
+
+    Args:
+        api_key: OpenRouter API key. If None, uses OPENROUTER_API_KEY env var.
+        model: Model name. Defaults to anthropic/claude-3-opus.
+        base_url: Optional custom base URL for API.
+        temperature: Sampling temperature.
+        max_tokens: Maximum tokens to generate.
+
+    Returns:
+        OpenRouterChatProvider instance.
+
+    Raises:
+        ImportError: If litellm package is not installed.
+        ValueError: If API key is not provided.
+
+    """
+    _msg = "Creating OpenRouter chat provider"
+    log.debug(_msg)
+    return OpenRouterChatProvider(
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
 class ProviderFactory:
     """Factory for creating provider instances.
 
     Creates appropriate provider instances based on configuration.
 
+    Note:
+        This factory maintains backward compatibility. For type-safe
+        creation with proper IDE support, use the dedicated factory
+        functions: create_openai_embedding_provider,
+        create_huggingface_embedding_provider, etc.
+
     """
-
-    @overload
-    @staticmethod
-    def create_embedding_provider(
-        provider_name: Literal["openai"],
-        **config: Unpack[OpenAIProviderConfig],
-    ) -> EmbeddingProvider: ...  # pragma: no cover
-
-    @overload
-    @staticmethod
-    def create_embedding_provider(
-        provider_name: Literal["huggingface"],
-        **config: Unpack[HuggingFaceProviderConfig],
-    ) -> EmbeddingProvider: ...  # pragma: no cover
-
-    @overload
-    @staticmethod
-    def create_embedding_provider(
-        provider_name: Literal["openrouter"],
-        **config: Unpack[OpenRouterProviderConfig],
-    ) -> EmbeddingProvider: ...  # pragma: no cover
 
     @staticmethod
     def create_embedding_provider(
         provider_name: str,
-        **config: Any,
+        config: dict[str, object] | None = None,
     ) -> EmbeddingProvider:
         """Create an embedding provider instance.
 
         Args:
             provider_name: Name of the provider ('openai', 'huggingface', 'openrouter').
-            **config: Provider-specific configuration.
+            config: Provider-specific configuration dictionary.
 
         Returns:
             EmbeddingProvider instance.
@@ -257,18 +396,20 @@ class ProviderFactory:
         _msg = f"Creating embedding provider: {provider_name}"
         log.debug(_msg)
 
+        cfg = config or {}
+
         if provider_name == "openai":
-            result: EmbeddingProvider = OpenAIEmbeddingProvider(**config)
+            result: EmbeddingProvider = create_openai_embedding_provider(**cfg)  # type: ignore[arg-type]
             _msg = "create_embedding_provider returning"
             log.debug(_msg)
             return result
         if provider_name == "huggingface":
-            result = HuggingFaceEmbeddingProvider(**config)
+            result = create_huggingface_embedding_provider(**cfg)  # type: ignore[arg-type]
             _msg = "create_embedding_provider returning"
             log.debug(_msg)
             return result
         if provider_name == "openrouter":
-            result = OpenRouterEmbeddingProvider(**config)
+            result = create_openrouter_embedding_provider(**cfg)  # type: ignore[arg-type]
             _msg = "create_embedding_provider returning"
             log.debug(_msg)
             return result
@@ -276,30 +417,16 @@ class ProviderFactory:
         log.error(_msg)
         raise ValueError(_msg)
 
-    @overload
-    @staticmethod
-    def create_chat_provider(
-        provider_name: Literal["openai"],
-        **config: Unpack[OpenAIProviderConfig],
-    ) -> ChatProvider: ...  # pragma: no cover
-
-    @overload
-    @staticmethod
-    def create_chat_provider(
-        provider_name: Literal["openrouter"],
-        **config: Unpack[OpenRouterProviderConfig],
-    ) -> ChatProvider: ...  # pragma: no cover
-
     @staticmethod
     def create_chat_provider(
         provider_name: str,
-        **config: Any,
+        config: dict[str, object] | None = None,
     ) -> ChatProvider:
         """Create a chat provider instance.
 
         Args:
             provider_name: Name of the provider ('openai', 'openrouter').
-            **config: Provider-specific configuration.
+            config: Provider-specific configuration dictionary.
 
         Returns:
             ChatProvider instance.
@@ -311,13 +438,15 @@ class ProviderFactory:
         _msg = f"Creating chat provider: {provider_name}"
         log.debug(_msg)
 
+        cfg = config or {}
+
         if provider_name == "openai":
-            result: ChatProvider = OpenAIChatProvider(**config)
+            result: ChatProvider = create_openai_chat_provider(**cfg)  # type: ignore[arg-type]
             _msg = "create_chat_provider returning"
             log.debug(_msg)
             return result
         if provider_name == "openrouter":
-            result = OpenRouterChatProvider(**config)
+            result = create_openrouter_chat_provider(**cfg)  # type: ignore[arg-type]
             _msg = "create_chat_provider returning"
             log.debug(_msg)
             return result

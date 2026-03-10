@@ -776,18 +776,21 @@ class IngestionService:
         log.debug(_msg)
 
         # Query documents for this vault and identify orphans
+        # Extract only id and file_path to avoid DetachedInstanceError
         with self.db_manager.get_session() as session:
             vault_documents = session.query(Document).filter_by(vault_id=vault_id).all()
-            orphaned_documents = [
-                doc for doc in vault_documents if doc.file_path not in filesystem_paths
+            orphaned_doc_info = [
+                (doc.id, doc.file_path)
+                for doc in vault_documents
+                if doc.file_path not in filesystem_paths
             ]
 
-        if not orphaned_documents:
+        if not orphaned_doc_info:
             _msg = "No orphaned documents found"
             log.debug(_msg)
             return 0, 0
 
-        total_orphaned = len(orphaned_documents)
+        total_orphaned = len(orphaned_doc_info)
         _msg = f"Found {total_orphaned} orphaned documents to delete"
         log.info(_msg)
 
@@ -797,16 +800,16 @@ class IngestionService:
             return total_orphaned, 0
 
         # Process deletions in batches
-        return self._process_deletion_batches(orphaned_documents)
+        return self._process_deletion_batches(orphaned_doc_info)
 
     def _process_deletion_batches(
         self,
-        orphaned_documents: list[Document],
+        orphaned_doc_info: list[tuple[uuid.UUID, str]],
     ) -> tuple[int, int]:
         """Process deletion of orphaned documents in batches.
 
         Args:
-            orphaned_documents: List of documents to delete.
+            orphaned_doc_info: List of (document_id, file_path) tuples to delete.
 
         Returns:
             Tuple of (deleted_count, error_count).
@@ -817,8 +820,8 @@ class IngestionService:
         batch_size = 100
 
         with self.db_manager.get_session() as session:
-            for i in range(0, len(orphaned_documents), batch_size):
-                batch = orphaned_documents[i : i + batch_size]
+            for i in range(0, len(orphaned_doc_info), batch_size):
+                batch = orphaned_doc_info[i : i + batch_size]
                 batch_deleted, batch_errors = self._delete_batch(session, batch)
                 deleted_count += batch_deleted
                 error_count += batch_errors
@@ -834,29 +837,37 @@ class IngestionService:
     def _delete_batch(
         self,
         session: Session,
-        batch: list[Document],
+        batch: list[tuple[uuid.UUID, str]],
     ) -> tuple[int, int]:
         """Delete a batch of documents.
 
         Args:
             session: Database session.
-            batch: List of documents to delete in this batch.
+            batch: List of (document_id, file_path) tuples to delete.
 
         Returns:
             Tuple of (deleted_count, error_count) for this batch.
 
         """
         deleted_count = 0
+        error_count = 0
 
-        for document in batch:
+        for doc_id, file_path in batch:
             try:
-                _msg = f"Deleting orphaned document: {document.file_path}"
+                _msg = f"Deleting orphaned document: {file_path}"
                 log.info(_msg)
-                session.delete(document)
-                deleted_count += 1
+                document = session.get(Document, doc_id)
+                if document:
+                    session.delete(document)
+                    deleted_count += 1
+                else:
+                    _msg = f"Document {file_path} not found in session"
+                    log.warning(_msg)
+                    error_count += 1
             except (OSError, RuntimeError) as e:
-                _msg = f"Failed to delete document {document.file_path}: {e}"
+                _msg = f"Failed to delete document {file_path}: {e}"
                 log.error(_msg)
+                error_count += 1
 
         # Commit the batch
         try:
@@ -867,7 +878,7 @@ class IngestionService:
             _msg = f"Failed to commit deletion batch: {e}"
             log.error(_msg)
             session.rollback()
-            # All documents in batch failed
+            # All documents in batch failed (including those we thought we deleted)
             return 0, len(batch)
 
-        return deleted_count, len(batch) - deleted_count
+        return deleted_count, error_count

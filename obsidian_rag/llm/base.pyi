@@ -1,17 +1,15 @@
-"""LLM provider base classes and interfaces."""
+"""Type stubs for obsidian_rag.llm.base module.
 
-import logging
+This stub file contains type annotations for the abstract base classes
+without implementation details. It allows type checkers to verify
+types without requiring coverage on abstract method signatures.
+
+"""
+
 from abc import ABC, abstractmethod
 
-log = logging.getLogger(__name__)
-
-
 class EmbeddingProvider(ABC):
-    """Abstract base class for embedding providers.
-
-    Implementations must provide methods to generate embeddings for text.
-
-    """
+    """Abstract base class for embedding providers."""
 
     @abstractmethod
     def generate_embedding(self, text: str) -> list[float]:
@@ -27,7 +25,7 @@ class EmbeddingProvider(ABC):
             EmbeddingError: If embedding generation fails.
 
         """
-        pass  # noqa: PIE790  # pragma: no cover
+        ...
 
     @abstractmethod
     def get_dimension(self) -> int:
@@ -37,15 +35,10 @@ class EmbeddingProvider(ABC):
             The embedding dimension (e.g., 1536 for OpenAI).
 
         """
-        pass  # noqa: PIE790  # pragma: no cover
-
+        ...
 
 class ChatProvider(ABC):
-    """Abstract base class for chat/LLM providers.
-
-    Implementations must provide methods for chat completions.
-
-    """
+    """Abstract base class for chat/LLM providers."""
 
     @abstractmethod
     def chat(self, messages: list[dict[str, str]], **kwargs: object) -> str:
@@ -62,16 +55,13 @@ class ChatProvider(ABC):
             ChatError: If the chat request fails.
 
         """
-        pass  # noqa: PIE790  # pragma: no cover
-
+        ...
 
 class ProviderError(Exception):
     """Base exception for provider errors."""
 
-
 class EmbeddingError(ProviderError):
     """Exception raised when embedding generation fails."""
-
 
 class ChatError(ProviderError):
     """Exception raised when chat request fails."""

@@ -804,6 +804,144 @@ class TestOpenRouterChatProvider:
         assert "api_base" not in call_kwargs
 
 
+class TestIndividualFactoryFunctions:
+    """Test cases for individual provider factory functions."""
+
+    def test_create_openai_embedding_provider_success(self):
+        """Test creating OpenAI embedding provider with factory function."""
+        from obsidian_rag.llm.providers import (
+            OpenAIEmbeddingProvider,
+            create_openai_embedding_provider,
+        )
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = create_openai_embedding_provider(api_key="test-key")
+
+        assert isinstance(provider, OpenAIEmbeddingProvider)
+        assert provider.api_key == "test-key"
+
+    def test_create_openai_embedding_provider_with_model(self):
+        """Test creating OpenAI embedding provider with custom model."""
+        from obsidian_rag.llm.providers import create_openai_embedding_provider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = create_openai_embedding_provider(
+                api_key="test-key",
+                model="text-embedding-3-large",
+            )
+
+        assert provider.model == "text-embedding-3-large"
+        assert provider._dimension == 3072
+
+    def test_create_huggingface_embedding_provider_success(self):
+        """Test creating HuggingFace embedding provider with factory function."""
+        from obsidian_rag.llm.providers import (
+            HuggingFaceEmbeddingProvider,
+            create_huggingface_embedding_provider,
+        )
+
+        mock_embeddings = Mock()
+        mock_hf_class = Mock(return_value=mock_embeddings)
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch(
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
+            ):
+                provider = create_huggingface_embedding_provider()
+
+        assert isinstance(provider, HuggingFaceEmbeddingProvider)
+        assert provider.model_name == "all-MiniLM-L6-v2"
+
+    def test_create_huggingface_embedding_provider_with_device(self):
+        """Test creating HuggingFace embedding provider with device parameter."""
+        from obsidian_rag.llm.providers import create_huggingface_embedding_provider
+
+        mock_embeddings = Mock()
+        mock_hf_class = Mock(return_value=mock_embeddings)
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch(
+                "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
+                mock_hf_class,
+            ):
+                create_huggingface_embedding_provider(device="cuda")
+
+        mock_hf_class.assert_called_once()
+        call_kwargs = mock_hf_class.call_args.kwargs
+        assert call_kwargs["model_kwargs"]["device"] == "cuda"
+
+    def test_create_openrouter_embedding_provider_success(self):
+        """Test creating OpenRouter embedding provider with factory function."""
+        from obsidian_rag.llm.providers import (
+            OpenRouterEmbeddingProvider,
+            create_openrouter_embedding_provider,
+        )
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = create_openrouter_embedding_provider(api_key="test-key")
+
+        assert isinstance(provider, OpenRouterEmbeddingProvider)
+        assert provider.api_key == "test-key"
+        assert provider.model == "qwen/qwen3-embedding-8b"
+
+    def test_create_openai_chat_provider_success(self):
+        """Test creating OpenAI chat provider with factory function."""
+        from obsidian_rag.llm.providers import (
+            OpenAIChatProvider,
+            create_openai_chat_provider,
+        )
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = create_openai_chat_provider(api_key="test-key")
+
+        assert isinstance(provider, OpenAIChatProvider)
+        assert provider.api_key == "test-key"
+        assert provider.model == "gpt-4"
+
+    def test_create_openai_chat_provider_with_params(self):
+        """Test creating OpenAI chat provider with custom parameters."""
+        from obsidian_rag.llm.providers import create_openai_chat_provider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = create_openai_chat_provider(
+                api_key="test-key",
+                model="gpt-3.5-turbo",
+                temperature=0.5,
+                max_tokens=100,
+            )
+
+        assert provider.model == "gpt-3.5-turbo"
+        assert provider.temperature == 0.5
+        assert provider.max_tokens == 100
+
+    def test_create_openrouter_chat_provider_success(self):
+        """Test creating OpenRouter chat provider with factory function."""
+        from obsidian_rag.llm.providers import (
+            OpenRouterChatProvider,
+            create_openrouter_chat_provider,
+        )
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = create_openrouter_chat_provider(api_key="test-key")
+
+        assert isinstance(provider, OpenRouterChatProvider)
+        assert provider.api_key == "test-key"
+        assert provider.model == "anthropic/claude-3-opus"
+
+    def test_create_openrouter_chat_provider_with_model(self):
+        """Test creating OpenRouter chat provider with custom model."""
+        from obsidian_rag.llm.providers import create_openrouter_chat_provider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            provider = create_openrouter_chat_provider(
+                api_key="test-key",
+                model="openai/gpt-4",
+            )
+
+        assert provider.model == "openai/gpt-4"
+
+
 class TestOptionalDependencyErrors:
     """Test defensive branches when optional dependencies are not installed."""
 

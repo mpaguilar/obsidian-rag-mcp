@@ -555,9 +555,11 @@ class TestProviderCreators:
             assert result is mock_provider
             mock_factory.create_embedding_provider.assert_called_once_with(
                 provider_name="openai",
-                api_key="test-key",
-                model="text-embedding-3-small",
-                base_url=None,
+                config={
+                    "api_key": "test-key",
+                    "model": "text-embedding-3-small",
+                    "base_url": None,
+                },
             )
 
     def test_create_openrouter_provider(self):
@@ -580,9 +582,11 @@ class TestProviderCreators:
             assert result is mock_provider
             mock_factory.create_embedding_provider.assert_called_once_with(
                 provider_name="openrouter",
-                api_key="test-key",
-                model="text-embedding-3-small",
-                base_url="https://openrouter.ai/api/v1",
+                config={
+                    "api_key": "test-key",
+                    "model": "text-embedding-3-small",
+                    "base_url": "https://openrouter.ai/api/v1",
+                },
             )
 
     def test_create_huggingface_provider(self):
@@ -605,7 +609,7 @@ class TestProviderCreators:
             assert result is mock_provider
             mock_factory.create_embedding_provider.assert_called_once_with(
                 provider_name="huggingface",
-                model="sentence-transformers/all-MiniLM-L6-v2",
+                config={"model": "sentence-transformers/all-MiniLM-L6-v2"},
             )
 
     def test_get_provider_creator_openai(self):

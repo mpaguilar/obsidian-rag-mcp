@@ -285,7 +285,7 @@ def _create_pgvector_extension(
     """Create pgvector extension before creating tables (PostgreSQL only)."""
     # Only create extension on PostgreSQL
     dialect = connection.dialect.name
-    if dialect == "postgresql":  # pragma: no cover
+    if dialect == "postgresql":
         _msg = "Creating pgvector extension"
         log.debug(_msg)
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))

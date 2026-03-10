@@ -102,6 +102,7 @@ Database connection management using SQLAlchemy with:
 - Provider-agnostic interface for LLM operations
 - Three endpoint types: embedding, analysis, chat
 - Factory pattern for provider instantiation
+- **Type Stubs (`base.pyi`)**: Abstract method signatures moved to `.pyi` stub file for cleaner type checking without coverage requirements on abstract definitions
 
 #### Provider Implementations (`providers.py`)
 
@@ -119,6 +120,16 @@ Database connection management using SQLAlchemy with:
   - `OpenRouterChatProvider`: Uses `litellm.completion()` with `openrouter/` prefix
 - `langchain`: Local embedding models via HuggingFace
   - `HuggingFaceEmbeddingProvider`: Uses `HuggingFaceEmbeddings`
+
+**Factory Functions:**
+Instead of overloaded class methods, individual factory functions provide type-safe provider creation:
+- `create_openai_embedding_provider()`: Creates OpenAIEmbeddingProvider instances
+- `create_huggingface_embedding_provider()`: Creates HuggingFaceEmbeddingProvider instances
+- `create_openrouter_embedding_provider()`: Creates OpenRouterEmbeddingProvider instances
+- `create_openai_chat_provider()`: Creates OpenAIChatProvider instances
+- `create_openrouter_chat_provider()`: Creates OpenRouterChatProvider instances
+
+This approach eliminates `@overload` decorators while maintaining precise return types.
 
 **Configuration per endpoint:**
 - `provider`: Provider type ('openai' or 'huggingface')
@@ -144,6 +155,7 @@ Layered configuration system:
 
 **Features:**
 - Environment variable interpolation: `${VAR}` or `${VAR:-default}`
+  - Uses homomorphic TypeVar pattern for type-safe interpolation (preserves input type)
 - Nested configuration merging
 - Pydantic validation
 - **Vector dimension validation**: Enforces maximum of 2000 dimensions (pgvector limit)

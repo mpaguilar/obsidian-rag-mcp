@@ -132,17 +132,19 @@ def _get_embedding_provider(settings: Settings) -> EmbeddingProvider:
     embedding_config = settings.get_endpoint_config("embedding")
     if embedding_config:
         result = ProviderFactory.create_embedding_provider(
-            embedding_config.provider,  # type: ignore[call-overload]
-            api_key=embedding_config.api_key,
-            model=embedding_config.model,
-            base_url=embedding_config.base_url,
+            embedding_config.provider,
+            config={
+                "api_key": embedding_config.api_key,
+                "model": embedding_config.model,
+                "base_url": embedding_config.base_url,
+            },
         )
         _msg = "_get_embedding_provider returning"
         log.debug(_msg)
         return result
     _msg = "No embedding configuration found, using default OpenAI provider"
     log.warning(_msg)
-    result = ProviderFactory.create_embedding_provider("openai")
+    result = ProviderFactory.create_embedding_provider("openai", config={})
     _msg = "_get_embedding_provider returning"
     log.debug(_msg)
     return result

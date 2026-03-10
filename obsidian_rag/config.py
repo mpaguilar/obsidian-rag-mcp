@@ -8,7 +8,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, TypedDict, Unpack, overload
+from typing import Any, TypedDict, TypeVar, Unpack
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -20,6 +20,9 @@ from pydantic_settings import (
 )
 
 log = logging.getLogger(__name__)
+
+# TypeVar for homomorphic _interpolate_env_vars function
+T = TypeVar("T", str, int, float, None, dict, list)
 
 # Constants for validation
 PGVECTOR_MAX_DIMENSION = 2000
@@ -149,66 +152,46 @@ def _replace_env_var(match: re.Match) -> str:
     return str(result)
 
 
-@overload
-def _interpolate_env_vars(value: None) -> None: ...  # pragma: no cover
-
-
-@overload
-def _interpolate_env_vars(value: int) -> int: ...  # pragma: no cover
-
-
-@overload
-def _interpolate_env_vars(value: float) -> float: ...  # pragma: no cover
-
-
-@overload
-def _interpolate_env_vars(value: str) -> str: ...  # pragma: no cover
-
-
-@overload
 def _interpolate_env_vars(
-    value: dict[str, Any],
-) -> dict[str, Any]: ...  # pragma: no cover
-
-
-@overload
-def _interpolate_env_vars(value: list[Any]) -> list[Any]: ...  # pragma: no cover
-
-
-def _interpolate_env_vars(
-    value: str | dict[str, Any] | list[Any] | int | float | None,
-) -> str | dict[str, Any] | list[Any] | int | float | None:
+    value: T,
+) -> T:
     """Interpolate environment variables in configuration values.
 
     Supports ${VAR} and ${VAR:-default} syntax.
 
+    This is a homomorphic function that preserves the input type:
+    - str input -> str output (with env var interpolation)
+    - dict input -> dict output (recursively interpolate values)
+    - list input -> list output (recursively interpolate items)
+    - int/float/None input -> same output (unchanged)
+
     Args:
-        value: The value to interpolate (string, dict, or list).
+        value: The value to interpolate (string, dict, list, or primitive).
 
     Returns:
-        The interpolated value.
+        The interpolated value with the same type as input.
 
     """
     _msg = "_interpolate_env_vars starting"
     log.debug(_msg)
     if isinstance(value, str):
         pattern = r"\$\{([^}]+)\}"
-        str_result = re.sub(pattern, _replace_env_var, value)
+        str_result: str = re.sub(pattern, _replace_env_var, value)
         _msg = "_interpolate_env_vars returning"
         log.debug(_msg)
-        return str_result
+        return str_result  # type: ignore[return-value]
     if isinstance(value, dict):
         dict_result: dict[str, Any] = {
             k: _interpolate_env_vars(v) for k, v in value.items()
         }
         _msg = "_interpolate_env_vars returning"
         log.debug(_msg)
-        return dict_result
+        return dict_result  # type: ignore[return-value]
     if isinstance(value, list):
         list_result: list[Any] = [_interpolate_env_vars(item) for item in value]
         _msg = "_interpolate_env_vars returning"
         log.debug(_msg)
-        return list_result
+        return list_result  # type: ignore[return-value]
     _msg = "_interpolate_env_vars returning"
     log.debug(_msg)
     return value

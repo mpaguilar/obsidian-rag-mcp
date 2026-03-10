@@ -104,12 +104,6 @@ class TestChatProvider:
 class TestProviderFactory:
     """Test cases for ProviderFactory class."""
 
-    def test_create_openai_embedding_provider_no_api_key(self):
-        """Test creating OpenAI embedding provider without API key."""
-        # When API key is not provided, ValueError should be raised
-        with pytest.raises(ValueError, match="API key is required"):
-            ProviderFactory.create_embedding_provider("openai")
-
     def test_create_huggingface_embedding_provider(self):
         """Test creating HuggingFace embedding provider."""
         from obsidian_rag.llm.providers import HuggingFaceEmbeddingProvider
@@ -122,25 +116,36 @@ class TestProviderFactory:
                 "obsidian_rag.llm.providers.HuggingFaceEmbeddings",
                 mock_hf_class,
             ):
-                provider = ProviderFactory.create_embedding_provider("huggingface")
+                provider = ProviderFactory.create_embedding_provider(
+                    "huggingface",
+                    config={},
+                )
 
         assert isinstance(provider, HuggingFaceEmbeddingProvider)
 
+    def test_create_openai_embedding_provider_no_api_key(self):
+        """Test creating OpenAI embedding provider without API key raises error."""
+        from obsidian_rag.llm.providers import create_openai_embedding_provider
+
+        with pytest.raises(ValueError, match="API key is required"):
+            create_openai_embedding_provider()
+
     def test_create_unknown_embedding_provider(self):
-        """Test creating unknown embedding provider."""
+        """Test that ProviderFactory raises error for unknown provider."""
         with pytest.raises(ValueError, match="Unknown embedding provider"):
-            ProviderFactory.create_embedding_provider("unknown")  # type: ignore[call-overload]  # type: ignore[arg-type]
+            ProviderFactory.create_embedding_provider("unknown", config={})
 
     def test_create_unknown_chat_provider(self):
-        """Test creating unknown chat provider."""
+        """Test that ProviderFactory raises error for unknown provider."""
         with pytest.raises(ValueError, match="Unknown chat provider"):
-            ProviderFactory.create_chat_provider("unknown")  # type: ignore[call-overload]  # type: ignore[arg-type]
+            ProviderFactory.create_chat_provider("unknown", config={})
 
     def test_create_openai_chat_provider_no_api_key(self):
-        """Test creating OpenAI chat provider without API key."""
-        # When API key is not provided, ValueError should be raised
+        """Test creating OpenAI chat provider without API key raises error."""
+        from obsidian_rag.llm.providers import create_openai_chat_provider
+
         with pytest.raises(ValueError, match="API key is required"):
-            ProviderFactory.create_chat_provider("openai")
+            create_openai_chat_provider()
 
     def test_create_openrouter_embedding_provider(self):
         """Test creating OpenRouter embedding provider."""
@@ -150,19 +155,12 @@ class TestProviderFactory:
             with patch("litellm.embedding"):
                 provider = ProviderFactory.create_embedding_provider(
                     "openrouter",
-                    api_key="test-key",
+                    config={"api_key": "test-key"},
                 )
 
         assert isinstance(provider, OpenRouterEmbeddingProvider)
         assert provider.model == "qwen/qwen3-embedding-8b"
         assert provider.get_dimension() == 4096
-
-    def test_create_openrouter_embedding_provider_no_api_key(self):
-        """Test creating OpenRouter embedding provider without API key."""
-        # When API key is not provided, ValueError should be raised
-        with patch.dict("os.environ", {}, clear=True):
-            with pytest.raises(ValueError, match="API key is required"):
-                ProviderFactory.create_embedding_provider("openrouter")
 
     def test_create_openrouter_chat_provider(self):
         """Test creating OpenRouter chat provider."""
@@ -172,18 +170,11 @@ class TestProviderFactory:
             with patch("litellm.completion"):
                 provider = ProviderFactory.create_chat_provider(
                     "openrouter",
-                    api_key="test-key",
+                    config={"api_key": "test-key"},
                 )
 
         assert isinstance(provider, OpenRouterChatProvider)
         assert provider.model == "anthropic/claude-3-opus"
-
-    def test_create_openrouter_chat_provider_no_api_key(self):
-        """Test creating OpenRouter chat provider without API key."""
-        # When API key is not provided, ValueError should be raised
-        with patch.dict("os.environ", {}, clear=True):
-            with pytest.raises(ValueError, match="API key is required"):
-                ProviderFactory.create_chat_provider("openrouter")
 
     def test_create_openai_embedding_provider(self):
         """Test creating OpenAI embedding provider covers lines 119-122."""
@@ -197,7 +188,7 @@ class TestProviderFactory:
                 mock_provider_class.return_value = mock_provider
                 provider = ProviderFactory.create_embedding_provider(
                     "openai",
-                    api_key="test-key",
+                    config={"api_key": "test-key"},
                 )
 
         assert provider is mock_provider
@@ -214,7 +205,7 @@ class TestProviderFactory:
                 mock_provider_class.return_value = mock_provider
                 provider = ProviderFactory.create_chat_provider(
                     "openai",
-                    api_key="test-key",
+                    config={"api_key": "test-key"},
                 )
 
         assert provider is mock_provider

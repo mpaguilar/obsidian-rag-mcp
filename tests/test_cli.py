@@ -655,7 +655,10 @@ class TestGetEmbeddingProvider:
             result = _get_embedding_provider(mock_settings)
 
             assert result is mock_provider
-            mock_factory.create_embedding_provider.assert_called_once_with("openai")
+            mock_factory.create_embedding_provider.assert_called_once_with(
+                "openai",
+                config={},
+            )
 
     def test_get_embedding_provider_with_config(self):
         """Test _get_embedding_provider with existing config (lines 115-123)."""
@@ -678,9 +681,11 @@ class TestGetEmbeddingProvider:
             assert result is mock_provider
             mock_factory.create_embedding_provider.assert_called_once_with(
                 "openai",
-                api_key="test-api-key",
-                model="text-embedding-3-small",
-                base_url=None,
+                config={
+                    "api_key": "test-api-key",
+                    "model": "text-embedding-3-small",
+                    "base_url": None,
+                },
             )
 
 

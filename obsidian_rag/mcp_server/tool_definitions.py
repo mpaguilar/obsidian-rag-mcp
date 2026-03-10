@@ -327,9 +327,11 @@ def _create_openai_provider(config: EndpointConfig) -> EmbeddingProvider:
     """
     return ProviderFactory.create_embedding_provider(
         provider_name="openai",
-        api_key=config.api_key,
-        model=config.model,
-        base_url=config.base_url,
+        config={
+            "api_key": config.api_key,
+            "model": config.model,
+            "base_url": config.base_url,
+        },
     )
 
 
@@ -345,9 +347,11 @@ def _create_openrouter_provider(config: EndpointConfig) -> EmbeddingProvider:
     """
     return ProviderFactory.create_embedding_provider(
         provider_name="openrouter",
-        api_key=config.api_key,
-        model=config.model,
-        base_url=config.base_url,
+        config={
+            "api_key": config.api_key,
+            "model": config.model,
+            "base_url": config.base_url,
+        },
     )
 
 
@@ -363,7 +367,7 @@ def _create_huggingface_provider(config: EndpointConfig) -> EmbeddingProvider:
     """
     return ProviderFactory.create_embedding_provider(
         provider_name="huggingface",
-        model=config.model,
+        config={"model": config.model},
     )
 
 

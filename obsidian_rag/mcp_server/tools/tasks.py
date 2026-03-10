@@ -5,7 +5,7 @@ All tools in this module are read-only and only use SELECT queries.
 
 import logging
 from datetime import date, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_
 
@@ -211,7 +211,7 @@ def get_tasks_by_tag(
     dialect = session.bind.dialect.name if session.bind else "unknown"
     is_postgresql = dialect == "postgresql"
 
-    if is_postgresql:  # pragma: no cover (PostgreSQL-only)
+    if is_postgresql:
         # PostgreSQL: Use array_to_string for array filtering
         query = (
             session.query(Task, Document)
@@ -233,7 +233,7 @@ def get_tasks_by_tag(
         total_count = query.count()
 
         # Get paginated results
-        results = query.offset(offset).limit(limit).all()
+        results: list[Any] = query.offset(offset).limit(limit).all()
     else:
         # SQLite: Filter in Python due to lack of array support
         query = (

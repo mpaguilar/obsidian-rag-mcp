@@ -105,6 +105,51 @@ class TestInterpolateEnvVars:
         result = _interpolate_env_vars("prefix-${UNKNOWN_VAR}-suffix")
         assert result == "prefix-${UNKNOWN_VAR}-suffix"
 
+    def test_interpolate_int_unchanged(self):
+        """Test that int values are returned unchanged."""
+        result = _interpolate_env_vars(42)
+        assert result == 42
+        assert isinstance(result, int)
+
+    def test_interpolate_float_unchanged(self):
+        """Test that float values are returned unchanged."""
+        result = _interpolate_env_vars(3.14)
+        assert result == 3.14
+        assert isinstance(result, float)
+
+    def test_interpolate_none_unchanged(self):
+        """Test that None values are returned unchanged."""
+        result = _interpolate_env_vars(None)
+        assert result is None
+
+    def test_nested_interpolation_dict_in_list(self, monkeypatch):
+        """Test interpolation in nested structures."""
+        monkeypatch.setenv("NESTED_VAR", "nested_value")
+        value = [
+            {"key": "${NESTED_VAR}"},
+            "static",
+            ["${NESTED_VAR}"],
+        ]
+        result = _interpolate_env_vars(value)
+        assert result == [
+            {"key": "nested_value"},
+            "static",
+            ["nested_value"],
+        ]
+
+    def test_nested_interpolation_list_in_dict(self, monkeypatch):
+        """Test interpolation with lists nested in dicts."""
+        monkeypatch.setenv("LIST_VAR", "list_item")
+        value = {
+            "items": ["${LIST_VAR}", "static"],
+            "config": {"nested": "${LIST_VAR}"},
+        }
+        result = _interpolate_env_vars(value)
+        assert result == {
+            "items": ["list_item", "static"],
+            "config": {"nested": "list_item"},
+        }
+
 
 class TestDeepMerge:
     """Test cases for _deep_merge function."""

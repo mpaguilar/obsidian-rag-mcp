@@ -148,6 +148,38 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 015.dumb-overloads (Completed 2025-03-10)
+
+**Objective:** Remove `@overload` decorators and replace with simpler, more maintainable type patterns while maintaining 100% test coverage.
+
+**Changes Made:**
+- **config.py**: Replaced 5 `@overload` signatures with homomorphic `TypeVar` pattern for `_interpolate_env_vars()`
+- **providers.py**: Replaced `ProviderFactory` overloaded methods with individual factory functions:
+  - `create_openai_embedding_provider()`
+  - `create_huggingface_embedding_provider()`
+  - `create_openrouter_embedding_provider()`
+  - `create_openai_chat_provider()`
+  - `create_openrouter_chat_provider()`
+- Updated all call sites in `cli.py` and `mcp_server/tool_definitions.py` to use new `config={}` parameter pattern
+- Added `base.pyi` stub file for abstract class type annotations
+- Fixed PIE790 warnings in abstract methods by replacing bare `# pragma: no cover` with `pass  # noqa: PIE790  # pragma: no cover`
+- Fixed mypy type checking issues in `mcp_server/tools/tasks.py` for cross-database dialect result handling
+- Verified all PostgreSQL-specific code paths remain at 100% coverage
+
+**Key Design Decision:**
+Used homomorphic TypeVar for config interpolation and individual factory functions for providers instead of `@overload` chains. This provides:
+- Simpler code without complex overload signatures
+- Better type inference with homomorphic functions
+- Easier maintenance and testing
+- Cleaner separation between type hints and runtime code
+
+**Verification:**
+- All 876 tests pass (1 skipped)
+- 100% code coverage (2996 statements, 538 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All files under 1000 lines
+
 ### 013.mcp-features (Completed 2025-03-09)
 
 **Objective:** Remove the `kind` column from documents table and store it as a regular frontmatter property in `frontmatter_json`.
