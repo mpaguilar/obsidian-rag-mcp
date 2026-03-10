@@ -151,6 +151,31 @@ def get_tasks_due_this_week(
     )
 
 
+def _task_has_tag(task: Task, doc: Document, search_tag: str) -> bool:
+    """Check if task or document has a matching tag (case-insensitive substring).
+
+    Args:
+        task: Task to check.
+        doc: Document to check.
+        search_tag: Tag to search for (lowercase).
+
+    Returns:
+        True if task or document has a matching tag.
+
+    """
+    # Check task tags
+    if task.tags is not None:
+        if any(search_tag in t.lower() for t in task.tags):
+            return True
+
+    # Check document tags
+    if doc.tags is not None:
+        if any(search_tag in t.lower() for t in doc.tags):
+            return True
+
+    return False
+
+
 def get_tasks_by_tag(
     session: "Session",
     tag: str,
@@ -168,6 +193,10 @@ def get_tasks_by_tag(
     Returns:
         TaskListResponse with results and pagination info.
 
+    Notes:
+        For PostgreSQL: Uses array_to_string for array filtering.
+        For SQLite: Filters in Python due to lack of array support.
+
     """
     _msg = f"get_tasks_by_tag starting with tag: {tag}"
     log.debug(_msg)
@@ -178,24 +207,51 @@ def get_tasks_by_tag(
     # Normalize tag for case-insensitive search
     search_tag = tag.lower()
 
-    # Build query that checks both task tags and document tags
-    query = (
-        session.query(Task, Document)
-        .join(Document, Task.document_id == Document.id)
-        .filter(
-            or_(
-                func.lower(Task.tags).contains(search_tag),
-                func.lower(Document.tags).contains(search_tag),
-            ),
+    # Check database dialect
+    dialect = session.bind.dialect.name if session.bind else "unknown"
+    is_postgresql = dialect == "postgresql"
+
+    if is_postgresql:  # pragma: no cover (PostgreSQL-only)
+        # PostgreSQL: Use array_to_string for array filtering
+        query = (
+            session.query(Task, Document)
+            .join(Document, Task.document_id == Document.id)
+            .filter(
+                or_(
+                    func.lower(func.array_to_string(Task.tags, ",")).contains(
+                        search_tag,
+                    ),
+                    func.lower(func.array_to_string(Document.tags, ",")).contains(
+                        search_tag,
+                    ),
+                ),
+            )
+            .order_by(Task.due.asc())
         )
-        .order_by(Task.due.asc())
-    )
 
-    # Get total count
-    total_count = query.count()
+        # Get total count
+        total_count = query.count()
 
-    # Get paginated results
-    results = query.offset(offset).limit(limit).all()
+        # Get paginated results
+        results = query.offset(offset).limit(limit).all()
+    else:
+        # SQLite: Filter in Python due to lack of array support
+        query = (
+            session.query(Task, Document)
+            .join(Document, Task.document_id == Document.id)
+            .order_by(Task.due.asc())
+        )
+
+        # Get all results and filter in Python
+        all_results = query.all()
+        filtered_results = [
+            (task, doc)
+            for task, doc in all_results
+            if _task_has_tag(task, doc, search_tag)
+        ]
+
+        total_count = len(filtered_results)
+        results = filtered_results[offset : offset + limit]
 
     # Convert to response models
     task_responses = [create_task_response(task, doc) for task, doc in results]

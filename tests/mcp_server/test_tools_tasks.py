@@ -16,6 +16,7 @@ from obsidian_rag.database.models import (
     Vault,
 )
 from obsidian_rag.mcp_server.tools.tasks import (
+    _task_has_tag,
     get_completed_tasks,
     get_incomplete_tasks,
     get_tasks_by_tag,
@@ -384,6 +385,111 @@ class TestGetTasksByTag:
         result = get_tasks_by_tag(db_session, tag="test")
 
         assert result.total_count == 1
+
+
+class TestTaskHasTag:
+    """Tests for _task_has_tag helper function."""
+
+    def test_task_tags_match(self, sample_document):
+        """Test when task tags match."""
+        task = Task(
+            id=uuid.uuid4(),
+            document_id=sample_document.id,
+            line_number=1,
+            raw_text="- [ ] Test",
+            status=TaskStatus.NOT_COMPLETED.value,
+            description="Test",
+            tags=["project"],
+        )
+
+        result = _task_has_tag(task, sample_document, "project")
+        assert result is True
+
+    def test_document_tags_match_when_task_no_match(self, sample_document):
+        """Test when document tags match but task tags don't."""
+        task = Task(
+            id=uuid.uuid4(),
+            document_id=sample_document.id,
+            line_number=1,
+            raw_text="- [ ] Test",
+            status=TaskStatus.NOT_COMPLETED.value,
+            description="Test",
+            tags=["other"],
+        )
+
+        result = _task_has_tag(task, sample_document, "test")
+        assert result is True
+
+    def test_no_match(self, sample_document):
+        """Test when neither task nor document tags match."""
+        task = Task(
+            id=uuid.uuid4(),
+            document_id=sample_document.id,
+            line_number=1,
+            raw_text="- [ ] Test",
+            status=TaskStatus.NOT_COMPLETED.value,
+            description="Test",
+            tags=["other"],
+        )
+
+        result = _task_has_tag(task, sample_document, "nonexistent")
+        assert result is False
+
+    def test_task_tags_none(self, sample_document):
+        """Test when task tags is None."""
+        task = Task(
+            id=uuid.uuid4(),
+            document_id=sample_document.id,
+            line_number=1,
+            raw_text="- [ ] Test",
+            status=TaskStatus.NOT_COMPLETED.value,
+            description="Test",
+            tags=None,
+        )
+
+        result = _task_has_tag(task, sample_document, "test")
+        assert result is True
+
+    def test_both_tags_none(self, db_session):
+        """Test when both task and document tags are None."""
+        from datetime import datetime
+
+        vault = Vault(
+            id=uuid.uuid4(),
+            name="test_vault",
+            container_path="/test",
+            host_path="/test",
+        )
+        db_session.add(vault)
+        db_session.commit()
+
+        doc = Document(
+            id=uuid.uuid4(),
+            vault_id=vault.id,
+            file_path="/test/doc.md",
+            file_name="doc.md",
+            content="# Test",
+            checksum_md5="abc123",
+            created_at_fs=datetime.now(),
+            modified_at_fs=datetime.now(),
+            frontmatter_json={},
+            tags=None,
+        )
+        db_session.add(doc)
+        db_session.commit()
+
+        task = Task(
+            id=uuid.uuid4(),
+            document_id=doc.id,
+            line_number=1,
+            raw_text="- [ ] Test",
+            status=TaskStatus.NOT_COMPLETED.value,
+            description="Test",
+            tags=None,
+        )
+
+        result = _task_has_tag(task, doc, "test")
+        assert result is False
 
 
 class TestGetCompletedTasks:
