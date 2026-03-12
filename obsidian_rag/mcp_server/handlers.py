@@ -2,7 +2,6 @@
 
 import logging
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 from typing import Literal, TypedDict, cast
 
@@ -16,21 +15,10 @@ from obsidian_rag.mcp_server.tools.documents import (
 from obsidian_rag.mcp_server.tools.documents import (
     get_documents_by_tag as get_documents_by_tag_tool,
 )
-from obsidian_rag.mcp_server.tools.tasks import (
-    get_completed_tasks as get_completed_tasks_tool,
-)
-from obsidian_rag.mcp_server.tools.tasks import (
-    get_incomplete_tasks as get_incomplete_tasks_tool,
-)
-from obsidian_rag.mcp_server.tools.tasks import (
-    get_tasks_by_tag as get_tasks_by_tag_tool,
-)
-from obsidian_rag.mcp_server.tools.tasks import (
-    get_tasks_due_this_week as get_tasks_due_this_week_tool,
-)
-from obsidian_rag.mcp_server.tools.vaults import (
-    list_vaults as list_vaults_tool,
-)
+from obsidian_rag.mcp_server.tools.tasks import get_tasks as get_tasks_tool
+from obsidian_rag.mcp_server.tools.tasks_dates import parse_iso_date
+from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
+from obsidian_rag.mcp_server.tools.vaults import list_vaults as list_vaults_tool
 from obsidian_rag.services.ingestion import IngestionService, IngestVaultOptions
 
 log = logging.getLogger(__name__)
@@ -49,12 +37,23 @@ class DocumentTagParams(TypedDict, total=False):
 
 @dataclass
 class QueryFilterParams:
-    """Parameters for query_documents filter configuration."""
+    """Parameters for query_documents filter configuration.
+
+    Attributes:
+        include_properties: List of property filters to include.
+        exclude_properties: List of property filters to exclude.
+        include_tags: List of tags documents must have.
+        exclude_tags: List of tags documents must NOT have.
+        match_mode: Whether documents must have ALL or ANY of the include_tags.
+            Use "all" for AND logic (default), "any" for OR logic.
+
+    """
 
     include_properties: list[dict] | None
     exclude_properties: list[dict] | None
     include_tags: list[str] | None
     exclude_tags: list[str] | None
+    match_mode: Literal["all", "any"] = "all"
 
 
 @dataclass
@@ -67,100 +66,6 @@ class IngestHandlerParams:
     vault_name: str
     path_override: str | None
     no_delete: bool = False
-
-
-def _get_incomplete_tasks_handler(
-    db_manager: DatabaseManager,
-    limit: int,
-    offset: int,
-    *,
-    include_cancelled: bool,
-) -> dict[str, object]:
-    """Handle get_incomplete_tasks tool call."""
-    _msg = "_get_incomplete_tasks_handler starting"
-    log.debug(_msg)
-    with db_manager.get_session() as session:
-        result = get_incomplete_tasks_tool(
-            session=session,
-            limit=limit,
-            offset=offset,
-            include_cancelled=include_cancelled,
-        )
-        _msg = "_get_incomplete_tasks_handler returning"
-        log.debug(_msg)
-        return result.model_dump()
-
-
-def _get_tasks_due_this_week_handler(
-    db_manager: DatabaseManager,
-    limit: int,
-    offset: int,
-    *,
-    include_completed: bool,
-) -> dict[str, object]:
-    """Handle get_tasks_due_this_week tool call."""
-    _msg = "_get_tasks_due_this_week_handler starting"
-    log.debug(_msg)
-    with db_manager.get_session() as session:
-        result = get_tasks_due_this_week_tool(
-            session=session,
-            limit=limit,
-            offset=offset,
-            include_completed=include_completed,
-        )
-        _msg = "_get_tasks_due_this_week_handler returning"
-        log.debug(_msg)
-        return result.model_dump()
-
-
-def _get_tasks_by_tag_handler(
-    db_manager: DatabaseManager,
-    tag: str,
-    limit: int,
-    offset: int,
-) -> dict[str, object]:
-    """Handle get_tasks_by_tag tool call."""
-    _msg = "_get_tasks_by_tag_handler starting"
-    log.debug(_msg)
-    with db_manager.get_session() as session:
-        result = get_tasks_by_tag_tool(
-            session=session,
-            tag=tag,
-            limit=limit,
-            offset=offset,
-        )
-        _msg = "_get_tasks_by_tag_handler returning"
-        log.debug(_msg)
-        return result.model_dump()
-
-
-def _get_completed_tasks_handler(
-    db_manager: DatabaseManager,
-    limit: int,
-    offset: int,
-    completed_since: str | None,
-) -> dict[str, object]:
-    """Handle get_completed_tasks tool call."""
-    _msg = "_get_completed_tasks_handler starting"
-    log.debug(_msg)
-    since_date = None
-    if completed_since:
-        try:
-            since_date = date.fromisoformat(completed_since)
-        except ValueError:
-            _msg = f"Invalid date format: {completed_since}"
-            log.warning(_msg)
-
-    with db_manager.get_session() as session:
-        result = get_completed_tasks_tool(
-            session=session,
-            limit=limit,
-            offset=offset,
-            completed_since=since_date,
-        )
-        _msg = "_get_completed_tasks_handler returning"
-        log.debug(_msg)
-        return result.model_dump()
 
 
 def _get_documents_by_tag_handler(
@@ -267,16 +172,13 @@ def _convert_property_filters(
 
 
 def _create_tag_filter(
-    include_tags: list[str] | None,
-    exclude_tags: list[str] | None,
-    match_mode: str,
+    filters: QueryFilterParams | None,
 ) -> TagFilter | None:
-    """Build TagFilter from parameters.
+    """Build TagFilter from QueryFilterParams.
 
     Args:
-        include_tags: List of tags documents must have.
-        exclude_tags: List of tags documents must NOT have.
-        match_mode: Whether to match "all" or "any" of include_tags.
+        filters: Query filter parameters containing include_tags, exclude_tags,
+            and match_mode.
 
     Returns:
         TagFilter or None if no tags specified.
@@ -284,12 +186,22 @@ def _create_tag_filter(
     """
     _msg = "_create_tag_filter starting"
     log.debug(_msg)
+    if filters is None:
+        _msg = "_create_tag_filter returning"
+        log.debug(_msg)
+        return None
+
+    include_tags = filters.include_tags
+    exclude_tags = filters.exclude_tags
+
     if not include_tags and not exclude_tags:
         _msg = "_create_tag_filter returning"
         log.debug(_msg)
         return None
 
-    valid_match_mode = match_mode if match_mode in ("all", "any") else "all"
+    valid_match_mode = (
+        filters.match_mode if filters.match_mode in ("all", "any") else "all"
+    )
     result = TagFilter(
         include_tags=include_tags or [],
         exclude_tags=exclude_tags or [],
@@ -376,3 +288,96 @@ def _ingest_handler(params: IngestHandlerParams) -> dict[str, object]:
     log.info(_msg)
 
     return result.to_dict()
+
+
+@dataclass
+class TaskDateFilterStrings:
+    """Date filter string parameters for get_tasks handler.
+
+    Attributes:
+        due_after: ISO date string for due date lower bound.
+        due_before: ISO date string for due date upper bound.
+        scheduled_after: ISO date string for scheduled date lower bound.
+        scheduled_before: ISO date string for scheduled date upper bound.
+        completion_after: ISO date string for completion date lower bound.
+        completion_before: ISO date string for completion date upper bound.
+
+    """
+
+    due_after: str | None = None
+    due_before: str | None = None
+    scheduled_after: str | None = None
+    scheduled_before: str | None = None
+    completion_after: str | None = None
+    completion_before: str | None = None
+
+
+def _get_tasks_handler(  # noqa: PLR0913
+    db_manager: DatabaseManager,
+    status: list[str] | None = None,
+    date_filters: TaskDateFilterStrings | None = None,
+    tags: list[str] | None = None,
+    priority: list[str] | None = None,
+    *,
+    include_completed: bool = True,
+    include_cancelled: bool = False,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, object]:
+    """Handle get_tasks tool call with comprehensive filtering.
+
+    Args:
+        db_manager: Database manager for session management.
+        status: List of statuses to filter by.
+        date_filters: Date filter parameters with ISO date strings.
+        tags: List of tags to filter by.
+        priority: List of priorities to filter by.
+        include_completed: Whether to include completed tasks.
+        include_cancelled: Whether to include cancelled tasks.
+        limit: Maximum number of results.
+        offset: Number of results to skip.
+
+    Returns:
+        Dictionary with task list response.
+
+    Notes:
+        Parses ISO date strings and builds GetTasksFilterParams.
+        Invalid date strings are logged and treated as None.
+
+    """
+    _msg = "_get_tasks_handler starting"
+    log.debug(_msg)
+
+    # Use default date filters if none provided
+    date_filters = date_filters or TaskDateFilterStrings()
+
+    # Parse all date parameters
+    due_after_date = parse_iso_date(date_filters.due_after)
+    due_before_date = parse_iso_date(date_filters.due_before)
+    scheduled_after_date = parse_iso_date(date_filters.scheduled_after)
+    scheduled_before_date = parse_iso_date(date_filters.scheduled_before)
+    completion_after_date = parse_iso_date(date_filters.completion_after)
+    completion_before_date = parse_iso_date(date_filters.completion_before)
+
+    # Build filter parameters
+    filters = GetTasksFilterParams(
+        status=status,
+        due_after=due_after_date,
+        due_before=due_before_date,
+        scheduled_after=scheduled_after_date,
+        scheduled_before=scheduled_before_date,
+        completion_after=completion_after_date,
+        completion_before=completion_before_date,
+        tags=tags,
+        priority=priority,
+        include_completed=include_completed,
+        include_cancelled=include_cancelled,
+        limit=limit,
+        offset=offset,
+    )
+
+    with db_manager.get_session() as session:
+        result = get_tasks_tool(session=session, filters=filters)
+        _msg = "_get_tasks_handler returning"
+        log.debug(_msg)
+        return result.model_dump()

@@ -4,7 +4,7 @@ All tools in this module are read-only and only use SELECT queries.
 """
 
 import logging
-from datetime import date, timedelta
+from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_
@@ -16,139 +16,153 @@ from obsidian_rag.mcp_server.models import (
     _validate_offset,
     create_task_response,
 )
+from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+    from sqlalchemy.orm import Query, Session
 
 log = logging.getLogger(__name__)
 
 
-def get_incomplete_tasks(
-    session: "Session",
-    limit: int = 20,
-    offset: int = 0,
-    *,
-    include_cancelled: bool = False,
-) -> TaskListResponse:
-    """Query tasks that are not completed.
+def _apply_status_filter(query: "Query[Any]", status: list[str] | None):
+    """Apply status filter to query.
 
     Args:
-        session: Database session.
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
-        include_cancelled: Whether to include cancelled tasks.
+        query: The base query to filter.
+        status: List of statuses to filter by.
 
     Returns:
-        TaskListResponse with results and pagination info.
+        Query with status filter applied.
 
     """
-    _msg = "get_incomplete_tasks starting"
-    log.debug(_msg)
-
-    limit = _validate_limit(limit)
-    offset = _validate_offset(offset)
-
-    # Build query for incomplete tasks
-    statuses = [TaskStatus.NOT_COMPLETED.value, TaskStatus.IN_PROGRESS.value]
-    if include_cancelled:
-        statuses.append(TaskStatus.CANCELLED.value)
-
-    query = (
-        session.query(Task, Document)
-        .join(Document, Task.document_id == Document.id)
-        .filter(Task.status.in_(statuses))
-        .order_by(Task.due.asc())
-    )
-
-    # Get total count
-    total_count = query.count()
-
-    # Get paginated results
-    results = query.offset(offset).limit(limit).all()
-
-    # Convert to response models
-    task_responses = [create_task_response(task, doc) for task, doc in results]
-
-    # Calculate pagination
-    has_more = (offset + limit) < total_count
-    next_offset = offset + limit if has_more else None
-
-    _msg = "get_incomplete_tasks returning"
-    log.debug(_msg)
-
-    return TaskListResponse(
-        results=task_responses,
-        total_count=total_count,
-        has_more=has_more,
-        next_offset=next_offset,
-    )
+    if status:
+        return query.filter(Task.status.in_(status))
+    return query
 
 
-def get_tasks_due_this_week(
-    session: "Session",
-    limit: int = 20,
-    offset: int = 0,
-    *,
-    include_completed: bool = True,
-) -> TaskListResponse:
-    """Query tasks due within the next 7 days.
+def _apply_due_date_filters(
+    query: "Query[Any]",
+    due_before: date | None,
+    due_after: date | None,
+):
+    """Apply due date filters to query.
 
     Args:
-        session: Database session.
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
-        include_completed: Whether to include completed tasks.
+        query: The base query to filter.
+        due_before: Filter tasks due on or before this date.
+        due_after: Filter tasks due on or after this date.
 
     Returns:
-        TaskListResponse with results and pagination info.
+        Query with due date filters applied.
 
     """
-    _msg = "get_tasks_due_this_week starting"
-    log.debug(_msg)
+    if due_before is not None:
+        query = query.filter(Task.due <= due_before)
+    if due_after is not None:
+        query = query.filter(Task.due >= due_after)
+    return query
 
-    limit = _validate_limit(limit)
-    offset = _validate_offset(offset)
 
-    # Calculate date range (today to 7 days from now)
-    today = date.today()
-    week_from_now = today + timedelta(days=7)
+def _apply_scheduled_date_filters(
+    query: "Query[Any]",
+    scheduled_before: date | None,
+    scheduled_after: date | None,
+):
+    """Apply scheduled date filters to query.
 
-    # Build query
-    query = (
-        session.query(Task, Document)
-        .join(Document, Task.document_id == Document.id)
-        .filter(Task.due.isnot(None))
-        .filter(Task.due >= today)
-        .filter(Task.due <= week_from_now)
-    )
+    Args:
+        query: The base query to filter.
+        scheduled_before: Filter tasks scheduled on or before this date.
+        scheduled_after: Filter tasks scheduled on or after this date.
 
-    if not include_completed:
-        query = query.filter(Task.status != TaskStatus.COMPLETED.value)
+    Returns:
+        Query with scheduled date filters applied.
 
-    query = query.order_by(Task.due.asc())
+    """
+    if scheduled_before is not None:
+        query = query.filter(Task.scheduled <= scheduled_before)
+    if scheduled_after is not None:
+        query = query.filter(Task.scheduled >= scheduled_after)
+    return query
 
-    # Get total count
-    total_count = query.count()
 
-    # Get paginated results
-    results = query.offset(offset).limit(limit).all()
+def _apply_completion_date_filters(
+    query: "Query[Any]",
+    completion_before: date | None,
+    completion_after: date | None,
+):
+    """Apply completion date filters to query.
 
-    # Convert to response models
-    task_responses = [create_task_response(task, doc) for task, doc in results]
+    Args:
+        query: The base query to filter.
+        completion_before: Filter tasks completed on or before this date.
+        completion_after: Filter tasks completed on or after this date.
 
-    # Calculate pagination
-    has_more = (offset + limit) < total_count
-    next_offset = offset + limit if has_more else None
+    Returns:
+        Query with completion date filters applied.
 
-    _msg = "get_tasks_due_this_week returning"
-    log.debug(_msg)
+    """
+    if completion_before is not None:
+        query = query.filter(Task.completion <= completion_before)
+    if completion_after is not None:
+        query = query.filter(Task.completion >= completion_after)
+    return query
 
-    return TaskListResponse(
-        results=task_responses,
-        total_count=total_count,
-        has_more=has_more,
-        next_offset=next_offset,
-    )
+
+def _apply_tag_filters(
+    query: "Query[Any]",
+    tags: list[str] | None,
+    *,
+    is_postgresql: bool = True,
+):
+    """Apply tag filters to query.
+
+    Args:
+        query: The base query to filter.
+        tags: List of tags that tasks must have.
+        is_postgresql: Whether the database is PostgreSQL (uses array functions).
+            If False (SQLite), tag filtering is skipped here and done in Python.
+
+    Returns:
+        Query with tag filters applied (for PostgreSQL) or unchanged (for SQLite).
+
+    """
+    if not tags:
+        return query
+
+    if not is_postgresql:
+        # For SQLite, skip SQL-level tag filtering
+        # Tags will be filtered in Python after fetching results
+        return query
+
+    # For PostgreSQL, use array_to_string for proper array filtering
+    for tag in tags:
+        tag_lower = tag.lower()
+        query = query.filter(
+            or_(
+                func.lower(func.array_to_string(Task.tags, ",")).contains(tag_lower),
+                func.lower(func.array_to_string(Document.tags, ",")).contains(
+                    tag_lower
+                ),
+            ),
+        )
+    return query
+
+
+def _tags_contain_substring(tags: list[str] | None, substring: str) -> bool:
+    """Check if any tag contains the substring (case-insensitive).
+
+    Args:
+        tags: List of tags to check.
+        substring: Substring to search for (already lowercased).
+
+    Returns:
+        True if any tag contains the substring.
+
+    """
+    if not tags:
+        return False
+    return any(substring in t.lower() for t in tags)
 
 
 def _task_has_tag(task: Task, doc: Document, search_tag: str) -> bool:
@@ -157,163 +171,156 @@ def _task_has_tag(task: Task, doc: Document, search_tag: str) -> bool:
     Args:
         task: Task to check.
         doc: Document to check.
-        search_tag: Tag to search for (lowercase).
+        search_tag: Tag to search for.
 
     Returns:
         True if task or document has a matching tag.
 
     """
-    # Check task tags
-    if task.tags is not None:
-        if any(search_tag in t.lower() for t in task.tags):
-            return True
-
-    # Check document tags
-    if doc.tags is not None:
-        if any(search_tag in t.lower() for t in doc.tags):
-            return True
-
-    return False
+    tag_lower = search_tag.lower()
+    return _tags_contain_substring(task.tags, tag_lower) or _tags_contain_substring(
+        doc.tags, tag_lower
+    )
 
 
-def get_tasks_by_tag(
+def _filter_by_tags_python(
+    results: list[tuple[Task, Document]],
+    tags: list[str],
+) -> list[tuple[Task, Document]]:
+    """Filter results by tags in Python (for SQLite).
+
+    Args:
+        results: List of (task, document) tuples from query.
+        tags: List of tags that tasks must have (AND logic).
+
+    Returns:
+        Filtered list of results where task/document has all tags.
+
+    """
+    filtered = []
+    for task, doc in results:
+        # Task must have ALL tags (AND logic)
+        if all(_task_has_tag(task, doc, tag) for tag in tags):
+            filtered.append((task, doc))
+    return filtered
+
+
+def _apply_priority_filter(query: "Query[Any]", priority: list[str] | None):
+    """Apply priority filter to query.
+
+    Args:
+        query: The base query to filter.
+        priority: List of priorities to filter by.
+
+    Returns:
+        Query with priority filter applied.
+
+    """
+    if priority:
+        return query.filter(Task.priority.in_(priority))
+    return query
+
+
+def _apply_status_exclusion_filters(
+    query: "Query[Any]",
+    *,
+    include_completed: bool,
+    include_cancelled: bool,
+):
+    """Apply status exclusion filters to query.
+
+    Args:
+        query: The base query to filter.
+        include_completed: Whether to include completed tasks.
+        include_cancelled: Whether to include cancelled tasks.
+
+    Returns:
+        Query with status exclusion filters applied.
+
+    """
+    if not include_completed:
+        query = query.filter(Task.status != TaskStatus.COMPLETED.value)
+    if not include_cancelled:
+        query = query.filter(Task.status != TaskStatus.CANCELLED.value)
+    return query
+
+
+def get_tasks(
     session: "Session",
-    tag: str,
-    limit: int = 20,
-    offset: int = 0,
+    filters: GetTasksFilterParams | None = None,
 ) -> TaskListResponse:
-    """Query tasks by tag (matches task or document level).
+    """Query tasks with comprehensive filtering.
+
+    This is a generic task query tool that supports filtering by status,
+    date ranges, tags, and priority. All filters are optional and combined
+    with AND logic.
 
     Args:
         session: Database session.
-        tag: Tag to search for (case-insensitive).
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
+        filters: Filter parameters including status, date ranges, tags,
+            priority, and pagination options. If None, returns all tasks.
 
     Returns:
         TaskListResponse with results and pagination info.
 
     Notes:
-        For PostgreSQL: Uses array_to_string for array filtering.
-        For SQLite: Filters in Python due to lack of array support.
+        Date comparisons are inclusive (>= for after, <= for before).
+        Tasks without dates are excluded from date filter comparisons.
+        Multiple status filters use OR logic (task matches any status).
+        Multiple tag filters use AND logic (task must have all tags).
+        Multiple priority filters use OR logic (task matches any priority).
 
     """
-    _msg = f"get_tasks_by_tag starting with tag: {tag}"
+    _msg = "get_tasks starting"
     log.debug(_msg)
 
-    limit = _validate_limit(limit)
-    offset = _validate_offset(offset)
+    # Use default filters if none provided
+    filters = filters or GetTasksFilterParams()
 
-    # Normalize tag for case-insensitive search
-    search_tag = tag.lower()
+    # Validate pagination
+    limit = _validate_limit(filters.limit)
+    offset = _validate_offset(filters.offset)
 
-    # Check database dialect
+    # Detect database dialect
     dialect = session.bind.dialect.name if session.bind else "unknown"
     is_postgresql = dialect == "postgresql"
 
-    if is_postgresql:
-        # PostgreSQL: Use array_to_string for array filtering
-        query = (
-            session.query(Task, Document)
-            .join(Document, Task.document_id == Document.id)
-            .filter(
-                or_(
-                    func.lower(func.array_to_string(Task.tags, ",")).contains(
-                        search_tag,
-                    ),
-                    func.lower(func.array_to_string(Document.tags, ",")).contains(
-                        search_tag,
-                    ),
-                ),
-            )
-            .order_by(Task.due.asc())
-        )
-
-        # Get total count
-        total_count = query.count()
-
-        # Get paginated results
-        results: list[Any] = query.offset(offset).limit(limit).all()
-    else:
-        # SQLite: Filter in Python due to lack of array support
-        query = (
-            session.query(Task, Document)
-            .join(Document, Task.document_id == Document.id)
-            .order_by(Task.due.asc())
-        )
-
-        # Get all results and filter in Python
-        all_results = query.all()
-        filtered_results = [
-            (task, doc)
-            for task, doc in all_results
-            if _task_has_tag(task, doc, search_tag)
-        ]
-
-        total_count = len(filtered_results)
-        results = filtered_results[offset : offset + limit]
-
-    # Convert to response models
-    task_responses = [create_task_response(task, doc) for task, doc in results]
-
-    # Calculate pagination
-    has_more = (offset + limit) < total_count
-    next_offset = offset + limit if has_more else None
-
-    _msg = "get_tasks_by_tag returning"
-    log.debug(_msg)
-
-    return TaskListResponse(
-        results=task_responses,
-        total_count=total_count,
-        has_more=has_more,
-        next_offset=next_offset,
+    # Build base query
+    query = session.query(Task, Document).join(
+        Document, Task.document_id == Document.id
     )
 
-
-def get_completed_tasks(
-    session: "Session",
-    limit: int = 20,
-    offset: int = 0,
-    completed_since: date | None = None,
-) -> TaskListResponse:
-    """Query completed tasks with optional date filter.
-
-    Args:
-        session: Database session.
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
-        completed_since: Filter tasks completed after this date.
-
-    Returns:
-        TaskListResponse with results and pagination info.
-
-    """
-    _msg = "get_completed_tasks starting"
-    log.debug(_msg)
-
-    limit = _validate_limit(limit)
-    offset = _validate_offset(offset)
-
-    # Build query for completed tasks
-    query = (
-        session.query(Task, Document)
-        .join(Document, Task.document_id == Document.id)
-        .filter(Task.status == TaskStatus.COMPLETED.value)
+    # Apply all filters
+    query = _apply_status_filter(query, filters.status)
+    query = _apply_due_date_filters(query, filters.due_before, filters.due_after)
+    query = _apply_scheduled_date_filters(
+        query, filters.scheduled_before, filters.scheduled_after
+    )
+    query = _apply_completion_date_filters(
+        query, filters.completion_before, filters.completion_after
+    )
+    query = _apply_tag_filters(query, filters.tags, is_postgresql=is_postgresql)
+    query = _apply_priority_filter(query, filters.priority)
+    query = _apply_status_exclusion_filters(
+        query,
+        include_completed=filters.include_completed,
+        include_cancelled=filters.include_cancelled,
     )
 
-    # Apply date filter if provided
-    if completed_since is not None:
-        query = query.filter(Task.completion >= completed_since)
+    # Order by priority and due date
+    query = query.order_by(Task.priority, Task.due)
 
-    query = query.order_by(Task.completion.desc())
-
-    # Get total count
+    # Get total count (before pagination)
     total_count = query.count()
 
     # Get paginated results
     results = query.offset(offset).limit(limit).all()
 
+    # For SQLite, apply tag filtering in Python if needed
+    if not is_postgresql and filters.tags:
+        results = _filter_by_tags_python(results, filters.tags)
+        total_count = len(results)
+
     # Convert to response models
     task_responses = [create_task_response(task, doc) for task, doc in results]
 
@@ -321,7 +328,7 @@ def get_completed_tasks(
     has_more = (offset + limit) < total_count
     next_offset = offset + limit if has_more else None
 
-    _msg = "get_completed_tasks returning"
+    _msg = "get_tasks returning"
     log.debug(_msg)
 
     return TaskListResponse(

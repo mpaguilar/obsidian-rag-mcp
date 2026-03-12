@@ -5,13 +5,18 @@ import logging
 import sys
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import date
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import click
 from sqlalchemy.orm import Session
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Query
+
+from obsidian_rag.cli_dates import parse_cli_date
 from obsidian_rag.config import Settings, get_settings
 from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.database.models import Document, Task
@@ -511,6 +516,28 @@ def query(ctx: click.Context, query_text: str, limit: int, output_format: str) -
             click.echo(_format_query_results_table(results))
 
 
+@dataclass
+class TaskDateFilters:
+    """Date filter parameters for tasks command.
+
+    Attributes:
+        due_before: Filter tasks due on or before this date.
+        due_after: Filter tasks due on or after this date.
+        scheduled_before: Filter tasks scheduled on or before this date.
+        scheduled_after: Filter tasks scheduled on or after this date.
+        completion_before: Filter tasks completed on or before this date.
+        completion_after: Filter tasks completed on or after this date.
+
+    """
+
+    due_before: date | None = None
+    due_after: date | None = None
+    scheduled_before: date | None = None
+    scheduled_after: date | None = None
+    completion_before: date | None = None
+    completion_after: date | None = None
+
+
 @cli.command()
 @click.option(
     "--status",
@@ -519,15 +546,45 @@ def query(ctx: click.Context, query_text: str, limit: int, output_format: str) -
 @click.option(
     "--due-before",
     type=str,
-    help="Filter tasks due before date (YYYY-MM-DD).",
+    help="Filter tasks due on or before date (YYYY-MM-DD).",
+)
+@click.option(
+    "--due-after",
+    type=str,
+    help="Filter tasks due on or after date (YYYY-MM-DD).",
+)
+@click.option(
+    "--scheduled-before",
+    type=str,
+    help="Filter tasks scheduled on or before date (YYYY-MM-DD).",
+)
+@click.option(
+    "--scheduled-after",
+    type=str,
+    help="Filter tasks scheduled on or after date (YYYY-MM-DD).",
+)
+@click.option(
+    "--completion-before",
+    type=str,
+    help="Filter tasks completed on or before date (YYYY-MM-DD).",
+)
+@click.option(
+    "--completion-after",
+    type=str,
+    help="Filter tasks completed on or after date (YYYY-MM-DD).",
 )
 @click.option("--tag", help="Filter by tag.")
 @click.option("--limit", default=20, help="Maximum number of results.")
 @click.pass_context
-def tasks(
+def tasks(  # noqa: PLR0913
     ctx: click.Context,
     status: str | None,
     due_before: str | None,
+    due_after: str | None,
+    scheduled_before: str | None,
+    scheduled_after: str | None,
+    completion_before: str | None,
+    completion_after: str | None,
     tag: str | None,
     limit: int,
 ) -> None:
@@ -538,8 +595,24 @@ def tasks(
     settings = ctx.obj["settings"]
     db_manager = DatabaseManager(settings.database.url)
 
+    # Parse all date options into a filters object
+    date_filters = TaskDateFilters(
+        due_before=parse_cli_date(due_before),
+        due_after=parse_cli_date(due_after),
+        scheduled_before=parse_cli_date(scheduled_before),
+        scheduled_after=parse_cli_date(scheduled_after),
+        completion_before=parse_cli_date(completion_before),
+        completion_after=parse_cli_date(completion_after),
+    )
+
     with db_manager.get_session() as session:
-        query = _build_tasks_query(session, status, due_before, tag, limit)
+        query = _build_tasks_query(
+            session=session,
+            status=status,
+            date_filters=date_filters,
+            tag=tag,
+            limit=limit,
+        )
         results = query.all()
 
         if not results:
@@ -549,10 +622,111 @@ def tasks(
         click.echo(_format_task_results(results))
 
 
+def _apply_status_filter_cli(query: "Query[Any]", status: str | None) -> "Query[Any]":
+    """Apply status filter to CLI tasks query.
+
+    Args:
+        query: The base query to filter.
+        status: Status to filter by.
+
+    Returns:
+        Query with status filter applied.
+
+    """
+    if status:
+        return query.filter(Task.status == status)
+    return query
+
+
+def _apply_due_date_filters_cli(
+    query: "Query[Any]",
+    due_before: date | None,
+    due_after: date | None,
+) -> "Query[Any]":
+    """Apply due date filters to CLI tasks query.
+
+    Args:
+        query: The base query to filter.
+        due_before: Filter tasks due on or before this date.
+        due_after: Filter tasks due on or after this date.
+
+    Returns:
+        Query with due date filters applied.
+
+    """
+    if due_before is not None:
+        query = query.filter(Task.due <= due_before)
+    if due_after is not None:
+        query = query.filter(Task.due >= due_after)
+    return query
+
+
+def _apply_scheduled_date_filters_cli(
+    query: "Query[Any]",
+    scheduled_before: date | None,
+    scheduled_after: date | None,
+) -> "Query[Any]":
+    """Apply scheduled date filters to CLI tasks query.
+
+    Args:
+        query: The base query to filter.
+        scheduled_before: Filter tasks scheduled on or before this date.
+        scheduled_after: Filter tasks scheduled on or after this date.
+
+    Returns:
+        Query with scheduled date filters applied.
+
+    """
+    if scheduled_before is not None:
+        query = query.filter(Task.scheduled <= scheduled_before)
+    if scheduled_after is not None:
+        query = query.filter(Task.scheduled >= scheduled_after)
+    return query
+
+
+def _apply_completion_date_filters_cli(
+    query: "Query[Any]",
+    completion_before: date | None,
+    completion_after: date | None,
+) -> "Query[Any]":
+    """Apply completion date filters to CLI tasks query.
+
+    Args:
+        query: The base query to filter.
+        completion_before: Filter tasks completed on or before this date.
+        completion_after: Filter tasks completed on or after this date.
+
+    Returns:
+        Query with completion date filters applied.
+
+    """
+    if completion_before is not None:
+        query = query.filter(Task.completion <= completion_before)
+    if completion_after is not None:
+        query = query.filter(Task.completion >= completion_after)
+    return query
+
+
+def _apply_tag_filter_cli(query: "Query[Any]", tag: str | None) -> "Query[Any]":
+    """Apply tag filter to CLI tasks query.
+
+    Args:
+        query: The base query to filter.
+        tag: Tag to filter by.
+
+    Returns:
+        Query with tag filter applied.
+
+    """
+    if tag:
+        return query.filter(Task.tags.contains([tag]))
+    return query
+
+
 def _build_tasks_query(
     session: Session,
     status: str | None,
-    due_before: str | None,
+    date_filters: TaskDateFilters,
     tag: str | None,
     limit: int,
 ):
@@ -561,7 +735,7 @@ def _build_tasks_query(
     Args:
         session: Database session for queries.
         status: Filter by task status (optional).
-        due_before: Filter by due date before this date (optional).
+        date_filters: Date filter parameters.
         tag: Filter by tag (optional).
         limit: Maximum number of results to return.
 
@@ -570,27 +744,26 @@ def _build_tasks_query(
 
     Notes:
         Performs database query with joins to documents table.
-        Date parsing uses strptime with YYYY-MM-DD format.
+        Multiple filters are combined with AND logic.
+        Date comparisons are inclusive (>= for after, <= for before).
 
     """
     _msg = "_build_tasks_query starting"
     log.debug(_msg)
     query = session.query(Task).join(Document)
 
-    if status:
-        query = query.filter(Task.status == status)
-
-    if due_before:
-        try:
-            parsed = datetime.strptime(due_before, "%Y-%m-%d").replace(tzinfo=UTC)
-            due_date = parsed.date()
-            query = query.filter(Task.due <= due_date)
-        except ValueError:
-            click.echo("Error: Invalid date format. Use YYYY-MM-DD.", err=True)
-            sys.exit(1)
-
-    if tag:
-        query = query.filter(Task.tags.contains([tag]))
+    # Apply all filters
+    query = _apply_status_filter_cli(query, status)
+    query = _apply_due_date_filters_cli(
+        query, date_filters.due_before, date_filters.due_after
+    )
+    query = _apply_scheduled_date_filters_cli(
+        query, date_filters.scheduled_before, date_filters.scheduled_after
+    )
+    query = _apply_completion_date_filters_cli(
+        query, date_filters.completion_before, date_filters.completion_after
+    )
+    query = _apply_tag_filter_cli(query, tag)
 
     query = query.order_by(Task.priority, Task.due)
     query = query.limit(limit)

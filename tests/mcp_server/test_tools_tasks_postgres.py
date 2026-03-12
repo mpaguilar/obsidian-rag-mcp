@@ -1,317 +1,461 @@
-"""Tests for tasks.py PostgreSQL-specific branch.
+"""Tests for MCP task tools PostgreSQL path.
 
-Tests for get_tasks_by_tag PostgreSQL path that uses array_to_string.
+This module tests PostgreSQL-specific code paths in tasks.py that are not
+covered by SQLite-based integration tests.
 """
 
-import uuid
-from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from obsidian_rag.database.models import TaskStatus, TaskPriority
+from obsidian_rag.mcp_server.models import TaskResponse
+from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
 
 
-def create_mock_session():
-    """Create a mock session with PostgreSQL dialect."""
-    mock_session = MagicMock()
-    mock_bind = MagicMock()
-    mock_bind.dialect.name = "postgresql"
-    mock_session.bind = mock_bind
-    return mock_session
+class TestGetTasksPostgresql:
+    """Tests for get_tasks with PostgreSQL dialect."""
 
+    def test_get_tasks_postgresql_with_tag_filter(self):
+        """Test get_tasks with PostgreSQL dialect and tag filtering."""
+        from obsidian_rag.mcp_server.tools.tasks import get_tasks
 
-def create_mock_task():
-    """Create a mock task for testing."""
-    mock_task = MagicMock()
-    mock_task.id = uuid.uuid4()
-    mock_task.description = "Test task"
-    mock_task.status = TaskStatus.NOT_COMPLETED.value
-    mock_task.priority = TaskPriority.NORMAL.value
-    mock_task.tags = ["work", "urgent"]
-    mock_task.due = date.today()
-    mock_task.scheduled = None
-    mock_task.repeat = None
-    mock_task.completion = None
-    mock_task.raw_text = "- [ ] Test task"
-    mock_task.line_number = 1
-    return mock_task
+        # Create a mock session with PostgreSQL dialect
+        mock_session = MagicMock()
+        mock_bind = MagicMock()
+        mock_bind.dialect.name = "postgresql"
+        mock_session.bind = mock_bind
 
+        # Mock the query chain - need to include join() in the chain
+        mock_query = MagicMock()
+        mock_query.join.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.count.return_value = 0
+        mock_query.offset.return_value.limit.return_value.all.return_value = []
 
-def create_mock_document():
-    """Create a mock document for testing."""
-    mock_doc = MagicMock()
-    mock_doc.id = uuid.uuid4()
-    mock_doc.file_path = "/test/doc.md"
-    mock_doc.file_name = "doc.md"
-    mock_doc.tags = ["work"]
-    return mock_doc
-
-
-class TestGetTasksByTagPostgresql:
-    """Tests for get_tasks_by_tag PostgreSQL branch (lines 212-227)."""
-
-    def test_get_tasks_by_tag_postgresql_branch(self):
-        """Test get_tasks_by_tag with PostgreSQL dialect (lines 212-227)."""
-        from obsidian_rag.mcp_server.tools.tasks import get_tasks_by_tag
-
-        mock_session = create_mock_session()
-        mock_task = create_mock_task()
-        mock_doc = create_mock_document()
-
-        # Create a proper mock that supports count() returning int
-        class MockQuery:
-            def __init__(self):
-                self._count = 1
-                self._results = [(mock_task, mock_doc)]
-
-            def join(self, *args, **kwargs):
-                return self
-
-            def filter(self, *args, **kwargs):
-                return self
-
-            def order_by(self, *args, **kwargs):
-                return self
-
-            def count(self):
-                return self._count
-
-            def offset(self, n):
-                return self
-
-            def limit(self, n):
-                return self
-
-            def all(self):
-                return self._results
-
-        mock_query = MockQuery()
         mock_session.query.return_value = mock_query
 
-        result = get_tasks_by_tag(mock_session, tag="work", limit=20, offset=0)
+        # Create filters with tags
+        filters = GetTasksFilterParams(
+            tags=["work", "urgent"],
+            limit=20,
+            offset=0,
+        )
 
-        assert result.total_count == 1
-        assert len(result.results) == 1
-        assert result.results[0].description == "Test task"
-
-    def test_get_tasks_by_tag_postgresql_multiple_results(self):
-        """Test get_tasks_by_tag PostgreSQL with multiple results."""
-        from obsidian_rag.mcp_server.tools.tasks import get_tasks_by_tag
-
-        mock_session = create_mock_session()
-
-        mock_task1 = create_mock_task()
-        mock_task1.description = "Task 1"
-
-        mock_task2 = create_mock_task()
-        mock_task2.description = "Task 2"
-
-        mock_doc = create_mock_document()
-
-        class MockQuery:
-            def __init__(self):
-                self._count = 2
-                self._results = [(mock_task1, mock_doc), (mock_task2, mock_doc)]
-
-            def join(self, *args, **kwargs):
-                return self
-
-            def filter(self, *args, **kwargs):
-                return self
-
-            def order_by(self, *args, **kwargs):
-                return self
-
-            def count(self):
-                return self._count
-
-            def offset(self, n):
-                return self
-
-            def limit(self, n):
-                return self
-
-            def all(self):
-                return self._results
-
-        mock_query = MockQuery()
-        mock_session.query.return_value = mock_query
-
-        result = get_tasks_by_tag(mock_session, tag="work", limit=20, offset=0)
-
-        assert result.total_count == 2
-        assert len(result.results) == 2
-
-    def test_get_tasks_by_tag_postgresql_empty_results(self):
-        """Test get_tasks_by_tag PostgreSQL with empty results."""
-        from obsidian_rag.mcp_server.tools.tasks import get_tasks_by_tag
-
-        mock_session = create_mock_session()
-
-        class MockQuery:
-            def __init__(self):
-                self._count = 0
-                self._results = []
-
-            def join(self, *args, **kwargs):
-                return self
-
-            def filter(self, *args, **kwargs):
-                return self
-
-            def order_by(self, *args, **kwargs):
-                return self
-
-            def count(self):
-                return self._count
-
-            def offset(self, n):
-                return self
-
-            def limit(self, n):
-                return self
-
-            def all(self):
-                return self._results
-
-        mock_query = MockQuery()
-        mock_session.query.return_value = mock_query
-
-        result = get_tasks_by_tag(mock_session, tag="nonexistent", limit=20, offset=0)
+        result = get_tasks(mock_session, filters)
 
         assert result.total_count == 0
         assert len(result.results) == 0
-        assert result.has_more is False
+        # Verify that filter was called
+        assert mock_query.filter.call_count >= 1
 
-    def test_get_tasks_by_tag_postgresql_pagination(self):
-        """Test get_tasks_by_tag PostgreSQL with pagination."""
-        from obsidian_rag.mcp_server.tools.tasks import get_tasks_by_tag
+    def test_get_tasks_postgresql_no_tags(self):
+        """Test get_tasks with PostgreSQL dialect but no tag filters."""
+        from obsidian_rag.mcp_server.tools.tasks import get_tasks
 
-        mock_session = create_mock_session()
-        mock_task = create_mock_task()
-        mock_doc = create_mock_document()
+        # Create a mock session with PostgreSQL dialect
+        mock_session = MagicMock()
+        mock_bind = MagicMock()
+        mock_bind.dialect.name = "postgresql"
+        mock_session.bind = mock_bind
 
-        class MockQuery:
-            def __init__(self):
-                self._count = 10  # Total 10 tasks
-                self._results = [(mock_task, mock_doc)]
+        # Mock the query chain - need to include join() in the chain
+        mock_query = MagicMock()
+        mock_query.join.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.count.return_value = 0
+        mock_query.offset.return_value.limit.return_value.all.return_value = []
 
-            def join(self, *args, **kwargs):
-                return self
-
-            def filter(self, *args, **kwargs):
-                return self
-
-            def order_by(self, *args, **kwargs):
-                return self
-
-            def count(self):
-                return self._count
-
-            def offset(self, n):
-                return self
-
-            def limit(self, n):
-                return self
-
-            def all(self):
-                return self._results
-
-        mock_query = MockQuery()
         mock_session.query.return_value = mock_query
 
-        result = get_tasks_by_tag(mock_session, tag="work", limit=5, offset=0)
+        # Create filters without tags
+        filters = GetTasksFilterParams(
+            status=["not_completed"],
+            limit=20,
+            offset=0,
+        )
 
-        assert result.has_more is True
-        assert result.next_offset == 5
+        result = get_tasks(mock_session, filters)
 
-    def test_get_tasks_by_tag_postgresql_no_match_in_doc_tags(self):
-        """Test get_tasks_by_tag PostgreSQL when tag matches task but not doc."""
-        from obsidian_rag.mcp_server.tools.tasks import get_tasks_by_tag
+        assert result.total_count == 0
+        assert len(result.results) == 0
 
-        mock_session = create_mock_session()
-        mock_task = create_mock_task()
-        mock_task.tags = ["urgent"]  # Has urgent tag
-        mock_doc = create_mock_document()
-        mock_doc.tags = ["other"]  # Doc has different tag
+    def test_get_tasks_postgresql_multiple_tags(self):
+        """Test get_tasks with PostgreSQL and multiple tags (AND logic)."""
+        from obsidian_rag.mcp_server.tools.tasks import get_tasks
 
-        class MockQuery:
-            def __init__(self):
-                self._count = 1
-                self._results = [(mock_task, mock_doc)]
+        # Create a mock session with PostgreSQL dialect
+        mock_session = MagicMock()
+        mock_bind = MagicMock()
+        mock_bind.dialect.name = "postgresql"
+        mock_session.bind = mock_bind
 
-            def join(self, *args, **kwargs):
-                return self
+        # Mock the query chain - need to include join() in the chain
+        mock_query = MagicMock()
+        mock_query.join.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.count.return_value = 1
 
-            def filter(self, *args, **kwargs):
-                return self
+        # Mock task and document
+        mock_task = MagicMock()
+        mock_task.id = "task-1"
+        mock_task.status = "not_completed"
+        mock_task.tags = ["work", "urgent"]
+        mock_task.priority = "high"
 
-            def order_by(self, *args, **kwargs):
-                return self
+        mock_doc = MagicMock()
+        mock_doc.id = "doc-1"
+        mock_doc.file_path = "test.md"
+        mock_doc.file_name = "test.md"
+        mock_doc.tags = ["personal"]
 
-            def count(self):
-                return self._count
+        mock_query.offset.return_value.limit.return_value.all.return_value = [
+            (mock_task, mock_doc)
+        ]
 
-            def offset(self, n):
-                return self
-
-            def limit(self, n):
-                return self
-
-            def all(self):
-                return self._results
-
-        mock_query = MockQuery()
         mock_session.query.return_value = mock_query
 
-        # Tag search should still find it via task tags
-        result = get_tasks_by_tag(mock_session, tag="urgent", limit=20, offset=0)
+        # Create filters with multiple tags
+        filters = GetTasksFilterParams(
+            tags=["work", "urgent"],
+            limit=20,
+            offset=0,
+        )
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            # Create a proper TaskResponse mock that Pydantic will accept
+            import uuid
+            from datetime import date
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="Test task",
+                status="not_completed",
+                description="Test description",
+                due=date(2026, 3, 11),
+                priority="high",
+                tags=["work", "urgent"],
+                document_path="test.md",
+                document_name="test.md",
+            )
+            mock_create_response.return_value = mock_response
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 1
+        # Filter should be called multiple times (once per tag + other filters)
+        assert mock_query.filter.call_count >= 2
 
 
-class TestGetTasksByTagPostgresqlEdgeCases:
-    """Edge case tests for get_tasks_by_tag PostgreSQL branch."""
+class TestApplyTagFiltersPostgresql:
+    """Tests for _apply_tag_filters with PostgreSQL dialect."""
 
-    def test_get_tasks_by_tag_postgresql_case_insensitive(self):
-        """Test get_tasks_by_tag PostgreSQL is case-insensitive."""
-        from obsidian_rag.mcp_server.tools.tasks import get_tasks_by_tag
+    def test_apply_tag_filters_postgresql_single_tag(self):
+        """Test _apply_tag_filters with single tag on PostgreSQL."""
+        from obsidian_rag.mcp_server.tools.tasks import _apply_tag_filters
 
-        mock_session = create_mock_session()
-        mock_task = create_mock_task()
-        mock_doc = create_mock_document()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
 
-        class MockQuery:
-            def __init__(self):
-                self._count = 1
-                self._results = [(mock_task, mock_doc)]
+        tags = ["work"]
+        result = _apply_tag_filters(mock_query, tags, is_postgresql=True)
 
-            def join(self, *args, **kwargs):
-                return self
+        # Should call filter once for the tag
+        assert mock_query.filter.call_count == 1
+        assert result == mock_query
 
-            def filter(self, *args, **kwargs):
-                return self
+    def test_apply_tag_filters_postgresql_multiple_tags(self):
+        """Test _apply_tag_filters with multiple tags on PostgreSQL."""
+        from obsidian_rag.mcp_server.tools.tasks import _apply_tag_filters
 
-            def order_by(self, *args, **kwargs):
-                return self
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
 
-            def count(self):
-                return self._count
+        tags = ["work", "urgent", "personal"]
+        result = _apply_tag_filters(mock_query, tags, is_postgresql=True)
 
-            def offset(self, n):
-                return self
+        # Should call filter once per tag
+        assert mock_query.filter.call_count == 3
+        assert result == mock_query
 
-            def limit(self, n):
-                return self
+    def test_apply_tag_filters_postgresql_empty_tags(self):
+        """Test _apply_tag_filters with empty tags list on PostgreSQL."""
+        from obsidian_rag.mcp_server.tools.tasks import _apply_tag_filters
 
-            def all(self):
-                return self._results
+        mock_query = MagicMock()
 
-        mock_query = MockQuery()
-        mock_session.query.return_value = mock_query
+        tags: list[str] = []
+        result = _apply_tag_filters(mock_query, tags, is_postgresql=True)
 
-        # Search with uppercase should find lowercase tags
-        result = get_tasks_by_tag(mock_session, tag="WORK", limit=20, offset=0)
+        # Should not call filter
+        mock_query.filter.assert_not_called()
+        assert result == mock_query
 
-        assert result.total_count == 1
+    def test_apply_tag_filters_postgresql_none_tags(self):
+        """Test _apply_tag_filters with None tags on PostgreSQL."""
+        from obsidian_rag.mcp_server.tools.tasks import _apply_tag_filters
+
+        mock_query = MagicMock()
+
+        tags = None
+        result = _apply_tag_filters(mock_query, tags, is_postgresql=True)
+
+        # Should not call filter
+        mock_query.filter.assert_not_called()
+        assert result == mock_query
+
+    def test_apply_tag_filters_sqlite_skips_sql_filtering(self):
+        """Test _apply_tag_filters skips SQL filtering for SQLite."""
+        from obsidian_rag.mcp_server.tools.tasks import _apply_tag_filters
+
+        mock_query = MagicMock()
+
+        tags = ["work", "urgent"]
+        result = _apply_tag_filters(mock_query, tags, is_postgresql=False)
+
+        # Should not call filter for SQLite
+        mock_query.filter.assert_not_called()
+        assert result == mock_query
+
+
+class TestFilterByTagsPython:
+    """Tests for _filter_by_tags_python helper function."""
+
+    def test_filter_by_tags_python_single_tag(self):
+        """Test filtering by single tag in Python."""
+        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
+
+        # Create mock tasks and documents
+        task1 = MagicMock()
+        task1.tags = ["work", "urgent"]
+
+        doc1 = MagicMock()
+        doc1.tags = ["personal"]
+
+        task2 = MagicMock()
+        task2.tags = ["home"]
+
+        doc2 = MagicMock()
+        doc2.tags = []
+
+        results = [(task1, doc1), (task2, doc2)]
+
+        # Filter by "work" tag
+        filtered = _filter_by_tags_python(results, ["work"])  # type: ignore[arg-type]
+
+        assert len(filtered) == 1
+        assert filtered[0][0] == task1
+
+    def test_filter_by_tags_python_multiple_tags_and_logic(self):
+        """Test filtering by multiple tags uses AND logic."""
+        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
+
+        # Task with both tags
+        task1 = MagicMock()
+        task1.tags = ["work", "urgent"]
+
+        doc1 = MagicMock()
+        doc1.tags = []
+
+        # Task with only one tag
+        task2 = MagicMock()
+        task2.tags = ["work"]
+
+        doc2 = MagicMock()
+        doc2.tags = []
+
+        results = [(task1, doc1), (task2, doc2)]
+
+        # Filter by both "work" AND "urgent"
+        filtered = _filter_by_tags_python(results, ["work", "urgent"])  # type: ignore[arg-type]
+
+        # Only task1 has both tags
+        assert len(filtered) == 1
+        assert filtered[0][0] == task1
+
+    def test_filter_by_tags_python_document_tag_match(self):
+        """Test that document tags are also checked."""
+        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
+
+        # Task with no tags, but document has the tag
+        task1 = MagicMock()
+        task1.tags = []
+
+        doc1 = MagicMock()
+        doc1.tags = ["work"]
+
+        # Task with no matching tags
+        task2 = MagicMock()
+        task2.tags = []
+
+        doc2 = MagicMock()
+        doc2.tags = ["home"]
+
+        results = [(task1, doc1), (task2, doc2)]
+
+        # Filter by "work" tag
+        filtered = _filter_by_tags_python(results, ["work"])  # type: ignore[arg-type]
+
+        # Task1 matches because its document has the tag
+        assert len(filtered) == 1
+        assert filtered[0][0] == task1
+
+    def test_filter_by_tags_python_case_insensitive(self):
+        """Test that tag filtering is case-insensitive."""
+        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
+
+        task1 = MagicMock()
+        task1.tags = ["WORK", "URGENT"]
+
+        doc1 = MagicMock()
+        doc1.tags = []
+
+        results = [(task1, doc1)]
+
+        # Filter by lowercase tag
+        filtered = _filter_by_tags_python(results, ["work"])  # type: ignore[arg-type]
+
+        assert len(filtered) == 1
+
+    def test_filter_by_tags_python_no_matches(self):
+        """Test filtering when no tasks match."""
+        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
+
+        task1 = MagicMock()
+        task1.tags = ["home"]
+
+        doc1 = MagicMock()
+        doc1.tags = ["personal"]
+
+        results = [(task1, doc1)]
+
+        # Filter by non-existent tag
+        filtered = _filter_by_tags_python(results, ["work"])  # type: ignore[arg-type]
+
+        assert len(filtered) == 0
+
+    def test_filter_by_tags_python_empty_tags_list(self):
+        """Test filtering with empty tags list returns all results."""
+        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
+
+        task1 = MagicMock()
+        doc1 = MagicMock()
+
+        task2 = MagicMock()
+        doc2 = MagicMock()
+
+        results = [(task1, doc1), (task2, doc2)]
+
+        # Filter with empty tags
+        filtered = _filter_by_tags_python(results, [])  # type: ignore[arg-type]
+
+        # Should return all results
+        assert len(filtered) == 2
+
+    def test_filter_by_tags_python_none_tags(self):
+        """Test filtering with None task tags."""
+        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
+
+        task1 = MagicMock()
+        task1.tags = None
+
+        doc1 = MagicMock()
+        doc1.tags = ["work"]
+
+        results = [(task1, doc1)]
+
+        # Filter by tag that exists in document
+        filtered = _filter_by_tags_python(results, ["work"])  # type: ignore[arg-type]
+
+        assert len(filtered) == 1
+
+    def test_filter_by_tags_python_substring_match(self):
+        """Test that tag filtering uses substring matching."""
+        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
+
+        task1 = MagicMock()
+        task1.tags = ["personal/bills", "personal/expenses"]
+
+        doc1 = MagicMock()
+        doc1.tags = []
+
+        results = [(task1, doc1)]
+
+        # Filter by partial tag match
+        filtered = _filter_by_tags_python(results, ["personal"])  # type: ignore[arg-type]
+
+        assert len(filtered) == 1
+
+
+class TestTaskHasTag:
+    """Tests for _task_has_tag helper function."""
+
+    def test_task_has_tag_in_task_tags(self):
+        """Test finding tag in task tags."""
+        from obsidian_rag.mcp_server.tools.tasks import _task_has_tag
+
+        task = MagicMock()
+        task.tags = ["work", "urgent"]
+
+        doc = MagicMock()
+        doc.tags = []
+
+        assert _task_has_tag(task, doc, "work") is True  # type: ignore[arg-type]
+        assert _task_has_tag(task, doc, "urgent") is True  # type: ignore[arg-type]
+        assert _task_has_tag(task, doc, "personal") is False  # type: ignore[arg-type]
+
+    def test_task_has_tag_in_document_tags(self):
+        """Test finding tag in document tags."""
+        from obsidian_rag.mcp_server.tools.tasks import _task_has_tag
+
+        task = MagicMock()
+        task.tags = []
+
+        doc = MagicMock()
+        doc.tags = ["work", "personal"]
+
+        assert _task_has_tag(task, doc, "work") is True  # type: ignore[arg-type]
+        assert _task_has_tag(task, doc, "personal") is True  # type: ignore[arg-type]
+        assert _task_has_tag(task, doc, "urgent") is False  # type: ignore[arg-type]
+
+    def test_task_has_tag_case_insensitive(self):
+        """Test tag matching is case-insensitive."""
+        from obsidian_rag.mcp_server.tools.tasks import _task_has_tag
+
+        task = MagicMock()
+        task.tags = ["WORK", "URGENT"]
+
+        doc = MagicMock()
+        doc.tags = []
+
+        assert _task_has_tag(task, doc, "work") is True  # type: ignore[arg-type]
+        assert _task_has_tag(task, doc, "urgent") is True  # type: ignore[arg-type]
+
+    def test_task_has_tag_none_tags(self):
+        """Test with None tags."""
+        from obsidian_rag.mcp_server.tools.tasks import _task_has_tag
+
+        task = MagicMock()
+        task.tags = None
+
+        doc = MagicMock()
+        doc.tags = None
+
+        assert _task_has_tag(task, doc, "work") is False  # type: ignore[arg-type]
+
+    def test_task_has_tag_substring_match(self):
+        """Test substring matching in tags."""
+        from obsidian_rag.mcp_server.tools.tasks import _task_has_tag
+
+        task = MagicMock()
+        task.tags = ["personal/bills", "work/project"]
+
+        doc = MagicMock()
+        doc.tags = []
+
+        assert _task_has_tag(task, doc, "personal") is True  # type: ignore[arg-type]
+        assert _task_has_tag(task, doc, "bills") is True  # type: ignore[arg-type]
+        assert _task_has_tag(task, doc, "project") is True  # type: ignore[arg-type]

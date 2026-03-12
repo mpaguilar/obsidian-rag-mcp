@@ -2,7 +2,6 @@
 
 import json
 import os
-from datetime import date
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -134,90 +133,6 @@ class TestToolFunctionsWithRegistry:
         # Restore original
         tool_definitions_module._tool_registry = original_registry
 
-    def test_get_incomplete_tasks(self, setup_registry):
-        """Test get_incomplete_tasks uses registry."""
-        from obsidian_rag.mcp_server.server import get_incomplete_tasks
-
-        mock_registry = setup_registry
-
-        with patch(
-            "obsidian_rag.mcp_server.server.get_incomplete_tasks_tool"
-        ) as mock_tool:
-            mock_tool.return_value = {"tasks": []}
-
-            result = get_incomplete_tasks(limit=20, offset=0)
-
-            assert result == {"tasks": []}
-            mock_tool.assert_called_once_with(
-                mock_registry.db_manager,
-                20,
-                0,
-                include_cancelled=False,
-            )
-
-    def test_get_tasks_due_this_week(self, setup_registry):
-        """Test get_tasks_due_this_week uses registry."""
-        from obsidian_rag.mcp_server.server import get_tasks_due_this_week
-
-        mock_registry = setup_registry
-
-        with patch(
-            "obsidian_rag.mcp_server.server.get_tasks_due_this_week_tool"
-        ) as mock_tool:
-            mock_tool.return_value = {"tasks": []}
-
-            result = get_tasks_due_this_week(limit=20, offset=0)
-
-            assert result == {"tasks": []}
-            mock_tool.assert_called_once_with(
-                mock_registry.db_manager,
-                20,
-                0,
-                include_completed=True,
-            )
-
-    def test_get_tasks_by_tag(self, setup_registry):
-        """Test get_tasks_by_tag uses registry."""
-        from obsidian_rag.mcp_server.server import get_tasks_by_tag
-
-        mock_registry = setup_registry
-
-        with patch(
-            "obsidian_rag.mcp_server.server.get_tasks_by_tag_tool_impl"
-        ) as mock_tool:
-            mock_tool.return_value = {"tasks": []}
-
-            result = get_tasks_by_tag(tag="work", limit=20, offset=0)
-
-            assert result == {"tasks": []}
-            mock_tool.assert_called_once_with(
-                mock_registry.db_manager,
-                "work",
-                20,
-                0,
-            )
-
-    def test_get_completed_tasks(self, setup_registry):
-        """Test get_completed_tasks uses registry."""
-        from obsidian_rag.mcp_server.server import get_completed_tasks
-
-        mock_registry = setup_registry
-
-        with patch(
-            "obsidian_rag.mcp_server.server.get_completed_tasks_tool"
-        ) as mock_tool:
-            mock_tool.return_value = {"tasks": []}
-
-            result = get_completed_tasks(limit=20, offset=0)
-
-            assert result == {"tasks": []}
-            mock_tool.assert_called_once_with(
-                mock_registry.db_manager,
-                20,
-                0,
-                None,
-            )
-
     def test_query_documents(self, setup_registry):
         """Test query_documents uses registry."""
         from obsidian_rag.mcp_server.server import query_documents
@@ -343,6 +258,60 @@ class TestToolFunctionsWithRegistry:
 
             assert result is mock_response
             mock_handler.assert_called_once_with(mock_registry.db_manager)
+
+    def test_get_tasks(self, setup_registry):
+        """Test get_tasks uses registry."""
+        from obsidian_rag.mcp_server.handlers import TaskDateFilterStrings
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        mock_registry = setup_registry
+
+        # Patch inside the server module where it's imported
+        with patch(
+            "obsidian_rag.mcp_server.handlers._get_tasks_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {"results": []}
+
+            date_filters = TaskDateFilterStrings(
+                due_after="2026-01-01",
+                due_before="2026-12-31",
+            )
+
+            result = get_tasks(
+                status=["not_completed"],
+                date_filters=date_filters,
+                limit=20,
+                offset=0,
+            )
+
+            assert result == {"results": []}
+            mock_handler.assert_called_once()
+
+    def test_get_tasks_without_date_filters(self, setup_registry):
+        """Test get_tasks creates default date_filters when not provided."""
+        from obsidian_rag.mcp_server.handlers import TaskDateFilterStrings
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        mock_registry = setup_registry
+
+        # Patch inside the server module where it's imported
+        with patch(
+            "obsidian_rag.mcp_server.handlers._get_tasks_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {"results": []}
+
+            # Call without date_filters parameter
+            result = get_tasks(
+                status=["not_completed"],
+                limit=20,
+                offset=0,
+            )
+
+            assert result == {"results": []}
+            mock_handler.assert_called_once()
+            # Verify that a TaskDateFilterStrings was created with default values
+            call_kwargs = mock_handler.call_args.kwargs
+            assert isinstance(call_kwargs["date_filters"], TaskDateFilterStrings)
 
 
 class TestCreateMCPServer:
@@ -515,7 +484,7 @@ class TestCreateEmbeddingProvider:
         assert result is None
 
     def test_create_embedding_provider_failure(self):
-        """Test when provider creation fails."""
+        """Test when provider creation fails, exception is propagated."""
         from obsidian_rag.mcp_server.tool_definitions import _create_embedding_provider
 
         settings = MagicMock()
@@ -527,9 +496,8 @@ class TestCreateEmbeddingProvider:
         ) as mock_factory:
             mock_factory.create_embedding_provider.side_effect = RuntimeError("Failed")
 
-            result = _create_embedding_provider(settings)
-
-            assert result is None
+            with pytest.raises(RuntimeError, match="Failed"):
+                _create_embedding_provider(settings)
 
 
 class TestProviderCreators:
@@ -655,8 +623,9 @@ class TestRegisterTools:
 
         _register_tools(mock_mcp)
 
-        # Should register 10 tools (health_check is registered via custom_route)
-        assert mock_mcp.tool.call_count == 10
+        # Should register 7 tools (get_tasks + 4 document tools + list_vaults + ingest)
+        # health_check is registered via custom_route
+        assert mock_mcp.tool.call_count == 7
 
 
 class TestHealthCheckHandler:
@@ -808,82 +777,6 @@ class TestGetSessionManager:
 class TestToolImplementations:
     """Tests for module-level tool implementations (direct coverage)."""
 
-    def test_get_incomplete_tasks_tool(self):
-        """Test get_incomplete_tasks_tool directly."""
-        from obsidian_rag.mcp_server.server import get_incomplete_tasks_tool
-
-        mock_db_manager = MagicMock()
-
-        with patch(
-            "obsidian_rag.mcp_server.tool_definitions._get_incomplete_tasks_handler"
-        ) as mock_handler:
-            mock_handler.return_value = {"tasks": []}
-
-            result = get_incomplete_tasks_tool(
-                mock_db_manager, limit=20, offset=0, include_cancelled=False
-            )
-
-            assert result == {"tasks": []}
-            mock_handler.assert_called_once_with(
-                mock_db_manager, 20, 0, include_cancelled=False
-            )
-
-    def test_get_tasks_due_this_week_tool(self):
-        """Test get_tasks_due_this_week_tool directly."""
-        from obsidian_rag.mcp_server.server import get_tasks_due_this_week_tool
-
-        mock_db_manager = MagicMock()
-
-        with patch(
-            "obsidian_rag.mcp_server.tool_definitions._get_tasks_due_this_week_handler"
-        ) as mock_handler:
-            mock_handler.return_value = {"tasks": []}
-
-            result = get_tasks_due_this_week_tool(
-                mock_db_manager, limit=20, offset=0, include_completed=True
-            )
-
-            assert result == {"tasks": []}
-            mock_handler.assert_called_once_with(
-                mock_db_manager, 20, 0, include_completed=True
-            )
-
-    def test_get_tasks_by_tag_tool_impl(self):
-        """Test get_tasks_by_tag_tool_impl directly."""
-        from obsidian_rag.mcp_server.server import get_tasks_by_tag_tool_impl
-
-        mock_db_manager = MagicMock()
-
-        with patch(
-            "obsidian_rag.mcp_server.tool_definitions._get_tasks_by_tag_handler"
-        ) as mock_handler:
-            mock_handler.return_value = {"tasks": []}
-
-            result = get_tasks_by_tag_tool_impl(
-                mock_db_manager, tag="work", limit=20, offset=0
-            )
-
-            assert result == {"tasks": []}
-            mock_handler.assert_called_once_with(mock_db_manager, "work", 20, 0)
-
-    def test_get_completed_tasks_tool(self):
-        """Test get_completed_tasks_tool directly."""
-        from obsidian_rag.mcp_server.server import get_completed_tasks_tool
-
-        mock_db_manager = MagicMock()
-
-        with patch(
-            "obsidian_rag.mcp_server.tool_definitions._get_completed_tasks_handler"
-        ) as mock_handler:
-            mock_handler.return_value = {"tasks": []}
-
-            result = get_completed_tasks_tool(
-                mock_db_manager, limit=20, offset=0, completed_since="2024-01-01"
-            )
-
-            assert result == {"tasks": []}
-            mock_handler.assert_called_once_with(mock_db_manager, 20, 0, "2024-01-01")
-
     def test_get_all_tags_tool(self):
         """Test get_all_tags_tool directly."""
         from obsidian_rag.mcp_server.server import get_all_tags_tool
@@ -917,6 +810,38 @@ class TestToolImplementations:
 
             assert result == {"vaults": []}
             mock_handler.assert_called_once_with(mock_db_manager, 20, 0)
+
+    def test_get_tasks_tool(self):
+        """Test get_tasks_tool directly."""
+        from obsidian_rag.mcp_server.tool_definitions import get_tasks_tool
+        from obsidian_rag.mcp_server.handlers import TaskDateFilterStrings
+
+        mock_db_manager = MagicMock()
+
+        with patch(
+            "obsidian_rag.mcp_server.tool_definitions._get_tasks_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {"tasks": []}
+
+            date_filters = TaskDateFilterStrings(
+                due_after="2026-01-01",
+                due_before="2026-12-31",
+            )
+
+            result = get_tasks_tool(
+                db_manager=mock_db_manager,
+                status=["not_completed"],
+                date_filters=date_filters,
+                tags=["work"],
+                priority=["high"],
+                include_completed=False,
+                include_cancelled=True,
+                limit=20,
+                offset=0,
+            )
+
+            assert result == {"tasks": []}
+            mock_handler.assert_called_once()
 
     def test_query_documents_tool_with_embedding_provider(self):
         """Test query_documents_tool with embedding provider."""
@@ -972,604 +897,3 @@ class TestToolImplementations:
                 embedding_provider=None,
                 query="test query",
             )
-
-
-class TestTaskToolHandlers:
-    """Tests for task tool handlers."""
-
-    def test_get_incomplete_tasks_handler(self):
-        """Test _get_incomplete_tasks_handler."""
-        from obsidian_rag.mcp_server.handlers import _get_incomplete_tasks_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_incomplete_tasks_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {"tasks": []}
-            mock_tool.return_value = mock_result
-
-            result = _get_incomplete_tasks_handler(
-                mock_db_manager, 20, 0, include_cancelled=False
-            )
-
-            assert result == {"tasks": []}
-            mock_tool.assert_called_once_with(
-                session=mock_session, limit=20, offset=0, include_cancelled=False
-            )
-
-    def test_get_tasks_due_this_week_handler(self):
-        """Test _get_tasks_due_this_week_handler."""
-        from obsidian_rag.mcp_server.handlers import _get_tasks_due_this_week_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_tasks_due_this_week_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {"tasks": []}
-            mock_tool.return_value = mock_result
-
-            result = _get_tasks_due_this_week_handler(
-                mock_db_manager, 20, 0, include_completed=True
-            )
-
-            assert result == {"tasks": []}
-            mock_tool.assert_called_once_with(
-                session=mock_session, limit=20, offset=0, include_completed=True
-            )
-
-    def test_get_tasks_by_tag_handler(self):
-        """Test _get_tasks_by_tag_handler."""
-        from obsidian_rag.mcp_server.handlers import _get_tasks_by_tag_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_tasks_by_tag_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {"tasks": []}
-            mock_tool.return_value = mock_result
-
-            result = _get_tasks_by_tag_handler(mock_db_manager, "test-tag", 20, 0)
-
-            assert result == {"tasks": []}
-            mock_tool.assert_called_once_with(
-                session=mock_session, tag="test-tag", limit=20, offset=0
-            )
-
-    def test_get_completed_tasks_handler_with_date(self):
-        """Test _get_completed_tasks_handler with valid date."""
-        from obsidian_rag.mcp_server.handlers import _get_completed_tasks_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_completed_tasks_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {"tasks": []}
-            mock_tool.return_value = mock_result
-
-            result = _get_completed_tasks_handler(mock_db_manager, 20, 0, "2024-01-01")
-
-            assert result == {"tasks": []}
-            mock_tool.assert_called_once()
-            call_kwargs = mock_tool.call_args.kwargs
-            assert call_kwargs["completed_since"] == date(2024, 1, 1)
-
-    def test_get_completed_tasks_handler_with_invalid_date(self):
-        """Test _get_completed_tasks_handler with invalid date."""
-        from obsidian_rag.mcp_server.handlers import _get_completed_tasks_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_completed_tasks_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {"tasks": []}
-            mock_tool.return_value = mock_result
-
-            result = _get_completed_tasks_handler(
-                mock_db_manager, 20, 0, "invalid-date"
-            )
-
-            assert result == {"tasks": []}
-            mock_tool.assert_called_once()
-            call_kwargs = mock_tool.call_args.kwargs
-            assert call_kwargs["completed_since"] is None
-
-    def test_get_completed_tasks_handler_without_date(self):
-        """Test _get_completed_tasks_handler without date (None)."""
-        from obsidian_rag.mcp_server.handlers import _get_completed_tasks_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_completed_tasks_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {"tasks": []}
-            mock_tool.return_value = mock_result
-
-            result = _get_completed_tasks_handler(mock_db_manager, 20, 0, None)
-
-            assert result == {"tasks": []}
-            mock_tool.assert_called_once()
-            call_kwargs = mock_tool.call_args.kwargs
-            assert call_kwargs["completed_since"] is None
-
-
-class TestDocumentHandlers:
-    """Tests for document tool handlers."""
-
-    def test_get_documents_by_tag_handler_full_flow(self):
-        """Test _get_documents_by_tag_handler full flow."""
-        from obsidian_rag.mcp_server.handlers import _get_documents_by_tag_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_documents_by_tag_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {
-                "results": [],
-                "total_count": 0,
-                "has_more": False,
-            }
-            mock_tool.return_value = mock_result
-
-            # Create params as a dict-like object
-            params = {
-                "include_tags": ["work"],
-                "exclude_tags": [],
-                "match_mode": "all",
-                "vault_root": None,
-                "limit": 20,
-                "offset": 0,
-            }
-            result = _get_documents_by_tag_handler(mock_db_manager, params)  # type: ignore[arg-type]
-
-            assert result == {"results": [], "total_count": 0, "has_more": False}
-            mock_tool.assert_called_once()
-
-    def test_get_all_tags_handler_full_flow(self):
-        """Test _get_all_tags_handler full flow."""
-        from obsidian_rag.mcp_server.handlers import _get_all_tags_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch("obsidian_rag.mcp_server.handlers.get_all_tags_tool") as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {
-                "tags": [],
-                "total_count": 0,
-                "has_more": False,
-            }
-            mock_tool.return_value = mock_result
-
-            result = _get_all_tags_handler(mock_db_manager, "work*", 20, 0)
-
-            assert result == {"tags": [], "total_count": 0, "has_more": False}
-            mock_tool.assert_called_once_with(
-                session=mock_session, pattern="work*", limit=20, offset=0
-            )
-
-    def test_convert_property_filters_with_valid_filters(self):
-        """Test _convert_property_filters with valid filters."""
-        from obsidian_rag.mcp_server.handlers import _convert_property_filters
-
-        properties = [
-            {"path": "status", "operator": "equals", "value": "draft"},
-            {"path": "priority", "operator": "equals", "value": "high"},
-        ]
-
-        result = _convert_property_filters(properties)
-
-        assert result is not None
-        assert len(result) == 2
-        assert result[0].path == "status"
-        assert result[0].operator == "equals"
-        assert result[0].value == "draft"
-
-    def test_create_tag_filter_with_empty_tags(self):
-        """Test _create_tag_filter with empty tags."""
-        from obsidian_rag.mcp_server.handlers import _create_tag_filter
-
-        result = _create_tag_filter(None, None, "all")
-
-        assert result is None
-
-
-class TestTaskHandlerLogging:
-    """Tests for task handler logging."""
-
-    def test_get_incomplete_tasks_handler_logging(self):
-        """Test _get_incomplete_tasks_handler logging."""
-        from obsidian_rag.mcp_server.handlers import _get_incomplete_tasks_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_incomplete_tasks_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {"tasks": []}
-            mock_tool.return_value = mock_result
-
-            result = _get_incomplete_tasks_handler(
-                mock_db_manager, 20, 0, include_cancelled=False
-            )
-
-            # Verify handler returns expected result
-            assert result == {"tasks": []}
-
-    def test_get_tasks_due_this_week_handler_logging(self):
-        """Test _get_tasks_due_this_week_handler logging."""
-        from obsidian_rag.mcp_server.handlers import _get_tasks_due_this_week_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_tasks_due_this_week_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {"tasks": []}
-            mock_tool.return_value = mock_result
-
-            result = _get_tasks_due_this_week_handler(
-                mock_db_manager, 20, 0, include_completed=True
-            )
-
-            # Verify handler returns expected result
-            assert result == {"tasks": []}
-
-    def test_get_tasks_by_tag_handler_logging(self):
-        """Test _get_tasks_by_tag_handler logging."""
-        from obsidian_rag.mcp_server.handlers import _get_tasks_by_tag_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_tasks_by_tag_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {"tasks": []}
-            mock_tool.return_value = mock_result
-
-            result = _get_tasks_by_tag_handler(mock_db_manager, "test-tag", 20, 0)
-
-            # Verify handler returns expected result
-            assert result == {"tasks": []}
-
-
-class TestGetCompletedTasksHandler:
-    """Tests for _get_completed_tasks_handler."""
-
-    @patch("obsidian_rag.mcp_server.handlers.log")
-    def test_get_completed_tasks_handler_with_invalid_date(self, mock_log):
-        """Test _get_completed_tasks_handler with invalid date."""
-        from obsidian_rag.mcp_server.handlers import _get_completed_tasks_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.get_completed_tasks_tool"
-        ) as mock_tool:
-            mock_result = MagicMock()
-            mock_result.model_dump.return_value = {"tasks": []}
-            mock_tool.return_value = mock_result
-
-            result = _get_completed_tasks_handler(
-                mock_db_manager, 20, 0, "invalid-date"
-            )
-
-            assert result == {"tasks": []}
-            # Verify logging of invalid date
-            mock_log.warning.assert_called()
-
-
-class TestValidateIngestPath:
-    """Tests for _validate_ingest_path."""
-
-    def test_validate_ingest_path_with_parent_directory_references(self):
-        """Test _validate_ingest_path with parent directory references."""
-        from obsidian_rag.mcp_server.handlers import _validate_ingest_path
-
-        with pytest.raises(ValueError, match="parent directory references"):
-            _validate_ingest_path("/vault/../etc/passwd")
-
-    def test_validate_ingest_path_with_nonexistent_path(self):
-        """Test _validate_ingest_path with non-existent path."""
-        from obsidian_rag.mcp_server.handlers import _validate_ingest_path
-
-        with pytest.raises(ValueError, match="does not exist"):
-            _validate_ingest_path("/nonexistent/path")
-
-    def test_validate_ingest_path_with_non_directory_path(self):
-        """Test _validate_ingest_path with non-directory path."""
-        from obsidian_rag.mcp_server.handlers import _validate_ingest_path
-
-        with runner.isolated_filesystem():
-            test_file = "test.txt"
-            Path(test_file).write_text("test")
-            with pytest.raises(ValueError, match="not a directory"):
-                _validate_ingest_path(test_file)
-
-
-class TestIngestHandler:
-    """Tests for _ingest_handler."""
-
-    @patch("obsidian_rag.mcp_server.handlers._validate_ingest_path")
-    def test_ingest_handler_with_path_override(self, mock_validate):
-        """Test _ingest_handler with path_override."""
-        from obsidian_rag.mcp_server.handlers import _ingest_handler
-
-        mock_db_manager = MagicMock()
-        mock_settings = MagicMock()
-        mock_settings.vault_root = "/default/vault"
-
-        mock_validate.return_value = Path("/custom/path")
-
-        with runner.isolated_filesystem():
-            # Create a temporary directory for testing
-            vault_path = Path("vault")
-            vault_path.mkdir()
-
-            with patch(
-                "obsidian_rag.mcp_server.handlers.IngestionService"
-            ) as mock_service:
-                mock_instance = MagicMock()
-                mock_result = MagicMock()
-                mock_result.total = 1
-                mock_result.new = 1
-                mock_result.updated = 0
-                mock_result.unchanged = 0
-                mock_result.errors = 0
-                mock_result.processing_time_seconds = 1.0
-                mock_result.to_dict.return_value = {
-                    "total": 1,
-                    "new": 1,
-                    "updated": 0,
-                    "unchanged": 0,
-                    "errors": 0,
-                    "processing_time_seconds": 1.0,
-                    "message": "Ingested 1 documents",
-                }
-                mock_instance.ingest_vault.return_value = mock_result
-                mock_service.return_value = mock_instance
-
-                mock_embedding_provider = MagicMock()
-                from obsidian_rag.mcp_server.handlers import IngestHandlerParams
-
-                params = IngestHandlerParams(
-                    settings=mock_settings,
-                    db_manager=mock_db_manager,
-                    embedding_provider=mock_embedding_provider,
-                    vault_name="Obsidian Vault",
-                    path_override="/custom/path",
-                )
-                result = _ingest_handler(params)
-
-                assert result["total"] == 1
-                mock_validate.assert_called_once_with("/custom/path")
-
-
-class TestListVaultsHandler:
-    """Tests for _list_vaults_handler."""
-
-    def test_list_vaults_handler(self):
-        """Test _list_vaults_handler returns vault list."""
-        from obsidian_rag.mcp_server.handlers import _list_vaults_handler
-
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(return_value=None)
-
-        # Mock the list_vaults_tool response
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "total_count": 1,
-            "results": [
-                {
-                    "id": "vault-1",
-                    "name": "Personal",
-                    "description": "Personal vault",
-                    "host_path": "/data/personal",
-                    "document_count": 5,
-                }
-            ],
-            "has_more": False,
-            "next_offset": None,
-        }
-
-        with patch(
-            "obsidian_rag.mcp_server.handlers.list_vaults_tool"
-        ) as mock_list_vaults:
-            mock_list_vaults.return_value = mock_result
-            result = _list_vaults_handler(
-                db_manager=mock_db_manager, limit=20, offset=0
-            )
-
-        assert result["total_count"] == 1
-        results = cast(list[dict[str, object]], result["results"])
-        assert len(results) == 1
-        assert results[0]["name"] == "Personal"
-
-
-class TestIngestHandlerVaultNotFound:
-    """Tests for _ingest_handler vault not found error."""
-
-    def test_ingest_handler_vault_not_found(self):
-        """Test _ingest_handler raises error when vault not found."""
-        from obsidian_rag.mcp_server.handlers import (
-            _ingest_handler,
-            IngestHandlerParams,
-        )
-
-        mock_db_manager = MagicMock()
-        mock_settings = MagicMock()
-        mock_settings.get_vault.return_value = None
-        mock_settings.get_vault_names.return_value = ["Personal", "Work"]
-
-        mock_embedding_provider = MagicMock()
-
-        params = IngestHandlerParams(
-            settings=mock_settings,
-            db_manager=mock_db_manager,
-            embedding_provider=mock_embedding_provider,
-            vault_name="NonExistent",
-            path_override=None,
-        )
-
-        with pytest.raises(ValueError) as exc_info:
-            _ingest_handler(params)
-
-        assert "Vault 'NonExistent' not found" in str(exc_info.value)
-        assert "Personal" in str(exc_info.value)
-        assert "Work" in str(exc_info.value)
-
-
-class TestConvertPropertyFilters:
-    """Tests for _convert_property_filters."""
-
-    def test_convert_property_filters_empty(self):
-        """Test _convert_property_filters with empty properties."""
-        from obsidian_rag.mcp_server.handlers import _convert_property_filters
-
-        result = _convert_property_filters([])
-        assert result is None
-
-    def test_convert_property_filters_none(self):
-        """Test _convert_property_filters with None."""
-        from obsidian_rag.mcp_server.handlers import _convert_property_filters
-
-        result = _convert_property_filters(None)
-        assert result is None
-
-
-class TestCreateTagFilter:
-    """Tests for _create_tag_filter."""
-
-    def test_create_tag_filter_invalid_match_mode(self):
-        """Test _create_tag_filter with invalid match_mode defaults to 'all'."""
-        from obsidian_rag.mcp_server.handlers import _create_tag_filter
-
-        result = _create_tag_filter(
-            include_tags=["tag1"], exclude_tags=None, match_mode="invalid"
-        )
-
-        assert result is not None
-        assert result.match_mode == "all"
-        assert result.include_tags == ["tag1"]
-
-
-class TestValidateIngestPathSuccess:
-    """Tests for _validate_ingest_path success path."""
-
-    def test_validate_ingest_path_success(self):
-        """Test _validate_ingest_path returns Path on success."""
-        from obsidian_rag.mcp_server.handlers import _validate_ingest_path
-
-        with runner.isolated_filesystem():
-            # Create a valid directory
-            test_dir = Path("test_vault")
-            test_dir.mkdir()
-
-            result = _validate_ingest_path(str(test_dir))
-
-            assert isinstance(result, Path)
-            assert result.exists()
-            assert result.is_dir()

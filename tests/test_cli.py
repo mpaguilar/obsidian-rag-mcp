@@ -1076,20 +1076,20 @@ class TestBuildTasksQuery:
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
 
-        result = _build_tasks_query(mock_session, "completed", None, None, 10)
+        from obsidian_rag.cli import TaskDateFilters
+
+        date_filters = TaskDateFilters()
+        result = _build_tasks_query(mock_session, "completed", date_filters, None, 10)
 
         mock_session.query.assert_called_once()
         mock_query.filter.assert_called()
         mock_query.limit.assert_called_once_with(10)
 
-    def test_build_tasks_query_with_invalid_date_format(self):
-        """Test _build_tasks_query with invalid date format error path (TASK-052)."""
-        import click
-        from click.testing import CliRunner
+    def test_build_tasks_query_with_date_objects(self):
+        """Test _build_tasks_query accepts date objects directly."""
+        from datetime import date
 
-        from obsidian_rag.cli import _build_tasks_query
-
-        runner = CliRunner()
+        from obsidian_rag.cli import TaskDateFilters, _build_tasks_query
 
         mock_session = MagicMock()
         mock_query = MagicMock()
@@ -1099,13 +1099,21 @@ class TestBuildTasksQuery:
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
 
-        @click.command()
-        def test_cmd():
-            _build_tasks_query(mock_session, None, "invalid-date", None, 10)
+        today = date.today()
 
-        result = runner.invoke(test_cmd)
-        assert result.exit_code == 1
-        assert "Invalid date format" in result.output
+        date_filters = TaskDateFilters(
+            due_before=today,
+            due_after=today,
+            scheduled_before=today,
+            scheduled_after=today,
+            completion_before=today,
+            completion_after=today,
+        )
+        result = _build_tasks_query(mock_session, None, date_filters, None, 10)
+
+        mock_session.query.assert_called_once()
+        mock_query.filter.assert_called()
+        mock_query.limit.assert_called_once_with(10)
 
 
 class TestMainFunction:
@@ -1455,6 +1463,8 @@ class TestBuildTasksQueryCoverage:
 
     def test_build_tasks_query_with_valid_due_date(self):
         """Test _build_tasks_query with valid due_before date (lines 569-570)."""
+        from datetime import date
+
         from obsidian_rag.cli import _build_tasks_query
 
         mock_session = MagicMock()
@@ -1465,7 +1475,11 @@ class TestBuildTasksQueryCoverage:
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
 
-        result = _build_tasks_query(mock_session, None, "2026-03-15", None, 10)
+        from obsidian_rag.cli import TaskDateFilters
+
+        due_date = date(2026, 3, 15)
+        date_filters = TaskDateFilters(due_before=due_date)
+        result = _build_tasks_query(mock_session, None, date_filters, None, 10)
 
         mock_session.query.assert_called_once()
         mock_query.filter.assert_called()  # Should filter by due date
@@ -1473,7 +1487,7 @@ class TestBuildTasksQueryCoverage:
 
     def test_build_tasks_query_with_tag_filter(self):
         """Test _build_tasks_query with tag filter (line 576)."""
-        from obsidian_rag.cli import _build_tasks_query
+        from obsidian_rag.cli import TaskDateFilters, _build_tasks_query
 
         mock_session = MagicMock()
         mock_query = MagicMock()
@@ -1483,7 +1497,8 @@ class TestBuildTasksQueryCoverage:
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
 
-        result = _build_tasks_query(mock_session, None, None, "work", 10)
+        date_filters = TaskDateFilters()
+        result = _build_tasks_query(mock_session, None, date_filters, "work", 10)
 
         mock_session.query.assert_called_once()
         mock_query.filter.assert_called()  # Should filter by tag
@@ -1526,3 +1541,197 @@ class TestTasksCommandEarlyReturn:
 
         assert result.exit_code == 0
         assert "No tasks found matching the criteria" in result.output
+
+
+class TestCliDateFiltering:
+    """Test CLI tasks command with date filtering."""
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_tasks_with_due_after(self, mock_db_manager):
+        """Test tasks command with --due-after option."""
+        from datetime import date
+
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["tasks", "--due-after", "2026-01-01"])
+
+        assert result.exit_code == 0
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_tasks_with_due_before_and_after(self, mock_db_manager):
+        """Test tasks command with both --due-before and --due-after."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(
+                cli,
+                ["tasks", "--due-after", "2026-01-01", "--due-before", "2026-03-31"],
+            )
+
+        assert result.exit_code == 0
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_tasks_with_scheduled_dates(self, mock_db_manager):
+        """Test tasks command with scheduled date options."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(
+                cli,
+                [
+                    "tasks",
+                    "--scheduled-after",
+                    "2026-01-01",
+                    "--scheduled-before",
+                    "2026-02-28",
+                ],
+            )
+
+        assert result.exit_code == 0
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_tasks_with_completion_dates(self, mock_db_manager):
+        """Test tasks command with completion date options."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(
+                cli,
+                [
+                    "tasks",
+                    "--completion-after",
+                    "2026-01-01",
+                    "--completion-before",
+                    "2026-03-31",
+                ],
+            )
+
+        assert result.exit_code == 0
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_tasks_with_all_date_options(self, mock_db_manager):
+        """Test tasks command with all six date options."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(
+                cli,
+                [
+                    "tasks",
+                    "--due-after",
+                    "2026-01-01",
+                    "--due-before",
+                    "2026-12-31",
+                    "--scheduled-after",
+                    "2026-01-01",
+                    "--scheduled-before",
+                    "2026-06-30",
+                    "--completion-after",
+                    "2026-01-01",
+                    "--completion-before",
+                    "2026-03-31",
+                ],
+            )
+
+        assert result.exit_code == 0
+
+    def test_tasks_with_invalid_due_after_format(self):
+        """Test tasks command with invalid --due-after format."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["tasks", "--due-after", "invalid-date"])
+
+        assert result.exit_code == 1
+        assert "Invalid date format" in result.output
+
+    def test_tasks_with_invalid_scheduled_before_format(self):
+        """Test tasks command with invalid --scheduled-before format."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["tasks", "--scheduled-before", "01-01-2026"])
+
+        assert result.exit_code == 1
+        assert "Invalid date format" in result.output

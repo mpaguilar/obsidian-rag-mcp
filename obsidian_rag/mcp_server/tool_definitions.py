@@ -15,13 +15,11 @@ from obsidian_rag.llm.base import EmbeddingProvider
 from obsidian_rag.llm.providers import ProviderFactory
 from obsidian_rag.mcp_server.handlers import (
     QueryFilterParams,
+    TaskDateFilterStrings,
     _convert_property_filters,
     _create_tag_filter,
     _get_all_tags_handler,
-    _get_completed_tasks_handler,
-    _get_incomplete_tasks_handler,
-    _get_tasks_by_tag_handler,
-    _get_tasks_due_this_week_handler,
+    _get_tasks_handler,
     _list_vaults_handler,
 )
 
@@ -105,132 +103,11 @@ def _set_registry(registry: MCPToolRegistry | None) -> None:
     _tool_registry = registry
 
 
-def get_incomplete_tasks_tool(
-    db_manager: DatabaseManager,
-    limit: int = 20,
-    offset: int = 0,
-    *,
-    include_cancelled: bool = False,
-) -> dict[str, object]:
-    """Tool implementation for querying incomplete tasks.
-
-    Args:
-        db_manager: Database manager for session management.
-        limit: Maximum number of results (default 20, max 100).
-        offset: Number of results to skip.
-        include_cancelled: Whether to include cancelled tasks.
-
-    Returns:
-        Dictionary with task list response.
-
-    Notes:
-        This is a module-level function for testability.
-        The @mcp.tool() decorator is applied in the registration function.
-
-    """
-    _msg = "Tool get_incomplete_tasks called"
-    log.info(_msg)
-    return _get_incomplete_tasks_handler(
-        db_manager,
-        limit,
-        offset,
-        include_cancelled=include_cancelled,
-    )
-
-
-def get_tasks_due_this_week_tool(
-    db_manager: DatabaseManager,
-    limit: int = 20,
-    offset: int = 0,
-    *,
-    include_completed: bool = True,
-) -> dict[str, object]:
-    """Tool implementation for querying tasks due this week.
-
-    Args:
-        db_manager: Database manager for session management.
-        limit: Maximum number of results (default 20, max 100).
-        offset: Number of results to skip.
-        include_completed: Whether to include completed tasks.
-
-    Returns:
-        Dictionary with task list response.
-
-    Notes:
-        This is a module-level function for testability.
-        The @mcp.tool() decorator is applied in the registration function.
-
-    """
-    _msg = "Tool get_tasks_due_this_week called"
-    log.info(_msg)
-    return _get_tasks_due_this_week_handler(
-        db_manager,
-        limit,
-        offset,
-        include_completed=include_completed,
-    )
-
-
-def get_tasks_by_tag_tool_impl(
-    db_manager: DatabaseManager,
-    tag: str,
-    limit: int = 20,
-    offset: int = 0,
-) -> dict[str, object]:
-    """Tool implementation for querying tasks by tag.
-
-    Args:
-        db_manager: Database manager for session management.
-        tag: Tag to filter by.
-        limit: Maximum number of results (default 20, max 100).
-        offset: Number of results to skip.
-
-    Returns:
-        Dictionary with task list response.
-
-    Notes:
-        This is a module-level function for testability.
-        The @mcp.tool() decorator is applied in the registration function.
-
-    """
-    _msg = f"Tool get_tasks_by_tag called with tag: {tag}"
-    log.info(_msg)
-    return _get_tasks_by_tag_handler(db_manager, tag, limit, offset)
-
-
-def get_completed_tasks_tool(
-    db_manager: DatabaseManager,
-    limit: int = 20,
-    offset: int = 0,
-    completed_since: str | None = None,
-) -> dict[str, object]:
-    """Tool implementation for querying completed tasks.
-
-    Args:
-        db_manager: Database manager for session management.
-        limit: Maximum number of results (default 20, max 100).
-        offset: Number of results to skip.
-        completed_since: Optional ISO date string to filter by completion date.
-
-    Returns:
-        Dictionary with task list response.
-
-    Notes:
-        This is a module-level function for testability.
-        The @mcp.tool() decorator is applied in the registration function.
-
-    """
-    _msg = "Tool get_completed_tasks called"
-    log.info(_msg)
-    return _get_completed_tasks_handler(db_manager, limit, offset, completed_since)
-
-
 def query_documents_tool(  # noqa: PLR0913
     db_manager: DatabaseManager,
     embedding_provider: EmbeddingProvider | None,
     query: str,
     filters: QueryFilterParams | None = None,
-    tag_match_mode: str = "all",
     limit: int = 20,
     offset: int = 0,
 ) -> dict[str, object]:
@@ -241,8 +118,7 @@ def query_documents_tool(  # noqa: PLR0913
         embedding_provider: Embedding provider for generating query embeddings.
         query: Search query text.
         filters: QueryFilterParams with include_properties, exclude_properties,
-            include_tags, exclude_tags.
-        tag_match_mode: Whether document must have ALL or ANY of include_tags.
+            include_tags, exclude_tags, and match_mode.
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
 
@@ -283,6 +159,7 @@ def query_documents_tool(  # noqa: PLR0913
         exclude_properties=None,
         include_tags=None,
         exclude_tags=None,
+        match_mode="all",
     )
 
     prop_filters_include = _convert_property_filters(
@@ -291,11 +168,7 @@ def query_documents_tool(  # noqa: PLR0913
     prop_filters_exclude = _convert_property_filters(
         query_filters.exclude_properties,
     )
-    tag_filter = _create_tag_filter(
-        query_filters.include_tags,
-        query_filters.exclude_tags,
-        tag_match_mode,
-    )
+    tag_filter = _create_tag_filter(query_filters)
 
     # Bundle property filters into PropertyFilterParams
     property_filter_params = PropertyFilterParams(
@@ -410,7 +283,12 @@ def _create_embedding_provider(
         settings: Application settings.
 
     Returns:
-        Embedding provider instance or None if creation fails.
+        Embedding provider instance or None if no embedding config exists
+            or if provider creation fails (e.g., missing API key).
+
+    Raises:
+        ValueError: If provider name is unknown.
+        ImportError: If required dependency is not installed.
 
     """
     _msg = "_create_embedding_provider starting"
@@ -418,18 +296,17 @@ def _create_embedding_provider(
 
     embedding_config = settings.endpoints.get("embedding")
     if not embedding_config:
-        _msg = "_create_embedding_provider returning"
+        _msg = "No embedding configuration found, returning None"
         log.debug(_msg)
         return None
-
-    provider = None
 
     try:
         creator = _get_provider_creator(embedding_config.provider)
         provider = creator(embedding_config)
-    except (ValueError, ImportError, RuntimeError) as e:
-        _msg = f"Failed to create embedding provider: {e}"
+    except (ValueError, ImportError) as e:
+        _msg = f"Failed to create embedding provider '{embedding_config.provider}': {e}"
         log.warning(_msg)
+        return None
 
     _msg = "_create_embedding_provider returning"
     log.debug(_msg)
@@ -487,3 +364,51 @@ def list_vaults_tool(
     _msg = "Tool list_vaults called"
     log.info(_msg)
     return _list_vaults_handler(db_manager, limit, offset)
+
+
+def get_tasks_tool(  # noqa: PLR0913
+    db_manager: DatabaseManager,
+    status: list[str] | None = None,
+    date_filters: "TaskDateFilterStrings | None" = None,
+    tags: list[str] | None = None,
+    priority: list[str] | None = None,
+    *,
+    include_completed: bool = True,
+    include_cancelled: bool = False,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, object]:
+    """Tool implementation for querying tasks with comprehensive filtering.
+
+    Args:
+        db_manager: Database manager for session management.
+        status: List of statuses to filter by.
+        date_filters: Date filter parameters with ISO date strings.
+        tags: List of tags to filter by.
+        priority: List of priorities to filter by.
+        include_completed: Whether to include completed tasks.
+        include_cancelled: Whether to include cancelled tasks.
+        limit: Maximum number of results.
+        offset: Number of results to skip.
+
+    Returns:
+        Dictionary with task list response.
+
+    Notes:
+        This is a module-level function for testability.
+        The @mcp.tool() decorator is applied in the registration function.
+
+    """
+    _msg = "Tool get_tasks called"
+    log.info(_msg)
+    return _get_tasks_handler(
+        db_manager,
+        status=status,
+        date_filters=date_filters,
+        tags=tags,
+        priority=priority,
+        include_completed=include_completed,
+        include_cancelled=include_cancelled,
+        limit=limit,
+        offset=offset,
+    )

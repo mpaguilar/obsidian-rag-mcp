@@ -244,10 +244,7 @@ The MCP server provides read-only tools for querying tasks, documents, and vault
 - `list_vaults`: Query all vaults with document counts and metadata
 
 **Task Tools:**
-- `get_incomplete_tasks`: Query incomplete tasks with pagination
-- `get_tasks_due_this_week`: Query tasks due within 7 days
-- `get_tasks_by_tag`: Query tasks by tag (case-insensitive)
-- `get_completed_tasks`: Query completed tasks with optional date filter
+- `get_tasks`: Query tasks with comprehensive filtering by status, date ranges, tags, and priority
 
 **Document Tools:**
 - `query_documents`: Semantic search using vector similarity with optional `vault_name` filter
@@ -282,8 +279,8 @@ client = Client(
 async with client:
     # Query incomplete tasks
     tasks = await client.call_tool(
-        "get_incomplete_tasks",
-        {"limit": 10}
+        "get_tasks",
+        {"status": ["not_completed", "in_progress"], "limit": 10}
     )
 
     # Search documents
@@ -314,6 +311,46 @@ All content is stored in the database during ingestion:
 - File metadata → `documents.file_path`, `tags`, etc.
 
 This means you can run the MCP server on a completely different machine from where the files were ingested, or even delete the original vault after ingestion.
+
+### Embedding Provider Configuration
+
+The MCP server can start successfully even if the embedding provider is not configured or is missing required credentials (e.g., API key). In this case:
+
+- The server logs a warning about the failed embedding provider initialization
+- Tools that don't require embeddings (`get_tasks`, `list_vaults`, `get_all_tags`, etc.) continue to work normally
+- The `query_documents` tool will return an error: "Embedding provider not configured"
+
+**To enable semantic search**, ensure your embedding provider is properly configured with one of these options:
+
+1. **OpenAI** (cloud-based, requires API key):
+   ```yaml
+   endpoints:
+     embedding:
+       provider: openai
+       model: text-embedding-3-small
+       api_key: ${OPENAI_API_KEY}
+   ```
+
+2. **HuggingFace** (local, no API key needed):
+   ```yaml
+   endpoints:
+     embedding:
+       provider: huggingface
+       model: sentence-transformers/all-MiniLM-L6-v2
+   ```
+   Requires: `pip install langchain langchain-huggingface`
+
+3. **OpenRouter** (cloud-based, requires API key):
+   ```yaml
+   endpoints:
+     embedding:
+       provider: openrouter
+       model: qwen/qwen3-embedding-8b
+       api_key: ${OPENROUTER_API_KEY}
+   ```
+   Requires: `pip install litellm`
+
+See the [LLM Providers](#llm-providers) section for detailed configuration of each provider.
 
 ### Docker Support
 

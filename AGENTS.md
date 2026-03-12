@@ -148,6 +148,56 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 016.tasks-by-daterange (Completed 2026-03-11)
+
+**Objective:** Add comprehensive date range filtering to CLI tasks command and create a generic `get_tasks` MCP tool with flexible filtering capabilities. Consolidate MCP task API by removing 4 specific task tools.
+
+**Changes Made:**
+- **cli.py**: Added six new date filter options to the `tasks` command:
+  - `--due-after`: Filter tasks due on or after date (YYYY-MM-DD)
+  - `--due-before`: Filter tasks due on or before date (YYYY-MM-DD)
+  - `--scheduled-after`: Filter tasks scheduled on or after date
+  - `--scheduled-before`: Filter tasks scheduled on or before date
+  - `--completion-after`: Filter tasks completed on or after date
+  - `--completion-before`: Filter tasks completed on or before date
+- **cli_dates.py**: Created new module for CLI date parsing utilities with `parse_cli_date()` function
+- **mcp_server/tools/tasks.py**: Consolidated to single `get_tasks()` function with comprehensive filtering by status, date ranges, tags, and priority. Removed 4 specific tools:
+  - `get_incomplete_tasks()` - use `get_tasks(status=["not_completed", "in_progress"])`
+  - `get_tasks_due_this_week()` - use `get_tasks(due_after="2026-03-11", due_before="2026-03-18")`
+  - `get_tasks_by_tag()` - use `get_tasks(tags=["work"])`
+  - `get_completed_tasks()` - use `get_tasks(status=["completed"])`
+- **mcp_server/tools/tasks_params.py**: Created `GetTasksFilterParams` dataclass for filter parameters
+- **mcp_server/tools/tasks_dates.py**: Created `parse_iso_date()` utility for MCP date parsing
+- **mcp_server/handlers.py**: Consolidated to single `_get_tasks_handler()` for task queries. Removed 4 specific handlers.
+- **mcp_server/server.py**: Consolidated to single `get_tasks()` tool wrapper and registration. Removed 4 specific tool wrappers.
+- **mcp_server/tool_definitions.py**: Consolidated to single `get_tasks_tool()` implementation. Removed 4 specific tool implementations.
+- **tests/mcp_server/test_tools_tasks.py**: Deleted (tests for removed specific tools)
+- **tests/mcp_server/test_server.py**: Removed tests for deleted tools
+- Added comprehensive tests for all new functionality including edge cases and filter combinations
+
+**Key Design Decision:**
+Created a generic `get_tasks` tool with comprehensive filter parameters instead of adding date filters to existing individual tools. This provides:
+- Single tool for all task queries with optional parameters
+- Better composability for complex queries (e.g., "incomplete tasks due next week with tag 'work'")
+- Cleaner API with AND logic for multiple filters
+- Reduced maintenance burden (4 fewer tools to maintain)
+- Clear migration path for clients using removed tools
+
+**Migration Guide for MCP Clients:**
+| Old Tool | New `get_tasks` Equivalent |
+|----------|---------------------------|
+| `get_incomplete_tasks(include_cancelled=True)` | `get_tasks(status=["not_completed", "in_progress", "cancelled"])` |
+| `get_tasks_due_this_week(include_completed=False)` | `get_tasks(due_after="2026-03-11", due_before="2026-03-18", include_completed=False)` |
+| `get_tasks_by_tag(tag="work")` | `get_tasks(tags=["work"])` |
+| `get_completed_tasks(completed_since="2026-01-01")` | `get_tasks(status=["completed"], completion_after="2026-01-01")` |
+
+**Verification:**
+- All 857 tests pass (1 skipped)
+- 100% code coverage (3031 statements, 560 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All files under 1000 lines
+
 ### 015.dumb-overloads (Completed 2025-03-10)
 
 **Objective:** Remove `@overload` decorators and replace with simpler, more maintainable type patterns while maintaining 100% test coverage.

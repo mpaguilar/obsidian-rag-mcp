@@ -18,6 +18,7 @@ from obsidian_rag.mcp_server.handlers import (
     DocumentTagParams,
     IngestHandlerParams,
     QueryFilterParams,
+    TaskDateFilterStrings,
     _convert_property_filters,
     _create_tag_filter,
     _get_documents_by_tag_handler,
@@ -32,10 +33,6 @@ from obsidian_rag.mcp_server.tool_definitions import (
     _get_registry,
     _set_registry,
     get_all_tags_tool,
-    get_completed_tasks_tool,
-    get_incomplete_tasks_tool,
-    get_tasks_by_tag_tool_impl,
-    get_tasks_due_this_week_tool,
     list_vaults_tool,
     query_documents_tool,
 )
@@ -51,107 +48,9 @@ log = logging.getLogger(__name__)
 # ============================================================================
 
 
-def get_incomplete_tasks(
-    limit: int = 20,
-    offset: int = 0,
-    *,
-    include_cancelled: bool = False,
-) -> dict[str, object]:
-    """Query tasks that are not completed.
-
-    Args:
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
-        include_cancelled: Whether to include cancelled tasks.
-
-    Returns:
-        Dictionary with task list response.
-
-    """
-    registry = _get_registry()
-    return get_incomplete_tasks_tool(
-        registry.db_manager,
-        limit,
-        offset,
-        include_cancelled=include_cancelled,
-    )
-
-
-def get_tasks_due_this_week(
-    limit: int = 20,
-    offset: int = 0,
-    *,
-    include_completed: bool = True,
-) -> dict[str, object]:
-    """Query tasks due within the next 7 days.
-
-    Args:
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
-        include_completed: Whether to include completed tasks.
-
-    Returns:
-        Dictionary with task list response.
-
-    """
-    registry = _get_registry()
-    return get_tasks_due_this_week_tool(
-        registry.db_manager,
-        limit,
-        offset,
-        include_completed=include_completed,
-    )
-
-
-def get_tasks_by_tag(
-    tag: str,
-    limit: int = 20,
-    offset: int = 0,
-) -> dict[str, object]:
-    """Query tasks by tag (matches task or document level tags).
-
-    Args:
-        tag: Tag to filter by.
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
-
-    Returns:
-        Dictionary with task list response.
-
-    """
-    registry = _get_registry()
-    return get_tasks_by_tag_tool_impl(registry.db_manager, tag, limit, offset)
-
-
-def get_completed_tasks(
-    limit: int = 20,
-    offset: int = 0,
-    completed_since: str | None = None,
-) -> dict[str, object]:
-    """Query completed tasks with optional date filter.
-
-    Args:
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
-        completed_since: Optional ISO date string to filter by completion date.
-
-    Returns:
-        Dictionary with task list response.
-
-    """
-    registry = _get_registry()
-    return get_completed_tasks_tool(
-        registry.db_manager,
-        limit,
-        offset,
-        completed_since,
-    )
-
-
 def query_documents(
     query: str,
     filters: QueryFilterParams | None = None,
-    tag_match_mode: str = "all",
     limit: int = 20,
     offset: int = 0,
 ) -> dict[str, object]:
@@ -160,8 +59,7 @@ def query_documents(
     Args:
         query: Search query text.
         filters: QueryFilterParams with include_properties, exclude_properties,
-            include_tags, exclude_tags.
-        tag_match_mode: Whether document must have ALL or ANY of include_tags.
+            include_tags, exclude_tags, and match_mode.
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
 
@@ -175,7 +73,6 @@ def query_documents(
         embedding_provider=registry.embedding_provider,
         query=query,
         filters=filters,
-        tag_match_mode=tag_match_mode,
         limit=limit,
         offset=offset,
     )
@@ -183,7 +80,6 @@ def query_documents(
 
 def get_documents_by_tag(
     filters: QueryFilterParams | None = None,
-    tag_match_mode: str = "all",
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
@@ -191,8 +87,7 @@ def get_documents_by_tag(
     """Query documents filtered by tags with include/exclude semantics.
 
     Args:
-        filters: QueryFilterParams with include_tags, exclude_tags.
-        tag_match_mode: Whether document must have ALL or ANY of include_tags.
+        filters: QueryFilterParams with include_tags, exclude_tags, and match_mode.
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
@@ -211,13 +106,15 @@ def get_documents_by_tag(
         exclude_properties=None,
         include_tags=None,
         exclude_tags=None,
+        match_mode="all",
     )
 
-    valid_match_mode = tag_match_mode if tag_match_mode in ("all", "any") else "all"
     params: DocumentTagParams = {
         "include_tags": filters.include_tags or [],
         "exclude_tags": filters.exclude_tags or [],
-        "match_mode": valid_match_mode,
+        "match_mode": filters.match_mode
+        if filters.match_mode in ("all", "any")
+        else "all",
         "vault_name": vault_name,
         "limit": limit,
         "offset": offset,
@@ -227,7 +124,6 @@ def get_documents_by_tag(
 
 def get_documents_by_property(
     filters: QueryFilterParams | None = None,
-    tag_match_mode: str = "all",
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
@@ -236,8 +132,7 @@ def get_documents_by_property(
 
     Args:
         filters: QueryFilterParams with include_properties, exclude_properties,
-            include_tags, exclude_tags.
-        tag_match_mode: Whether document must have ALL or ANY of include_tags.
+            include_tags, exclude_tags, and match_mode.
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
@@ -267,15 +162,12 @@ def get_documents_by_property(
         exclude_properties=None,
         include_tags=None,
         exclude_tags=None,
+        match_mode="all",
     )
 
     prop_filters_include = _convert_property_filters(filters.include_properties)
     prop_filters_exclude = _convert_property_filters(filters.exclude_properties)
-    tag_filter = _create_tag_filter(
-        filters.include_tags,
-        filters.exclude_tags,
-        tag_match_mode,
-    )
+    tag_filter = _create_tag_filter(filters)
 
     # Bundle property filters into PropertyFilterParams
     property_filter_params = PropertyFilterParams(
@@ -380,6 +272,63 @@ def ingest(
     return _ingest_handler(params)
 
 
+def get_tasks(  # noqa: PLR0913
+    status: list[str] | None = None,
+    date_filters: "TaskDateFilterStrings | None" = None,
+    tags: list[str] | None = None,
+    priority: list[str] | None = None,
+    *,
+    include_completed: bool = True,
+    include_cancelled: bool = False,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, object]:
+    """Query tasks with flexible filtering by status, dates, priority, and tags.
+
+    This tool provides comprehensive task filtering with support for date ranges,
+    status lists, tag filtering, and priority filtering. All filters are optional
+    and combined with AND logic.
+
+    Args:
+        status: List of statuses to filter by (e.g., ['not_completed', 'in_progress']).
+        date_filters: Date filter parameters with ISO date strings.
+        tags: List of tags that tasks must have (all tags required).
+        priority: List of priorities to filter by (e.g., ['high', 'highest']).
+        include_completed: Whether to include completed tasks (default: True).
+        include_cancelled: Whether to include cancelled tasks (default: False).
+        limit: Maximum number of results (default: 20, max: 100).
+        offset: Number of results to skip (default: 0).
+
+    Returns:
+        Dictionary with paginated task list response.
+
+    Notes:
+        Date comparisons are inclusive (>= for after, <= for before).
+        Multiple filters are combined with AND logic.
+        Returns empty results if no tasks match the criteria.
+
+    """
+    from obsidian_rag.mcp_server.handlers import _get_tasks_handler
+
+    registry = _get_registry()
+
+    # Create date filters if individual date params provided
+    if date_filters is None:
+        date_filters = TaskDateFilterStrings()
+
+    return _get_tasks_handler(
+        db_manager=registry.db_manager,
+        status=status,
+        date_filters=date_filters,
+        tags=tags,
+        priority=priority,
+        include_completed=include_completed,
+        include_cancelled=include_cancelled,
+        limit=limit,
+        offset=offset,
+    )
+
+
 async def health_check(_request: Request) -> JSONResponse:
     """Health check endpoint.
 
@@ -477,10 +426,7 @@ def _register_tools(mcp: FastMCP) -> None:
     log.debug(_msg)
 
     # Register task tools
-    mcp.tool()(get_incomplete_tasks)
-    mcp.tool()(get_tasks_due_this_week)
-    mcp.tool()(get_tasks_by_tag)
-    mcp.tool()(get_completed_tasks)
+    mcp.tool()(get_tasks)
 
     # Register document tools
     mcp.tool()(query_documents)

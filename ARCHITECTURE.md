@@ -271,10 +271,28 @@ uvicorn obsidian_rag.mcp_server.server:create_http_app --factory
 All tools are read-only and use SQLAlchemy `select()` operations only:
 
 **Task Tools:**
-- `get_incomplete_tasks`: Query tasks with status not_completed, in_progress, optionally cancelled
-- `get_tasks_due_this_week`: Query tasks due within next 7 days
-- `get_tasks_by_tag`: Query tasks by tag (matches task or document level, case-insensitive)
-- `get_completed_tasks`: Query completed tasks with optional date filter
+- `get_tasks`: Generic task query with comprehensive filtering by status, date ranges (due, scheduled, completion), tags, and priority. All filters are optional and combined with AND logic.
+
+**Task Filter Features (get_tasks):**
+- `status`: List of statuses to filter by (e.g., ['not_completed', 'in_progress'])
+- `due_after`/`due_before`: Date range filtering for due dates (inclusive)
+- `scheduled_after`/`scheduled_before`: Date range filtering for scheduled dates (inclusive)
+- `completion_after`/`completion_before`: Date range filtering for completion dates (inclusive)
+- `tags`: List of tags that tasks must have (all tags required, AND logic)
+- `priority`: List of priorities to filter by (e.g., ['high', 'highest'])
+- `include_completed`: Whether to include completed tasks (default: True)
+- `include_cancelled`: Whether to include cancelled tasks (default: False)
+- All filters are optional and combined with AND logic
+- Date comparisons are inclusive (>= for after, <= for before)
+- Tasks without dates are excluded from date filter comparisons
+
+**Migration from removed tools:**
+| Old Tool | New `get_tasks` Equivalent |
+|----------|---------------------------|
+| `get_incomplete_tasks(include_cancelled=True)` | `get_tasks(status=["not_completed", "in_progress", "cancelled"])` |
+| `get_tasks_due_this_week(include_completed=False)` | `get_tasks(due_after="2026-03-11", due_before="2026-03-18", include_completed=False)` |
+| `get_tasks_by_tag(tag="work")` | `get_tasks(tags=["work"])` |
+| `get_completed_tasks(completed_since="2026-01-01")` | `get_tasks(status=["completed"], completion_after="2026-01-01")` |
 
 **Document Tools:**
 - `query_documents`: Semantic search using vector similarity (cosine distance) with optional property and tag filters
