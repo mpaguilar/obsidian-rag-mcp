@@ -108,7 +108,7 @@ Database connection management using SQLAlchemy with:
 
 **Supported Providers:**
 - OpenAI (embeddings, analysis, chat) - uses `litellm`
-- OpenRouter (embeddings, chat) - uses `litellm` with `openrouter/` prefix
+- OpenRouter (embeddings, chat) - uses `litellm` with `OPENAI_API_BASE` env var workaround
 - HuggingFace (local embeddings) - uses `langchain.embeddings.HuggingFaceEmbeddings`
 - Extensible design for additional providers
 
@@ -116,7 +116,7 @@ Database connection management using SQLAlchemy with:
 - `litellm`: Provider-agnostic LLM connectivity for OpenAI and OpenRouter endpoints
   - `OpenAIEmbeddingProvider`: Uses `litellm.embedding()`
   - `OpenAIChatProvider`: Uses `litellm.completion()`
-  - `OpenRouterEmbeddingProvider`: Uses `litellm.embedding()` with `openrouter/` prefix
+  - `OpenRouterEmbeddingProvider`: Uses `litellm.embedding()` with model name (no `openrouter/` prefix) and `OPENAI_API_BASE` env var set to OpenRouter's API endpoint. Workaround for litellm 1.82.1 bug where `openrouter/` prefix causes `api_base` to be ignored.
   - `OpenRouterChatProvider`: Uses `litellm.completion()` with `openrouter/` prefix
 - `langchain`: Local embedding models via HuggingFace
   - `HuggingFaceEmbeddingProvider`: Uses `HuggingFaceEmbeddings`

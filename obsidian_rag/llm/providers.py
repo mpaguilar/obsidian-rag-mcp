@@ -619,6 +619,11 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
         self.base_url = base_url or self.DEFAULT_BASE_URL
         self.litellm = litellm
 
+        # Workaround for litellm 1.82.1 bug: api_base parameter is ignored for embeddings
+        # Set OPENAI_API_BASE env var so litellm routes to OpenRouter instead of OpenAI
+        # See: https://github.com/BerriAI/litellm/issues/16045
+        os.environ["OPENAI_API_BASE"] = self.base_url
+
         _msg = f"OpenRouter embedding provider initialized with model: {self.model}"
         log.debug(_msg)
 
@@ -656,20 +661,27 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
 
         Notes:
             Uses litellm.embedding() for provider-agnostic LLM connectivity.
-            Model format for OpenRouter is "openrouter/{provider}/{model}".
+            Uses model name without openrouter/ prefix as workaround for
+            litellm 1.82.1 bug where openrouter/ prefix causes api_base to be
+            ignored. OPENAI_API_BASE env var is set in __init__ to ensure
+            requests route to OpenRouter's API endpoint.
 
         """
         _msg = f"Generating embedding with OpenRouter model: {self.model}"
         log.debug(_msg)
 
         try:
-            # Use litellm for embedding generation
-            # Format model as openrouter/provider/model for litellm
-            model_name = f"openrouter/{self.model}"
+            # Workaround for litellm 1.82.1 bug: use model name without
+            # openrouter/ prefix. The openrouter/ prefix causes litellm to
+            # ignore api_base and route to OpenAI's API instead of OpenRouter's.
+            # OPENAI_API_BASE env var (set in __init__) ensures correct routing.
+            model_name = self.model
             response = self.litellm.embedding(
                 model=model_name,
                 input=[text],
                 api_key=self.api_key,
+                # api_base parameter is IGNORED by litellm for embeddings
+                # We set OPENAI_API_BASE env var in __init__ instead
                 api_base=self.base_url,
             )
         except Exception as e:

@@ -897,3 +897,70 @@ class TestToolImplementations:
                 embedding_provider=None,
                 query="test query",
             )
+
+
+class TestMCPServerDiagnosticLogging:
+    """Test diagnostic logging for MCP server initialization."""
+
+    def test_logs_embedding_provider_initialization(self):
+        """Test that embedding provider configuration is logged at INFO level."""
+        from obsidian_rag.mcp_server.server import create_mcp_server
+
+        mock_settings = MagicMock()
+        mock_settings.mcp.token = "test-token"
+        mock_settings.mcp.enable_health_check = False
+        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.endpoints.embedding.provider = "openrouter"
+        mock_settings.endpoints.embedding.model = "qwen/qwen3-embedding-8b"
+        mock_settings.endpoints.embedding.api_key = "test-key"
+        mock_settings.endpoints.embedding.base_url = None
+
+        with patch("obsidian_rag.mcp_server.server.log") as mock_log:
+            with patch("obsidian_rag.mcp_server.server.DatabaseManager"):
+                with patch(
+                    "obsidian_rag.mcp_server.server._create_embedding_provider"
+                ) as mock_create:
+                    # Create a mock provider with model and base_url attributes
+                    mock_provider = MagicMock()
+                    mock_provider.model = "qwen/qwen3-embedding-8b"
+                    mock_provider.base_url = "https://openrouter.ai/api/v1"
+                    mock_create.return_value = mock_provider
+
+                    with patch("obsidian_rag.mcp_server.server._set_registry"):
+                        with patch("obsidian_rag.mcp_server.server._register_tools"):
+                            create_mcp_server(mock_settings)
+
+        # Verify INFO log was called with provider details
+        info_calls = list(mock_log.info.call_args_list)
+        provider_log_found = any(
+            "Embedding provider initialized" in str(call) for call in info_calls
+        )
+        assert provider_log_found, (
+            "Expected INFO log for embedding provider initialization"
+        )
+
+    def test_logs_when_no_embedding_provider(self):
+        """Test that disabled semantic search is logged when no provider configured."""
+        from obsidian_rag.mcp_server.server import create_mcp_server
+
+        mock_settings = MagicMock()
+        mock_settings.mcp.token = "test-token"
+        mock_settings.mcp.enable_health_check = False
+        mock_settings.database.url = "sqlite:///:memory:"
+
+        with patch("obsidian_rag.mcp_server.server.log") as mock_log:
+            with patch("obsidian_rag.mcp_server.server.DatabaseManager"):
+                with patch(
+                    "obsidian_rag.mcp_server.server._create_embedding_provider",
+                    return_value=None,
+                ):
+                    with patch("obsidian_rag.mcp_server.server._set_registry"):
+                        with patch("obsidian_rag.mcp_server.server._register_tools"):
+                            create_mcp_server(mock_settings)
+
+        # Verify INFO log was called about disabled semantic search
+        info_calls = list(mock_log.info.call_args_list)
+        disabled_log_found = any(
+            "semantic search disabled" in str(call).lower() for call in info_calls
+        )
+        assert disabled_log_found, "Expected INFO log when semantic search is disabled"

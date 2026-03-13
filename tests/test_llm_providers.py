@@ -544,8 +544,13 @@ class TestOpenRouterEmbeddingProvider:
                 with pytest.raises(EmbeddingError, match="API Error"):
                     provider.generate_embedding("test text")
 
-    def test_generate_embedding_uses_openrouter_prefix(self):
-        """Test that model name is prefixed with openrouter/ for litellm."""
+    def test_generate_embedding_uses_model_without_openrouter_prefix(self):
+        """Test that model name is NOT prefixed with openrouter/ (litellm bug workaround).
+
+        This test verifies the workaround for litellm 1.82.1 bug where using
+        openrouter/ prefix causes api_base to be ignored and requests are
+        incorrectly routed to OpenAI's API instead of OpenRouter's.
+        """
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
         mock_response = {
@@ -562,8 +567,56 @@ class TestOpenRouterEmbeddingProvider:
 
         mock_embed.assert_called_once()
         call_kwargs = mock_embed.call_args.kwargs
-        assert call_kwargs["model"] == "openrouter/qwen/qwen3-embedding-8b"
+        # Model should NOT have openrouter/ prefix (workaround for litellm bug)
+        assert call_kwargs["model"] == "qwen/qwen3-embedding-8b"
         assert call_kwargs["api_base"] == "https://openrouter.ai/api/v1"
+
+    def test_generate_embedding_with_openai_model_via_openrouter(self):
+        """Test using OpenAI model through OpenRouter with correct routing."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        mock_response = {
+            "data": [{"embedding": [0.1, 0.2, 0.3]}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.embedding", return_value=mock_response) as mock_embed:
+                provider = OpenRouterEmbeddingProvider(
+                    api_key="test-key",
+                    model="openai/text-embedding-3-small",
+                )
+                provider.generate_embedding("test text")
+
+        mock_embed.assert_called_once()
+        call_kwargs = mock_embed.call_args.kwargs
+        # Model should be passed as-is without openrouter/ prefix
+        assert call_kwargs["model"] == "openai/text-embedding-3-small"
+        assert call_kwargs["api_base"] == "https://openrouter.ai/api/v1"
+        assert call_kwargs["api_key"] == "test-key"
+
+    def test_generate_embedding_with_custom_base_url(self):
+        """Test that custom base_url is correctly passed to litellm."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        mock_response = {
+            "data": [{"embedding": [0.1, 0.2, 0.3]}],
+        }
+
+        custom_url = "https://custom.openrouter.api.com"
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.embedding", return_value=mock_response) as mock_embed:
+                provider = OpenRouterEmbeddingProvider(
+                    api_key="test-key",
+                    model="qwen/qwen3-embedding-8b",
+                    base_url=custom_url,
+                )
+                provider.generate_embedding("test text")
+
+        mock_embed.assert_called_once()
+        call_kwargs = mock_embed.call_args.kwargs
+        assert call_kwargs["model"] == "qwen/qwen3-embedding-8b"
+        assert call_kwargs["api_base"] == custom_url
 
     def test_dimension_mapping_qwen3_embedding_8b(self):
         """Test dimension mapping for qwen/qwen3-embedding-8b."""
@@ -576,6 +629,78 @@ class TestOpenRouterEmbeddingProvider:
             )
 
         assert provider._dimension == 4096
+
+    def test_init_sets_openai_api_base_env_var(self):
+        """Test that initialization sets OPENAI_API_BASE environment variable.
+
+        This verifies the workaround for litellm 1.82.1 bug where api_base
+        parameter is ignored for embedding requests. Setting OPENAI_API_BASE
+        ensures requests route to OpenRouter instead of OpenAI.
+        """
+        from obsidian_rag.llm import providers as providers_module
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch.dict(
+                providers_module.os.environ,
+                {"OPENROUTER_API_KEY": "test-key"},
+                clear=True,
+            ):
+                provider = OpenRouterEmbeddingProvider(api_key="test-key")
+
+                # Verify env var is set to default OpenRouter URL
+                assert (
+                    providers_module.os.environ.get("OPENAI_API_BASE")
+                    == "https://openrouter.ai/api/v1"
+                )
+                assert provider.base_url == "https://openrouter.ai/api/v1"
+
+    def test_init_sets_openai_api_base_with_custom_url(self):
+        """Test that custom base_url is set in OPENAI_API_BASE env var."""
+        from obsidian_rag.llm import providers as providers_module
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        custom_url = "https://custom.openrouter.api.com"
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch.dict(
+                providers_module.os.environ,
+                {"OPENROUTER_API_KEY": "test-key"},
+                clear=True,
+            ):
+                provider = OpenRouterEmbeddingProvider(
+                    api_key="test-key",
+                    base_url=custom_url,
+                )
+
+                # Verify env var is set to custom URL
+                assert providers_module.os.environ.get("OPENAI_API_BASE") == custom_url
+                assert provider.base_url == custom_url
+
+    def test_init_overwrites_existing_openai_api_base(self):
+        """Test that initialization overwrites existing OPENAI_API_BASE value.
+
+        This ensures the provider always uses its configured base_url,
+        even if OPENAI_API_BASE was previously set to a different value.
+        """
+        from obsidian_rag.llm import providers as providers_module
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch.dict(
+                providers_module.os.environ,
+                {
+                    "OPENAI_API_BASE": "https://existing.url.com",
+                    "OPENROUTER_API_KEY": "test-key",
+                },
+            ):
+                OpenRouterEmbeddingProvider(api_key="test-key")
+
+                # Verify env var is overwritten with OpenRouter URL
+                assert (
+                    providers_module.os.environ.get("OPENAI_API_BASE")
+                    == "https://openrouter.ai/api/v1"
+                )
 
     def test_init_import_error(self):
         """Test initialization raises ImportError when litellm not installed."""

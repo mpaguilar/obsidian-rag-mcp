@@ -172,6 +172,8 @@ obsidian-rag tasks --status not_completed --due-before 2024-12-31 --limit 50
 - [ ] Task with priority [priority:: high]
 - [ ] Task with due date [due:: 2024-12-31]
 - [ ] Task with tag #urgent
+- [ ] Task with hierarchical tag #work/project/alpha
+- [ ] Task with version tag #v1.0/release
 - [ ] Task with repeat [repeat:: every day]
 - [ ] Task with scheduled date [scheduled:: 2024-12-31]
 - [ ] Task with completion date [completion:: 2024-12-31]
@@ -708,7 +710,7 @@ Tasks are automatically extracted from document content using checkbox syntax:
 - `[-]` - Cancelled
 
 **Task metadata extracted:**
-- Tags (`#tag`)
+- Tags (`#tag`) - supports hierarchical tags like `#personal/expenses` or `#v1.0/release`
 - Due dates (`[due:: YYYY-MM-DD]`)
 - Scheduled dates (`[scheduled:: YYYY-MM-DD]`)
 - Completion dates (`[completion:: YYYY-MM-DD]`)

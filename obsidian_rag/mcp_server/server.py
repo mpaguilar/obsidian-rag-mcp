@@ -481,6 +481,18 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     db_manager = DatabaseManager(settings.database.url)
     embedding_provider = _create_embedding_provider(settings)
 
+    # Log embedding provider configuration for diagnostics
+    if embedding_provider is not None:
+        _msg = (
+            f"Embedding provider initialized: type={type(embedding_provider).__name__}, "
+            f"model={getattr(embedding_provider, 'model', 'unknown')}, "
+            f"base_url={getattr(embedding_provider, 'base_url', 'default')}"
+        )
+        log.info(_msg)
+    else:
+        _msg = "No embedding provider configured - semantic search disabled"
+        log.info(_msg)
+
     # Initialize global registry BEFORE registering tools
     _set_registry(MCPToolRegistry(db_manager, embedding_provider, settings))
 

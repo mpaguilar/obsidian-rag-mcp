@@ -51,8 +51,8 @@ TASK_PATTERN = re.compile(
     re.MULTILINE,
 )
 
-# Pattern to match inline tags: #tag (alphanumeric and hyphens/underscores)
-TAG_PATTERN = re.compile(r"#([a-zA-Z0-9_-]+)")
+# Pattern to match inline tags: #tag (alphanumeric, hyphens, underscores, forward slashes, and dots)
+TAG_PATTERN = re.compile(r"#([a-zA-Z0-9_./-]+)")
 
 # Pattern to match key:: value metadata
 METADATA_PATTERN = re.compile(

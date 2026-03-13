@@ -148,6 +148,66 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 017.task-ingest-improvments (Completed 2026-03-13)
+
+**Objective:** Fix TAG_PATTERN regex in tasks.py to support hierarchical tags with forward slashes and dots. Fix OpenRouter embedding provider routing bug to use correct API endpoint.
+
+**Changes Made:**
+- **obsidian_rag/parsing/tasks.py** (line 55): Updated TAG_PATTERN regex from `r"#([a-zA-Z0-9_-]+)"` to `r"#([a-zA-Z0-9_./-]+)"`
+  - Added `/` (forward slash) to support hierarchical tags like `#personal/expenses`
+  - Added `.` (dot) to support version tags like `#v1.0/release`
+  - Maintained backward compatibility with existing simple tags
+- **tests/test_parsing_tasks.py**: Added comprehensive `TestHierarchicalTags` test class with 7 test cases:
+  - `test_parse_task_with_hierarchical_tags`: Verifies `#personal/expenses` parsed as `["personal/expenses"]`
+  - `test_parse_task_with_multiple_hierarchical_tags`: Multiple nested tags in one task
+  - `test_parse_task_with_mixed_simple_and_hierarchical_tags`: Both `#urgent` and `#work/project/name`
+  - `test_parse_task_with_dots_in_tags`: Version tags like `#v1.0/release`
+  - `test_parse_task_with_trailing_slash`: Edge case handling
+  - `test_parse_task_with_consecutive_slashes`: Preserves `#a//b` exactly as written
+  - `test_parse_task_with_deep_nesting`: No artificial depth limit (tested 10 levels)
+- **obsidian_rag/llm/providers.py** (line 671): Fixed OpenRouter embedding provider routing bug
+  - Changed `model_name = f"openrouter/{self.model}"` to `model_name = self.model`
+  - Added detailed comment explaining litellm 1.82.1 bug workaround
+  - Requests now correctly route to OpenRouter API instead of OpenAI API
+- **obsidian_rag/mcp_server/server.py** (lines 484-493): Added diagnostic logging for embedding provider initialization
+  - Logs provider type, model, and base_url at INFO level during MCP server startup
+  - Helps diagnose configuration issues
+- **tests/test_llm_providers.py**: Updated and added tests for OpenRouter embedding provider
+  - `test_generate_embedding_uses_model_without_openrouter_prefix`: Verifies litellm bug workaround
+  - `test_generate_embedding_with_openai_model_via_openrouter`: Tests OpenAI model through OpenRouter
+  - `test_generate_embedding_with_custom_base_url`: Verifies custom base_url handling
+- **tests/mcp_server/test_server.py**: Added `TestMCPServerDiagnosticLogging` test class
+  - `test_logs_embedding_provider_initialization`: Verifies provider logging
+  - `test_logs_when_no_embedding_provider`: Verifies disabled search logging
+
+**Key Design Decisions:**
+
+**Hierarchical Tags:**
+Simple regex character class expansion to include `/` and `.` characters. This provides:
+- Full hierarchical tag support without breaking existing simple tags
+- No database schema changes required (tags stored as TEXT[])
+- No migration needed - existing data remains valid
+- Minimal code change with maximum compatibility
+
+**OpenRouter Routing Bug:**
+Workaround for litellm 1.82.1 bug where `openrouter/` prefix causes `api_base` to be ignored:
+- Use model name without `openrouter/` prefix (e.g., `openai/text-embedding-3-small`)
+- Pass `api_base="https://openrouter.ai/api/v1"` to litellm.embedding()
+- This treats OpenRouter as an OpenAI-compatible endpoint
+- OpenRouter's API is OpenAI-compatible, so this approach works correctly
+
+**Edge Case Decisions:**
+- Trailing slashes: Preserved as-is (e.g., `#tag/` → `["tag/"]`)
+- Consecutive slashes: Preserved exactly as written (e.g., `#a//b` → `["a//b"]`)
+- Maximum depth: No artificial limit - PostgreSQL TEXT[] handles any length
+
+**Verification:**
+- All 893 tests pass (1 skipped)
+- 100% code coverage (3064 statements, 574 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All files under 1000 lines
+
 ### 016.tasks-by-daterange (Completed 2026-03-11)
 
 **Objective:** Add comprehensive date range filtering to CLI tasks command and create a generic `get_tasks` MCP tool with flexible filtering capabilities. Consolidate MCP task API by removing 4 specific task tools.
