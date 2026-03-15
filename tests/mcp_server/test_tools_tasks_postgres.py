@@ -1,7 +1,6 @@
 """Tests for MCP task tools PostgreSQL path.
 
-This module tests PostgreSQL-specific code paths in tasks.py that are not
-covered by SQLite-based integration tests.
+This module tests PostgreSQL-specific code paths in tasks.py.
 """
 
 from unittest.mock import MagicMock, patch
@@ -161,7 +160,7 @@ class TestApplyTagFiltersPostgresql:
         mock_query.filter.return_value = mock_query
 
         tags = ["work"]
-        result = _apply_tag_filters(mock_query, tags, is_postgresql=True)
+        result = _apply_tag_filters(mock_query, tags)
 
         # Should call filter once for the tag
         assert mock_query.filter.call_count == 1
@@ -175,7 +174,7 @@ class TestApplyTagFiltersPostgresql:
         mock_query.filter.return_value = mock_query
 
         tags = ["work", "urgent", "personal"]
-        result = _apply_tag_filters(mock_query, tags, is_postgresql=True)
+        result = _apply_tag_filters(mock_query, tags)
 
         # Should call filter once per tag
         assert mock_query.filter.call_count == 3
@@ -188,7 +187,7 @@ class TestApplyTagFiltersPostgresql:
         mock_query = MagicMock()
 
         tags: list[str] = []
-        result = _apply_tag_filters(mock_query, tags, is_postgresql=True)
+        result = _apply_tag_filters(mock_query, tags)
 
         # Should not call filter
         mock_query.filter.assert_not_called()
@@ -201,261 +200,8 @@ class TestApplyTagFiltersPostgresql:
         mock_query = MagicMock()
 
         tags = None
-        result = _apply_tag_filters(mock_query, tags, is_postgresql=True)
+        result = _apply_tag_filters(mock_query, tags)
 
         # Should not call filter
         mock_query.filter.assert_not_called()
         assert result == mock_query
-
-    def test_apply_tag_filters_sqlite_skips_sql_filtering(self):
-        """Test _apply_tag_filters skips SQL filtering for SQLite."""
-        from obsidian_rag.mcp_server.tools.tasks import _apply_tag_filters
-
-        mock_query = MagicMock()
-
-        tags = ["work", "urgent"]
-        result = _apply_tag_filters(mock_query, tags, is_postgresql=False)
-
-        # Should not call filter for SQLite
-        mock_query.filter.assert_not_called()
-        assert result == mock_query
-
-
-class TestFilterByTagsPython:
-    """Tests for _filter_by_tags_python helper function."""
-
-    def test_filter_by_tags_python_single_tag(self):
-        """Test filtering by single tag in Python."""
-        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
-
-        # Create mock tasks and documents
-        task1 = MagicMock()
-        task1.tags = ["work", "urgent"]
-
-        doc1 = MagicMock()
-        doc1.tags = ["personal"]
-
-        task2 = MagicMock()
-        task2.tags = ["home"]
-
-        doc2 = MagicMock()
-        doc2.tags = []
-
-        results = [(task1, doc1), (task2, doc2)]
-
-        # Filter by "work" tag
-        filtered = _filter_by_tags_python(results, ["work"])  # type: ignore[arg-type]
-
-        assert len(filtered) == 1
-        assert filtered[0][0] == task1
-
-    def test_filter_by_tags_python_multiple_tags_and_logic(self):
-        """Test filtering by multiple tags uses AND logic."""
-        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
-
-        # Task with both tags
-        task1 = MagicMock()
-        task1.tags = ["work", "urgent"]
-
-        doc1 = MagicMock()
-        doc1.tags = []
-
-        # Task with only one tag
-        task2 = MagicMock()
-        task2.tags = ["work"]
-
-        doc2 = MagicMock()
-        doc2.tags = []
-
-        results = [(task1, doc1), (task2, doc2)]
-
-        # Filter by both "work" AND "urgent"
-        filtered = _filter_by_tags_python(results, ["work", "urgent"])  # type: ignore[arg-type]
-
-        # Only task1 has both tags
-        assert len(filtered) == 1
-        assert filtered[0][0] == task1
-
-    def test_filter_by_tags_python_document_tag_match(self):
-        """Test that document tags are also checked."""
-        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
-
-        # Task with no tags, but document has the tag
-        task1 = MagicMock()
-        task1.tags = []
-
-        doc1 = MagicMock()
-        doc1.tags = ["work"]
-
-        # Task with no matching tags
-        task2 = MagicMock()
-        task2.tags = []
-
-        doc2 = MagicMock()
-        doc2.tags = ["home"]
-
-        results = [(task1, doc1), (task2, doc2)]
-
-        # Filter by "work" tag
-        filtered = _filter_by_tags_python(results, ["work"])  # type: ignore[arg-type]
-
-        # Task1 matches because its document has the tag
-        assert len(filtered) == 1
-        assert filtered[0][0] == task1
-
-    def test_filter_by_tags_python_case_insensitive(self):
-        """Test that tag filtering is case-insensitive."""
-        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
-
-        task1 = MagicMock()
-        task1.tags = ["WORK", "URGENT"]
-
-        doc1 = MagicMock()
-        doc1.tags = []
-
-        results = [(task1, doc1)]
-
-        # Filter by lowercase tag
-        filtered = _filter_by_tags_python(results, ["work"])  # type: ignore[arg-type]
-
-        assert len(filtered) == 1
-
-    def test_filter_by_tags_python_no_matches(self):
-        """Test filtering when no tasks match."""
-        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
-
-        task1 = MagicMock()
-        task1.tags = ["home"]
-
-        doc1 = MagicMock()
-        doc1.tags = ["personal"]
-
-        results = [(task1, doc1)]
-
-        # Filter by non-existent tag
-        filtered = _filter_by_tags_python(results, ["work"])  # type: ignore[arg-type]
-
-        assert len(filtered) == 0
-
-    def test_filter_by_tags_python_empty_tags_list(self):
-        """Test filtering with empty tags list returns all results."""
-        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
-
-        task1 = MagicMock()
-        doc1 = MagicMock()
-
-        task2 = MagicMock()
-        doc2 = MagicMock()
-
-        results = [(task1, doc1), (task2, doc2)]
-
-        # Filter with empty tags
-        filtered = _filter_by_tags_python(results, [])  # type: ignore[arg-type]
-
-        # Should return all results
-        assert len(filtered) == 2
-
-    def test_filter_by_tags_python_none_tags(self):
-        """Test filtering with None task tags."""
-        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
-
-        task1 = MagicMock()
-        task1.tags = None
-
-        doc1 = MagicMock()
-        doc1.tags = ["work"]
-
-        results = [(task1, doc1)]
-
-        # Filter by tag that exists in document
-        filtered = _filter_by_tags_python(results, ["work"])  # type: ignore[arg-type]
-
-        assert len(filtered) == 1
-
-    def test_filter_by_tags_python_substring_match(self):
-        """Test that tag filtering uses substring matching."""
-        from obsidian_rag.mcp_server.tools.tasks import _filter_by_tags_python
-
-        task1 = MagicMock()
-        task1.tags = ["personal/bills", "personal/expenses"]
-
-        doc1 = MagicMock()
-        doc1.tags = []
-
-        results = [(task1, doc1)]
-
-        # Filter by partial tag match
-        filtered = _filter_by_tags_python(results, ["personal"])  # type: ignore[arg-type]
-
-        assert len(filtered) == 1
-
-
-class TestTaskHasTag:
-    """Tests for _task_has_tag helper function."""
-
-    def test_task_has_tag_in_task_tags(self):
-        """Test finding tag in task tags."""
-        from obsidian_rag.mcp_server.tools.tasks import _task_has_tag
-
-        task = MagicMock()
-        task.tags = ["work", "urgent"]
-
-        doc = MagicMock()
-        doc.tags = []
-
-        assert _task_has_tag(task, doc, "work") is True  # type: ignore[arg-type]
-        assert _task_has_tag(task, doc, "urgent") is True  # type: ignore[arg-type]
-        assert _task_has_tag(task, doc, "personal") is False  # type: ignore[arg-type]
-
-    def test_task_has_tag_in_document_tags(self):
-        """Test finding tag in document tags."""
-        from obsidian_rag.mcp_server.tools.tasks import _task_has_tag
-
-        task = MagicMock()
-        task.tags = []
-
-        doc = MagicMock()
-        doc.tags = ["work", "personal"]
-
-        assert _task_has_tag(task, doc, "work") is True  # type: ignore[arg-type]
-        assert _task_has_tag(task, doc, "personal") is True  # type: ignore[arg-type]
-        assert _task_has_tag(task, doc, "urgent") is False  # type: ignore[arg-type]
-
-    def test_task_has_tag_case_insensitive(self):
-        """Test tag matching is case-insensitive."""
-        from obsidian_rag.mcp_server.tools.tasks import _task_has_tag
-
-        task = MagicMock()
-        task.tags = ["WORK", "URGENT"]
-
-        doc = MagicMock()
-        doc.tags = []
-
-        assert _task_has_tag(task, doc, "work") is True  # type: ignore[arg-type]
-        assert _task_has_tag(task, doc, "urgent") is True  # type: ignore[arg-type]
-
-    def test_task_has_tag_none_tags(self):
-        """Test with None tags."""
-        from obsidian_rag.mcp_server.tools.tasks import _task_has_tag
-
-        task = MagicMock()
-        task.tags = None
-
-        doc = MagicMock()
-        doc.tags = None
-
-        assert _task_has_tag(task, doc, "work") is False  # type: ignore[arg-type]
-
-    def test_task_has_tag_substring_match(self):
-        """Test substring matching in tags."""
-        from obsidian_rag.mcp_server.tools.tasks import _task_has_tag
-
-        task = MagicMock()
-        task.tags = ["personal/bills", "work/project"]
-
-        doc = MagicMock()
-        doc.tags = []
-
-        assert _task_has_tag(task, doc, "personal") is True  # type: ignore[arg-type]
-        assert _task_has_tag(task, doc, "bills") is True  # type: ignore[arg-type]
-        assert _task_has_tag(task, doc, "project") is True  # type: ignore[arg-type]

@@ -40,7 +40,6 @@ obsidian_rag/                    # Main package
 │       ├── documents_filters.py # Property filter implementations
 │       ├── documents_params.py  # Filter parameter dataclasses
 │       ├── documents_postgres.py # PostgreSQL-specific queries
-│       ├── documents_sqlite.py  # SQLite-specific queries
 │       ├── documents_tags.py    # Tag filtering logic
 │       ├── tasks.py             # Task query tools
 │       └── vaults.py            # Vault query tools
@@ -148,6 +147,58 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 019.remove-sqlite-testing (Completed 2026-03-15)
+
+**Objective:** Remove all SQLite-specific code paths and testing infrastructure. Migrate tests to use mocked PostgreSQL instead of SQLite in-memory database.
+
+**Changes Made:**
+- **Deleted `obsidian_rag/mcp_server/tools/documents_sqlite.py`**: Removed entire SQLite-specific query implementations file
+- **Deleted `tests/mcp_server/test_tools_documents_sqlite.py`**: Removed SQLite-specific tests file
+- **Updated `obsidian_rag/mcp_server/tools/documents.py`**: Removed SQLite imports and branching logic, now PostgreSQL-only
+- **Updated `obsidian_rag/mcp_server/tools/tasks.py`**: Removed SQLite-specific filtering functions (`_task_matches_date_filters()`, `_filter_by_date_python()`), simplified to PostgreSQL-only
+- **Updated `obsidian_rag/database/models.py`**: Removed SQLite fallback from `ArrayType` class, now raises error for non-PostgreSQL dialects
+- **Updated `tests/conftest.py`**: Removed SQLite fixtures (`db_engine`, `db_session`), replaced with PostgreSQL mocking utilities
+- **Updated test files**: Migrated all tests from SQLite to mocked PostgreSQL using `@patch` decorators:
+  - `tests/test_cli.py`
+  - `tests/test_cli_integration.py`
+  - `tests/test_database_engine.py`
+  - `tests/test_database_models.py`
+  - `tests/mcp_server/test_tools_documents.py`
+  - `tests/mcp_server/test_tools_documents_filters.py`
+  - `tests/mcp_server/test_server.py`
+  - `tests/mcp_server/test_tools_vaults.py`
+  - `tests/mcp_server/test_tools_tasks_date_match.py`
+  - `tests/mcp_server/test_tools_tasks_get_tasks.py`
+  - `tests/mcp_server/test_get_tasks_integration.py`
+  - `tests/alembic/test_migration_downgrade_chain.py`
+- **Updated `tests/test_database_engine_postgres.py`**: Removed SQLite URL normalization test
+- **Updated `tests/test_database_models_postgres.py`**: Removed mock dialect set to sqlite
+- **Created `tests/utils/mock_helpers.py`**: New utility module for configuring mock query chains with documents and tasks
+- **Updated `tests/__init__.py`**: Added to fix mypy module path issues
+- **Updated `AGENTS.md`**: Removed `documents_sqlite.py` from project structure
+- **Updated `ARCHITECTURE.md`**: Updated ArrayType description to reflect PostgreSQL-only support
+
+**Key Design Decisions:**
+
+**Testing Strategy:**
+- Used `@patch` decorators to mock database interactions per CONVENTIONS.md
+- Created `configure_mock_query_chain()` helper for consistent mock setup
+- All tests now use mocked PostgreSQL sessions instead of SQLite in-memory database
+- Maintained 100% test coverage throughout migration
+
+**Code Simplification:**
+- Removed all `dialect.name == "postgresql"` branching logic
+- Removed SQLite-specific query implementations
+- `ArrayType` now strictly requires PostgreSQL dialect
+- Cleaner, more maintainable codebase with single database target
+
+**Verification:**
+- All 915 tests pass (1 skipped)
+- 100% code coverage (2995 statements, 560 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All files under 1000 lines
+
 ### 018.date-task-filtering (Completed 2026-03-15)
 
 **Objective:** Add `date_match_mode` parameter to task date filtering with "all" and "any" options. When "any", OR logic applies across all date filter types (e.g., due_before OR scheduled_after OR completion_before).
@@ -157,10 +208,8 @@ ruff check obsidian_rag/ tests/
 - **obsidian_rag/mcp_server/handlers.py**: Added `date_match_mode` field to `TaskDateFilterStrings` dataclass and updated `_get_tasks_handler()` to pass the parameter through to `GetTasksFilterParams`
 - **obsidian_rag/mcp_server/tools/tasks.py**: Refactored date filtering logic:
   - Added `_apply_date_filters()` function that handles both "all" (AND) and "any" (OR) match modes
-  - Added `_task_matches_date_filters()` for Python-level SQLite filtering with match mode support
   - Modified `get_tasks()` to use new combined date filtering approach
   - PostgreSQL: Uses SQL OR conditions for "any" mode across all date types
-  - SQLite: Applies Python-level filtering with OR logic when match_mode="any"
 - **obsidian_rag/mcp_server/server.py**: Updated `get_tasks()` tool wrapper to accept `date_match_mode` parameter
 - **obsidian_rag/mcp_server/tool_definitions.py**: Updated `get_tasks_tool()` to pass `date_match_mode` parameter and updated tool description
 - **tests/mcp_server/test_tasks_params.py**: Added tests for `date_match_mode` field in `GetTasksFilterParams`
@@ -171,7 +220,6 @@ ruff check obsidian_rag/ tests/
   - `test_apply_date_filters_no_conditions`: Verifies no filtering when no date conditions
   - `test_apply_date_filters_with_completion_dates`: Tests completion date filtering
   - `test_apply_date_filters_all_three_date_types_any_mode`: Tests OR logic across due, scheduled, and completion dates
-  - `TestTaskMatchesDateFilters`: Python-level filtering tests for SQLite
 - **tests/mcp_server/test_tools_tasks.py**: Added `TestGetTasksDateMatchMode` test class with integration tests
 - **tests/mcp_server/test_get_tasks_integration.py**: Added `test_get_tasks_date_match_mode_any` for end-to-end verification
 
@@ -184,8 +232,7 @@ ruff check obsidian_rag/ tests/
 **Implementation Pattern:**
 - Followed existing tag filtering pattern from `documents_tags.py` which uses `match_mode` with Literal["all", "any"]
 - PostgreSQL: Uses SQLAlchemy `or_()` and `and_()` operators to build dynamic queries
-- SQLite: Python-level filtering with `_task_matches_date_filters()` function that evaluates conditions based on match_mode
-- Consistent behavior across both database dialects
+- Single database dialect simplifies implementation and testing
 
 **Backward Compatibility:**
 - Default value of "all" preserves existing AND logic behavior

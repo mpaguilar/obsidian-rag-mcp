@@ -178,18 +178,25 @@ class TestToolFunctionsWithRegistry:
     def test_get_documents_by_property(self, setup_registry):
         """Test get_documents_by_property uses registry."""
         from obsidian_rag.mcp_server.server import get_documents_by_property
+        from obsidian_rag.mcp_server.models import DocumentListResponse
+
+        mock_registry = setup_registry
 
         with patch(
-            "obsidian_rag.mcp_server.handlers._get_documents_by_tag_handler"
-        ) as mock_handler:
-            mock_handler.return_value = {"results": []}
+            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property"
+        ) as mock_tool:
+            mock_tool.return_value = DocumentListResponse(
+                results=[],
+                total_count=0,
+                has_more=False,
+                next_offset=None,
+            )
 
             result = get_documents_by_property()
 
-            # This test verifies the function runs without error
-            # The actual implementation calls get_documents_by_property_tool
-            # which is tested separately
-            assert result is not None or result == {"results": []}
+            assert result["total_count"] == 0
+            assert result["results"] == []
+            mock_tool.assert_called_once()
 
     def test_get_all_tags(self, setup_registry):
         """Test get_all_tags uses registry."""
@@ -909,7 +916,7 @@ class TestMCPServerDiagnosticLogging:
         mock_settings = MagicMock()
         mock_settings.mcp.token = "test-token"
         mock_settings.mcp.enable_health_check = False
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.endpoints.embedding.provider = "openrouter"
         mock_settings.endpoints.embedding.model = "qwen/qwen3-embedding-8b"
         mock_settings.endpoints.embedding.api_key = "test-key"
@@ -946,7 +953,7 @@ class TestMCPServerDiagnosticLogging:
         mock_settings = MagicMock()
         mock_settings.mcp.token = "test-token"
         mock_settings.mcp.enable_health_check = False
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
 
         with patch("obsidian_rag.mcp_server.server.log") as mock_log:
             with patch("obsidian_rag.mcp_server.server.DatabaseManager"):

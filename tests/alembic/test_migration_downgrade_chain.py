@@ -6,11 +6,11 @@ and downgraded without errors.
 
 import logging
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine
 
 log = logging.getLogger(__name__)
 
@@ -28,14 +28,14 @@ def alembic_config(tmp_path):
     _msg = "alembic_config fixture starting"
     log.debug(_msg)
 
-    # Create alembic.ini content
+    # Create alembic.ini content with PostgreSQL URL
     alembic_ini = tmp_path / "alembic.ini"
     alembic_ini.write_text("""
 [alembic]
 script_location = alembic
 prepend_sys_path = .
 version_path_separator = os
-sqlalchemy.url = sqlite:///:memory:
+sqlalchemy.url = postgresql+psycopg://localhost/test
 
 [post_write_hooks]
 """)
@@ -49,18 +49,19 @@ sqlalchemy.url = sqlite:///:memory:
 
 
 @pytest.fixture
-def sqlite_engine():
-    """Create in-memory SQLite engine for testing.
+def mock_postgresql_engine():
+    """Create mock PostgreSQL engine for testing.
 
     Returns:
-        Engine: SQLAlchemy engine instance.
+        MagicMock: Mocked SQLAlchemy engine instance.
     """
-    _msg = "sqlite_engine fixture starting"
+    _msg = "mock_postgresql_engine fixture starting"
     log.debug(_msg)
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = MagicMock()
+    engine.url = "postgresql+psycopg://localhost/test"
 
-    _msg = "sqlite_engine fixture returning"
+    _msg = "mock_postgresql_engine fixture returning"
     log.debug(_msg)
 
     return engine
@@ -118,23 +119,22 @@ class TestMigrationChainIntegrity:
     """Test full migration chain can be upgraded and downgraded."""
 
     @pytest.mark.skip(reason="Requires PostgreSQL with pgvector for full test")
-    def test_full_upgrade_downgrade_cycle(self, alembic_config, sqlite_engine):
+    def test_full_upgrade_downgrade_cycle(self, alembic_config, mock_postgresql_engine):
         """Test upgrade head -> downgrade base -> upgrade head cycle.
 
         Args:
             alembic_config: Alembic configuration fixture.
-            sqlite_engine: SQLite engine fixture.
+            mock_postgresql_engine: Mock PostgreSQL engine fixture.
 
         Notes:
             This test requires PostgreSQL with pgvector extension.
-            SQLite does not support all PostgreSQL-specific features
-            used in the migrations (e.g., UUID, GIN indexes).
+            Skipped in CI as it requires actual PostgreSQL database.
         """
         _msg = "test_full_upgrade_downgrade_cycle starting"
         log.debug(_msg)
 
-        # Configure alembic to use our test engine
-        alembic_config.attributes["connection"] = sqlite_engine.connect()
+        # Configure alembic to use our mock engine
+        alembic_config.attributes["connection"] = mock_postgresql_engine.connect()
 
         # Upgrade to head
         _msg = "Upgrading to head"

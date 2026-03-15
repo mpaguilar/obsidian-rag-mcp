@@ -514,3 +514,17 @@ class TestHasTagsAdditional:
         # Search for a tag that doesn't exist in the list
         result = _has_tags(doc, "work")
         assert result is False
+
+
+class TestMatchesAnyTagsAdditional:
+    """Additional tests for _matches_any_tags function - line 120 coverage."""
+
+    def test_matches_any_tags_with_none_doc_tags(self):
+        """Test _matches_any_tags when doc.tags is None - covers line 120."""
+        from obsidian_rag.mcp_server.tools.documents_tags import _matches_any_tags
+
+        doc = MagicMock()
+        doc.tags = None
+
+        result = _matches_any_tags(doc, ["work", "urgent"])
+        assert result is False

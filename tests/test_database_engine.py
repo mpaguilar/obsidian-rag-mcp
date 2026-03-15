@@ -1,144 +1,113 @@
 """Tests for database engine module."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from obsidian_rag.database.engine import DatabaseManager
-from obsidian_rag.database.models import Base, Document, Vault
 
 
 class TestDatabaseManager:
     """Test cases for DatabaseManager class."""
 
-    def test_init_with_url(self):
-        """Test initializing DatabaseManager with database URL."""
-        db_url = "sqlite:///:memory:"
-        manager = DatabaseManager(db_url)
+    def test_init_with_postgresql_url(self):
+        """Test DatabaseManager initialization with PostgreSQL URL."""
+        with patch("obsidian_rag.database.engine.create_engine") as mock_create_engine:
+            mock_engine = MagicMock()
+            mock_create_engine.return_value = mock_engine
 
-        assert manager.engine is not None
-        assert manager.SessionLocal is not None
+            db_manager = DatabaseManager("postgresql+psycopg://localhost/test")
+
+            mock_create_engine.assert_called_once_with(
+                "postgresql+psycopg://localhost/test"
+            )
+            assert db_manager.engine is mock_engine
 
     def test_create_tables(self):
-        """Test creating database tables."""
-        db_url = "sqlite:///:memory:"
-        manager = DatabaseManager(db_url)
+        """Test creating all tables."""
+        with patch("obsidian_rag.database.engine.create_engine") as mock_create_engine:
+            mock_engine = MagicMock()
+            mock_create_engine.return_value = mock_engine
 
-        # Should not raise
-        manager.create_tables()
+            with patch(
+                "obsidian_rag.database.models.Base.metadata.create_all"
+            ) as mock_create:
+                db_manager = DatabaseManager("postgresql+psycopg://localhost/test")
+                db_manager.create_tables()
 
-        # Verify tables exist by querying
-        with manager.get_session() as session:
-            result = session.query(Document).all()
-            assert result == []
+                mock_create.assert_called_once_with(bind=mock_engine)
 
-    def test_drop_tables(self):
-        """Test dropping database tables."""
-        db_url = "sqlite:///:memory:"
-        manager = DatabaseManager(db_url)
-        manager.create_tables()
+    def test_get_session(self):
+        """Test getting a database session."""
+        with patch("obsidian_rag.database.engine.create_engine") as mock_create_engine:
+            mock_engine = MagicMock()
+            mock_session_class = MagicMock()
+            mock_session = MagicMock()
+            mock_session_class.return_value = mock_session
 
-        # Should not raise
-        manager.drop_tables()
+            mock_create_engine.return_value = mock_engine
 
-    def test_get_session_context_manager(self):
-        """Test using get_session as context manager."""
-        db_url = "sqlite:///:memory:"
-        manager = DatabaseManager(db_url)
-        manager.create_tables()
+            with patch(
+                "obsidian_rag.database.engine.sessionmaker",
+                return_value=mock_session_class,
+            ):
+                db_manager = DatabaseManager("postgresql+psycopg://localhost/test")
 
-        with manager.get_session() as session:
-            assert session is not None
-            # Create vault first
-            vault = Vault(
-                name="Test Vault",
-                container_path="/test",
-                host_path="/test",
-            )
-            session.add(vault)
-            session.flush()
-            # Add a document
-            doc = Document(
-                vault_id=vault.id,
-                file_path="file.md",
-                file_name="file.md",
-                content="Test",
-                checksum_md5="abc123",
-                created_at_fs=__import__("datetime").datetime.now(),
-                modified_at_fs=__import__("datetime").datetime.now(),
-            )
-            session.add(doc)
+                with db_manager.get_session() as session:
+                    assert session is mock_session
 
-        # Verify document was committed
-        with manager.get_session() as session:
-            result = session.query(Document).first()
-            assert result is not None
-            assert result.file_path == "file.md"
+                mock_session.commit.assert_called_once()
 
     def test_get_session_rollback_on_error(self):
-        """Test that session rolls back on error."""
-        db_url = "sqlite:///:memory:"
-        manager = DatabaseManager(db_url)
-        manager.create_tables()
+        """Test session rollback on error."""
+        with patch("obsidian_rag.database.engine.create_engine") as mock_create_engine:
+            mock_engine = MagicMock()
+            mock_session_class = MagicMock()
+            mock_session = MagicMock()
+            mock_session_class.return_value = mock_session
 
-        # Create vault first
-        with manager.get_session() as session:
-            vault = Vault(
-                name="Test Vault",
-                container_path="/test",
-                host_path="/test",
-            )
-            session.add(vault)
-            session.flush()
-            # Create a document first
-            doc = Document(
-                vault_id=vault.id,
-                file_path="file.md",
-                file_name="file.md",
-                content="Test",
-                checksum_md5="abc123",
-                created_at_fs=__import__("datetime").datetime.now(),
-                modified_at_fs=__import__("datetime").datetime.now(),
-            )
-            session.add(doc)
+            mock_create_engine.return_value = mock_engine
 
-        # Try to add duplicate (should fail due to unique constraint)
-        try:
-            with manager.get_session() as session:
-                # Get the vault first
-                vault_result = session.query(Vault).first()
-                from typing import cast
+            with patch(
+                "obsidian_rag.database.engine.sessionmaker",
+                return_value=mock_session_class,
+            ):
+                db_manager = DatabaseManager("postgresql+psycopg://localhost/test")
 
-                vault_queried = cast(
-                    Vault, vault_result
-                )  # We know vault exists from test setup
-                doc2 = Document(
-                    vault_id=vault_queried.id,
-                    file_path="file.md",  # Same path in same vault
-                    file_name="file.md",
-                    content="Test 2",
-                    checksum_md5="def456",
-                    created_at_fs=__import__("datetime").datetime.now(),
-                    modified_at_fs=__import__("datetime").datetime.now(),
-                )
-                session.add(doc2)
-                # Force the error by flushing
-                session.flush()
-        except Exception:
-            pass  # Expected to fail
+                with pytest.raises(ValueError):
+                    with db_manager.get_session() as session:
+                        assert session is mock_session
+                        raise ValueError("Test error")
 
-        # Verify original document still exists
-        with manager.get_session() as session:
-            count = session.query(Document).count()
-            assert count == 1
+                mock_session.rollback.assert_called_once()
+                mock_session.close.assert_called_once()
+
+    def test_drop_tables(self):
+        """Test dropping all tables."""
+        with patch("obsidian_rag.database.engine.create_engine") as mock_create_engine:
+            mock_engine = MagicMock()
+            mock_create_engine.return_value = mock_engine
+
+            with patch(
+                "obsidian_rag.database.models.Base.metadata.drop_all"
+            ) as mock_drop:
+                db_manager = DatabaseManager("postgresql+psycopg://localhost/test")
+                db_manager.drop_tables()
+
+                mock_drop.assert_called_once_with(bind=mock_engine)
 
     def test_close(self):
         """Test closing database engine."""
-        db_url = "sqlite:///:memory:"
-        manager = DatabaseManager(db_url)
+        with patch("obsidian_rag.database.engine.create_engine") as mock_create_engine:
+            mock_engine = MagicMock()
+            mock_create_engine.return_value = mock_engine
 
-        # Should not raise
-        manager.close()
+            db_manager = DatabaseManager("postgresql+psycopg://localhost/test")
+            db_manager.close()
+
+            mock_engine.dispose.assert_called_once()
 
 
 class TestNormalizePostgresUrl:

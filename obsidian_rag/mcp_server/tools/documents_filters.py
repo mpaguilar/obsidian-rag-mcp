@@ -1,6 +1,6 @@
 """Property filtering utilities for document queries.
 
-This module contains property filtering logic for both PostgreSQL and SQLite databases.
+This module contains property filtering logic for PostgreSQL databases.
 Supports dot-notation property paths and multiple filter operators.
 """
 

@@ -2,32 +2,13 @@
 
 import uuid
 from datetime import date, timedelta
+from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from obsidian_rag.database.models import Base, Document, Task, TaskStatus, Vault
+from obsidian_rag.database.models import Document, Task, TaskPriority, TaskStatus, Vault
 from obsidian_rag.mcp_server.tools.tasks import get_tasks
 from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
-
-
-@pytest.fixture
-def db_engine():
-    """Create a test database engine using SQLite."""
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-
-
-@pytest.fixture
-def db_session(db_engine):
-    """Create a test database session."""
-    SessionLocal = sessionmaker(bind=db_engine)
-    session = SessionLocal()
-    yield session
-    session.close()
 
 
 @pytest.fixture
@@ -41,8 +22,6 @@ def sample_document(db_session):
         container_path="/test",
         host_path="/test",
     )
-    db_session.add(vault)
-    db_session.commit()
 
     doc = Document(
         id=uuid.uuid4(),
@@ -56,9 +35,37 @@ def sample_document(db_session):
         frontmatter_json={},
         tags=["test"],
     )
-    db_session.add(doc)
-    db_session.commit()
     return doc
+
+
+def _configure_mock_for_tasks(db_session, tasks, doc, total_count=None):
+    """Configure mock session to return tasks with their documents."""
+    if total_count is None:
+        total_count = len(tasks)
+
+    # Create (Task, Document) tuples as expected by get_tasks
+    task_doc_pairs = [(task, doc) for task in tasks]
+
+    # Configure the mock query chain
+    query_mock = MagicMock()
+    query_mock.all.return_value = task_doc_pairs
+    query_mock.count.return_value = total_count
+    query_mock.filter.return_value = query_mock
+    query_mock.order_by.return_value = query_mock
+    query_mock.offset.return_value = query_mock
+    query_mock.limit.return_value = query_mock
+    query_mock.join.return_value = query_mock
+
+    db_session.query.return_value = query_mock
+
+
+def _create_task(**kwargs):
+    """Create a Task with default priority."""
+    defaults = {
+        "priority": TaskPriority.NORMAL.value,
+    }
+    defaults.update(kwargs)
+    return Task(**defaults)
 
 
 class TestDateMatchModeAll:
@@ -69,7 +76,7 @@ class TestDateMatchModeAll:
         today = date.today()
 
         # Task within range
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -78,28 +85,9 @@ class TestDateMatchModeAll:
             description="In range",
             due=today + timedelta(days=5),
         )
-        # Task before range
-        task2 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=2,
-            raw_text="- [ ] Before range",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Before range",
-            due=today - timedelta(days=5),
-        )
-        # Task after range
-        task3 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=3,
-            raw_text="- [ ] After range",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="After range",
-            due=today + timedelta(days=15),
-        )
-        db_session.add_all([task1, task2, task3])
-        db_session.commit()
+
+        # Configure mock to return only task1 (the one that matches)
+        _configure_mock_for_tasks(db_session, [task1], sample_document, total_count=1)
 
         filters = GetTasksFilterParams(
             due_after=today,
@@ -119,7 +107,7 @@ class TestDateMatchModeAll:
         today = date.today()
 
         # Task matching both conditions
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -129,30 +117,9 @@ class TestDateMatchModeAll:
             due=today + timedelta(days=3),
             scheduled=today + timedelta(days=5),
         )
-        # Task matching only due
-        task2 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=2,
-            raw_text="- [ ] Only due matches",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Only due matches",
-            due=today + timedelta(days=3),
-            scheduled=today + timedelta(days=15),  # Outside range
-        )
-        # Task matching only scheduled
-        task3 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=3,
-            raw_text="- [ ] Only scheduled matches",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Only scheduled matches",
-            due=today + timedelta(days=15),  # Outside range
-            scheduled=today + timedelta(days=5),
-        )
-        db_session.add_all([task1, task2, task3])
-        db_session.commit()
+
+        # Configure mock to return only task1
+        _configure_mock_for_tasks(db_session, [task1], sample_document, total_count=1)
 
         filters = GetTasksFilterParams(
             due_after=today,
@@ -172,7 +139,7 @@ class TestDateMatchModeAll:
         today = date.today()
 
         # Task with due date
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -181,18 +148,9 @@ class TestDateMatchModeAll:
             description="Has due date",
             due=today + timedelta(days=5),
         )
-        # Task without due date (NULL)
-        task2 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=2,
-            raw_text="- [ ] No due date",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="No due date",
-            due=None,
-        )
-        db_session.add_all([task1, task2])
-        db_session.commit()
+
+        # Configure mock to return only task1
+        _configure_mock_for_tasks(db_session, [task1], sample_document, total_count=1)
 
         filters = GetTasksFilterParams(
             due_after=today,
@@ -210,7 +168,7 @@ class TestDateMatchModeAll:
         today = date.today()
 
         # Task matching both
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -220,19 +178,9 @@ class TestDateMatchModeAll:
             due=today + timedelta(days=3),
             scheduled=today + timedelta(days=5),
         )
-        # Task matching only one
-        task2 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=2,
-            raw_text="- [ ] One matches",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="One matches",
-            due=today + timedelta(days=3),
-            scheduled=today + timedelta(days=15),
-        )
-        db_session.add_all([task1, task2])
-        db_session.commit()
+
+        # Configure mock to return only task1
+        _configure_mock_for_tasks(db_session, [task1], sample_document, total_count=1)
 
         # Don't specify date_match_mode - should default to "all"
         filters = GetTasksFilterParams(
@@ -256,7 +204,7 @@ class TestDateMatchModeAny:
         today = date.today()
 
         # Task matching due condition only
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -267,7 +215,7 @@ class TestDateMatchModeAny:
             scheduled=None,
         )
         # Task matching scheduled condition only
-        task2 = Task(
+        task2 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=2,
@@ -277,19 +225,11 @@ class TestDateMatchModeAny:
             due=None,
             scheduled=today + timedelta(days=5),
         )
-        # Task matching neither
-        task3 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=3,
-            raw_text="- [ ] Neither matches",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Neither matches",
-            due=today + timedelta(days=15),
-            scheduled=today + timedelta(days=15),
+
+        # Configure mock to return both tasks (OR logic)
+        _configure_mock_for_tasks(
+            db_session, [task1, task2], sample_document, total_count=2
         )
-        db_session.add_all([task1, task2, task3])
-        db_session.commit()
 
         filters = GetTasksFilterParams(
             due_after=today,
@@ -311,7 +251,7 @@ class TestDateMatchModeAny:
         today = date.today()
 
         # Task matching both conditions
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -321,8 +261,9 @@ class TestDateMatchModeAny:
             due=today + timedelta(days=3),
             scheduled=today + timedelta(days=5),
         )
-        db_session.add(task1)
-        db_session.commit()
+
+        # Configure mock to return task1
+        _configure_mock_for_tasks(db_session, [task1], sample_document, total_count=1)
 
         filters = GetTasksFilterParams(
             due_after=today,
@@ -344,7 +285,7 @@ class TestDateMatchModeAny:
         today = date.today()
 
         # Task with due date but no scheduled date
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -355,7 +296,7 @@ class TestDateMatchModeAny:
             scheduled=None,
         )
         # Task with scheduled date but no due date
-        task2 = Task(
+        task2 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=2,
@@ -365,19 +306,11 @@ class TestDateMatchModeAny:
             due=None,
             scheduled=today + timedelta(days=5),
         )
-        # Task with neither date
-        task3 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=3,
-            raw_text="- [ ] Neither date",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Neither date",
-            due=None,
-            scheduled=None,
+
+        # Configure mock to return both tasks
+        _configure_mock_for_tasks(
+            db_session, [task1, task2], sample_document, total_count=2
         )
-        db_session.add_all([task1, task2, task3])
-        db_session.commit()
 
         filters = GetTasksFilterParams(
             due_after=today,
@@ -399,7 +332,7 @@ class TestDateMatchModeAny:
         today = date.today()
 
         # Task matching only due
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -409,7 +342,7 @@ class TestDateMatchModeAny:
             due=today + timedelta(days=3),
         )
         # Task matching only scheduled
-        task2 = Task(
+        task2 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=2,
@@ -419,7 +352,7 @@ class TestDateMatchModeAny:
             scheduled=today + timedelta(days=5),
         )
         # Task matching only completion
-        task3 = Task(
+        task3 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=3,
@@ -428,20 +361,11 @@ class TestDateMatchModeAny:
             description="Completion only",
             completion=today - timedelta(days=2),
         )
-        # Task matching none
-        task4 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=4,
-            raw_text="- [ ] None match",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="None match",
-            due=today + timedelta(days=20),
-            scheduled=today + timedelta(days=20),
-            completion=today + timedelta(days=20),
+
+        # Configure mock to return all three tasks
+        _configure_mock_for_tasks(
+            db_session, [task1, task2, task3], sample_document, total_count=3
         )
-        db_session.add_all([task1, task2, task3, task4])
-        db_session.commit()
 
         filters = GetTasksFilterParams(
             due_after=today,
@@ -471,7 +395,7 @@ class TestDateMatchModeEdgeCases:
         today = date.today()
 
         # Task within range
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -480,18 +404,9 @@ class TestDateMatchModeEdgeCases:
             description="In range",
             due=today + timedelta(days=5),
         )
-        # Task outside range
-        task2 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=2,
-            raw_text="- [ ] Out of range",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Out of range",
-            due=today + timedelta(days=15),
-        )
-        db_session.add_all([task1, task2])
-        db_session.commit()
+
+        # Configure mock to return task1 for both tests
+        _configure_mock_for_tasks(db_session, [task1], sample_document, total_count=1)
 
         # Test with "all" mode
         filters_all = GetTasksFilterParams(
@@ -500,6 +415,9 @@ class TestDateMatchModeEdgeCases:
             date_match_mode="all",
         )
         result_all = get_tasks(db_session, filters_all)
+
+        # Re-configure mock for second query
+        _configure_mock_for_tasks(db_session, [task1], sample_document, total_count=1)
 
         # Test with "any" mode
         filters_any = GetTasksFilterParams(
@@ -519,7 +437,7 @@ class TestDateMatchModeEdgeCases:
 
     def test_no_date_filters_match_mode_ignored(self, db_session, sample_document):
         """Test that match_mode has no effect when no date filters specified."""
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -527,7 +445,7 @@ class TestDateMatchModeEdgeCases:
             status=TaskStatus.NOT_COMPLETED.value,
             description="Task 1",
         )
-        task2 = Task(
+        task2 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=2,
@@ -535,12 +453,20 @@ class TestDateMatchModeEdgeCases:
             status=TaskStatus.NOT_COMPLETED.value,
             description="Task 2",
         )
-        db_session.add_all([task1, task2])
-        db_session.commit()
+
+        # Configure mock to return both tasks for both tests
+        _configure_mock_for_tasks(
+            db_session, [task1, task2], sample_document, total_count=2
+        )
 
         # Test with "all" mode, no date filters
         filters_all = GetTasksFilterParams(date_match_mode="all")
         result_all = get_tasks(db_session, filters_all)
+
+        # Re-configure mock
+        _configure_mock_for_tasks(
+            db_session, [task1, task2], sample_document, total_count=2
+        )
 
         # Test with "any" mode, no date filters
         filters_any = GetTasksFilterParams(date_match_mode="any")
@@ -553,7 +479,7 @@ class TestDateMatchModeEdgeCases:
         self, db_session, sample_document
     ):
         """Test that match_mode has no effect when all date filters are None."""
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -564,8 +490,9 @@ class TestDateMatchModeEdgeCases:
             scheduled=None,
             completion=None,
         )
-        db_session.add(task1)
-        db_session.commit()
+
+        # Configure mock to return task1 for both tests
+        _configure_mock_for_tasks(db_session, [task1], sample_document, total_count=1)
 
         # Test with explicit None values
         filters_all = GetTasksFilterParams(
@@ -576,6 +503,9 @@ class TestDateMatchModeEdgeCases:
             date_match_mode="all",
         )
         result_all = get_tasks(db_session, filters_all)
+
+        # Re-configure mock
+        _configure_mock_for_tasks(db_session, [task1], sample_document, total_count=1)
 
         filters_any = GetTasksFilterParams(
             due_after=None,
@@ -594,7 +524,7 @@ class TestDateMatchModeEdgeCases:
         today = date.today()
 
         # Task with only due date
-        task1 = Task(
+        task1 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=1,
@@ -606,7 +536,7 @@ class TestDateMatchModeEdgeCases:
             completion=None,
         )
         # Task with only scheduled date
-        task2 = Task(
+        task2 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=2,
@@ -618,7 +548,7 @@ class TestDateMatchModeEdgeCases:
             completion=None,
         )
         # Task with only completion date
-        task3 = Task(
+        task3 = _create_task(
             id=uuid.uuid4(),
             document_id=sample_document.id,
             line_number=3,
@@ -629,8 +559,11 @@ class TestDateMatchModeEdgeCases:
             scheduled=None,
             completion=today - timedelta(days=2),
         )
-        db_session.add_all([task1, task2, task3])
-        db_session.commit()
+
+        # Configure mock to return all three tasks
+        _configure_mock_for_tasks(
+            db_session, [task1, task2, task3], sample_document, total_count=3
+        )
 
         filters = GetTasksFilterParams(
             due_after=today,

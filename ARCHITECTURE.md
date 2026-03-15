@@ -12,11 +12,10 @@ Obsidian RAG is a Python library designed to ingest, store, and query Obsidian m
 
 #### ArrayType TypeDecorator
 
-The `ArrayType` class in `models.py` provides cross-database compatibility for PostgreSQL arrays:
-- Uses `postgresql.ARRAY` type when connected to PostgreSQL (production)
-- Falls back to `JSON` type for other databases (e.g., SQLite for testing)
+The `ArrayType` class in `models.py` provides PostgreSQL array support:
+- Uses `postgresql.ARRAY` type for PostgreSQL arrays
 - Used for `tags` columns in both Document and Task models
-- Ensures schema-model alignment regardless of database backend
+- Raises an error if used with non-PostgreSQL dialects
 
 #### Vector Index
 

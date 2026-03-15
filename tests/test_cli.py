@@ -70,7 +70,7 @@ class TestCliCommands:
 
         mock_scan.return_value = []
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.ingestion.batch_size = 100
         mock_settings.ingestion.progress_interval = 10
         mock_settings.logging.level = "INFO"
@@ -105,7 +105,7 @@ class TestCliCommands:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -133,7 +133,7 @@ class TestCliCommands:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -158,7 +158,7 @@ class TestCliCommands:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -369,7 +369,7 @@ class TestLogLevelFlag:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "DEBUG"
         mock_settings.logging.format = "text"
 
@@ -397,7 +397,7 @@ class TestLogLevelFlag:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "info"  # lowercase
         mock_settings.logging.format = "text"
 
@@ -421,7 +421,7 @@ class TestLogLevelFlag:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INVALID"
         mock_settings.logging.format = "text"
 
@@ -446,7 +446,7 @@ class TestLogLevelFlag:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "ERROR"
         mock_settings.logging.format = "text"
 
@@ -586,7 +586,7 @@ class TestCliConfigFileLogging:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -602,7 +602,7 @@ class TestCliConfigFileLogging:
         with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
             with runner.isolated_filesystem() as fs:
                 config_path = Path(fs) / "config.yaml"
-                config_path.write_text("database:\n  url: sqlite:///:memory:")
+                config_path.write_text("database:\n  url: postgresql+psycopg://localhost/test")
                 result = runner.invoke(
                     cli, ["--config-file", str(config_path), "tasks"]
                 )
@@ -619,7 +619,7 @@ class TestCliVerboseFlag:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "DEBUG"
         mock_settings.logging.format = "text"
 
@@ -768,7 +768,7 @@ class TestIngestCommand:
         mock_process.return_value = []
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.ingestion.batch_size = 100
         mock_settings.ingestion.progress_interval = 10
         mock_settings.logging.level = "INFO"
@@ -849,7 +849,7 @@ class TestIngestCommand:
         mock_process.return_value = [mock_file_info]
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.ingestion.batch_size = 100
         mock_settings.ingestion.progress_interval = 10
         mock_settings.logging.level = "INFO"
@@ -962,7 +962,7 @@ class TestQueryCommand:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -990,7 +990,7 @@ class TestQueryCommand:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1039,7 +1039,7 @@ class TestTasksCommand:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1251,7 +1251,7 @@ class TestQueryCommandCoverage:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1297,7 +1297,7 @@ class TestQueryCommandCoverage:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1330,7 +1330,7 @@ class TestTasksCommandCoverage:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1398,7 +1398,7 @@ class TestRunIngestionCoverage:
 
         mock_settings = MagicMock()
         mock_settings.database = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.ingestion = MagicMock()
         mock_settings.ingestion.batch_size = 100
         mock_settings.ingestion.progress_interval = 10
@@ -1519,7 +1519,7 @@ class TestTasksCommandEarlyReturn:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1554,7 +1554,7 @@ class TestCliDateFiltering:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1578,7 +1578,7 @@ class TestCliDateFiltering:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1605,7 +1605,7 @@ class TestCliDateFiltering:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1638,7 +1638,7 @@ class TestCliDateFiltering:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1671,7 +1671,7 @@ class TestCliDateFiltering:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1711,7 +1711,7 @@ class TestCliDateFiltering:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 
@@ -1726,7 +1726,7 @@ class TestCliDateFiltering:
         runner = CliRunner()
 
         mock_settings = MagicMock()
-        mock_settings.database.url = "sqlite:///:memory:"
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
         mock_settings.logging.level = "INFO"
         mock_settings.logging.format = "text"
 

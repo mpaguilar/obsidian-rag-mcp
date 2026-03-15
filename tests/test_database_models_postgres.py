@@ -78,7 +78,7 @@ class TestCreatePgvectorExtension:
 
         mock_target = MagicMock()
         mock_connection = MagicMock()
-        mock_connection.dialect.name = "sqlite"
+        mock_connection.dialect.name = "mysql"
 
         _create_pgvector_extension(mock_target, mock_connection)
 

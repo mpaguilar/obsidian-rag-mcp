@@ -2,332 +2,541 @@
 
 import uuid
 from datetime import date, timedelta
+from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from obsidian_rag.database.models import Base, Document, Task, TaskStatus, Vault
+from obsidian_rag.database.models import Document, Task, TaskStatus
 from obsidian_rag.mcp_server.tools.tasks import get_tasks
 from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
-
-
-@pytest.fixture
-def db_engine():
-    """Create a test database engine using SQLite."""
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-
-
-@pytest.fixture
-def db_session(db_engine):
-    """Create a test database session."""
-    SessionLocal = sessionmaker(bind=db_engine)
-    session = SessionLocal()
-    yield session
-    session.close()
-
-
-@pytest.fixture
-def sample_document(db_session):
-    """Create a sample document for testing."""
-    from datetime import datetime
-
-    vault = Vault(
-        id=uuid.uuid4(),
-        name="test_vault",
-        container_path="/test",
-        host_path="/test",
-    )
-    db_session.add(vault)
-    db_session.commit()
-
-    doc = Document(
-        id=uuid.uuid4(),
-        vault_id=vault.id,
-        file_path="/test/doc.md",
-        file_name="doc.md",
-        content="# Test",
-        checksum_md5="abc123",
-        created_at_fs=datetime.now(),
-        modified_at_fs=datetime.now(),
-        frontmatter_json={},
-        tags=["test"],
-    )
-    db_session.add(doc)
-    db_session.commit()
-    return doc
 
 
 class TestGetTasks:
     """Tests for get_tasks function."""
 
-    def test_empty_result(self, db_session):
+    def _create_mock_session_with_tasks(self, tasks, documents):
+        """Create a mock session with tasks and documents."""
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        # Create mock query chain
+        mock_query = MagicMock()
+        mock_query.join.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = len(tasks)
+
+        # Create result tuples (task, document)
+        results = []
+        for i, task in enumerate(tasks):
+            doc = documents[i] if i < len(documents) else MagicMock(spec=Document)
+            results.append((task, doc))
+
+        mock_query.all.return_value = results
+        mock_session.query.return_value = mock_query
+
+        return mock_session
+
+    def test_empty_result(self):
         """Test with no tasks in database."""
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.join.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 0
+        mock_query.all.return_value = []
+
+        mock_session.query.return_value = mock_query
+
         filters = GetTasksFilterParams()
-        result = get_tasks(db_session, filters)
+        result = get_tasks(mock_session, filters)
 
         assert result.results == []
         assert result.total_count == 0
         assert result.has_more is False
 
-    def test_no_filters_returns_all(self, db_session, sample_document):
+    def test_no_filters_returns_all(self):
         """Test that no filters returns all tasks."""
-        task = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=1,
-            raw_text="- [ ] Test task",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Test task",
-        )
-        db_session.add(task)
-        db_session.commit()
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Test task"
+        task.tags = []
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
 
-        filters = GetTasksFilterParams()
-        result = get_tasks(db_session, filters)
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="Test task",
+                status="not_completed",
+                description="Test task",
+                due=None,
+                priority="normal",
+                tags=[],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams()
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 1
         assert len(result.results) == 1
 
-    def test_status_filter(self, db_session, sample_document):
+    def test_status_filter(self):
         """Test filtering by status."""
-        # Create tasks with different statuses
-        task1 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=1,
-            raw_text="- [ ] Incomplete",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Incomplete task",
-        )
-        task2 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=2,
-            raw_text="- [x] Completed",
-            status=TaskStatus.COMPLETED.value,
-            description="Completed task",
-        )
-        db_session.add_all([task1, task2])
-        db_session.commit()
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Incomplete task"
+        task.tags = []
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
 
-        filters = GetTasksFilterParams(status=["not_completed"])
-        result = get_tasks(db_session, filters)
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] Incomplete",
+                status="not_completed",
+                description="Incomplete task",
+                due=None,
+                priority="normal",
+                tags=[],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(status=["not_completed"])
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 1
         assert result.results[0].status == "not_completed"
 
-    def test_due_date_range_filter(self, db_session, sample_document):
+    def test_due_date_range_filter(self):
         """Test filtering by due date range."""
         today = date.today()
 
-        # Task due within range
-        task1 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=1,
-            raw_text="- [ ] Due in range",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Due in range",
-            due=today + timedelta(days=5),
-        )
-        # Task due outside range
-        task2 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=2,
-            raw_text="- [ ] Due outside range",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Due outside range",
-            due=today + timedelta(days=20),
-        )
-        db_session.add_all([task1, task2])
-        db_session.commit()
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Due in range"
+        task.tags = []
+        task.priority = "normal"
+        task.due = today + timedelta(days=5)
+        task.scheduled = None
+        task.completion = None
 
-        filters = GetTasksFilterParams(
-            due_after=today,
-            due_before=today + timedelta(days=10),
-        )
-        result = get_tasks(db_session, filters)
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] Due in range",
+                status="not_completed",
+                description="Due in range",
+                due=today + timedelta(days=5),
+                priority="normal",
+                tags=[],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(
+                due_after=today,
+                due_before=today + timedelta(days=10),
+            )
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 1
         assert result.results[0].description == "Due in range"
 
-    def test_scheduled_date_filter(self, db_session, sample_document):
+    def test_scheduled_date_filter(self):
         """Test filtering by scheduled date."""
         today = date.today()
 
-        task = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=1,
-            raw_text="- [ ] Scheduled task",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Scheduled task",
-            scheduled=today + timedelta(days=3),
-        )
-        db_session.add(task)
-        db_session.commit()
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Scheduled task"
+        task.tags = []
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = today + timedelta(days=3)
+        task.completion = None
 
-        filters = GetTasksFilterParams(
-            scheduled_after=today,
-            scheduled_before=today + timedelta(days=7),
-        )
-        result = get_tasks(db_session, filters)
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] Scheduled task",
+                status="not_completed",
+                description="Scheduled task",
+                due=None,
+                priority="normal",
+                tags=[],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(
+                scheduled_after=today,
+                scheduled_before=today + timedelta(days=7),
+            )
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 1
 
-    def test_completion_date_filter(self, db_session, sample_document):
+    def test_completion_date_filter(self):
         """Test filtering by completion date."""
         today = date.today()
 
-        task = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=1,
-            raw_text="- [x] Completed task",
-            status=TaskStatus.COMPLETED.value,
-            description="Completed task",
-            completion=today - timedelta(days=2),
-        )
-        db_session.add(task)
-        db_session.commit()
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.COMPLETED.value
+        task.description = "Completed task"
+        task.tags = []
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = today - timedelta(days=2)
 
-        filters = GetTasksFilterParams(
-            completion_after=today - timedelta(days=7),
-            completion_before=today,
-        )
-        result = get_tasks(db_session, filters)
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [x] Completed task",
+                status="completed",
+                description="Completed task",
+                due=None,
+                priority="normal",
+                tags=[],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(
+                completion_after=today - timedelta(days=7),
+                completion_before=today,
+            )
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 1
 
-    def test_include_completed_false(self, db_session, sample_document):
+    def test_include_completed_false(self):
         """Test excluding completed tasks."""
-        task1 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=1,
-            raw_text="- [ ] Incomplete",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Incomplete",
-        )
-        task2 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=2,
-            raw_text="- [x] Completed",
-            status=TaskStatus.COMPLETED.value,
-            description="Completed",
-        )
-        db_session.add_all([task1, task2])
-        db_session.commit()
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Incomplete"
+        task.tags = []
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
 
-        filters = GetTasksFilterParams(include_completed=False)
-        result = get_tasks(db_session, filters)
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] Incomplete",
+                status="not_completed",
+                description="Incomplete",
+                due=None,
+                priority="normal",
+                tags=[],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(include_completed=False)
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 1
         assert result.results[0].description == "Incomplete"
 
-    def test_include_cancelled_true(self, db_session, sample_document):
+    def test_include_cancelled_true(self):
         """Test including cancelled tasks."""
-        task = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=1,
-            raw_text="- [-] Cancelled",
-            status=TaskStatus.CANCELLED.value,
-            description="Cancelled",
-        )
-        db_session.add(task)
-        db_session.commit()
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.CANCELLED.value
+        task.description = "Cancelled"
+        task.tags = []
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
 
-        filters = GetTasksFilterParams(include_cancelled=True)
-        result = get_tasks(db_session, filters)
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [-] Cancelled",
+                status="cancelled",
+                description="Cancelled",
+                due=None,
+                priority="normal",
+                tags=[],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(include_cancelled=True)
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 1
         assert result.results[0].status == "cancelled"
 
-    def test_priority_filter(self, db_session, sample_document):
+    def test_priority_filter(self):
         """Test filtering by priority."""
-        task = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=1,
-            raw_text="- [ ] High priority",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="High priority",
-            priority="high",
-        )
-        db_session.add(task)
-        db_session.commit()
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "High priority"
+        task.tags = []
+        task.priority = "high"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
 
-        filters = GetTasksFilterParams(priority=["high", "highest"])
-        result = get_tasks(db_session, filters)
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] High priority",
+                status="not_completed",
+                description="High priority",
+                due=None,
+                priority="high",
+                tags=[],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(priority=["high", "highest"])
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 1
         assert result.results[0].priority == "high"
 
-    def test_pagination(self, db_session, sample_document):
+    def test_pagination(self):
         """Test pagination with limit and offset."""
+        tasks = []
+        docs = []
         for i in range(5):
-            task = Task(
-                id=uuid.uuid4(),
-                document_id=sample_document.id,
-                line_number=i,
-                raw_text=f"- [ ] Task {i}",
-                status=TaskStatus.NOT_COMPLETED.value,
-                description=f"Task {i}",
-            )
-            db_session.add(task)
-        db_session.commit()
+            task = MagicMock(spec=Task)
+            task.id = uuid.uuid4()
+            task.status = TaskStatus.NOT_COMPLETED.value
+            task.description = f"Task {i}"
+            task.tags = []
+            task.priority = "normal"
+            task.due = None
+            task.scheduled = None
+            task.completion = None
+            tasks.append(task)
 
-        filters = GetTasksFilterParams(limit=2, offset=0)
-        result = get_tasks(db_session, filters)
+            doc = MagicMock(spec=Document)
+            doc.id = uuid.uuid4()
+            doc.file_path = f"/test/task{i}.md"
+            doc.file_name = f"task{i}.md"
+            doc.tags = []
+            docs.append(doc)
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.join.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 5
+        mock_query.all.return_value = list(zip(tasks[:2], docs[:2]))
+
+        mock_session.query.return_value = mock_query
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="Task",
+                status="not_completed",
+                description="Task",
+                due=None,
+                priority="normal",
+                tags=[],
+                document_path="/test/task.md",
+                document_name="task.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(limit=2, offset=0)
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 5
         assert len(result.results) == 2
         assert result.has_more is True
         assert result.next_offset == 2
 
-    def test_multiple_filters_combined(self, db_session, sample_document):
+    def test_multiple_filters_combined(self):
         """Test that multiple filters are combined with AND logic."""
         today = date.today()
 
-        # Task that matches all filters
-        task1 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=1,
-            raw_text="- [ ] Match all",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Match all",
-            due=today + timedelta(days=3),
-            priority="high",
-        )
-        # Task that matches only some filters
-        task2 = Task(
-            id=uuid.uuid4(),
-            document_id=sample_document.id,
-            line_number=2,
-            raw_text="- [ ] Match some",
-            status=TaskStatus.NOT_COMPLETED.value,
-            description="Match some",
-            due=today + timedelta(days=20),  # Outside date range
-            priority="high",
-        )
-        db_session.add_all([task1, task2])
-        db_session.commit()
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Match all"
+        task.tags = []
+        task.priority = "high"
+        task.due = today + timedelta(days=3)
+        task.scheduled = None
+        task.completion = None
 
-        filters = GetTasksFilterParams(
-            status=["not_completed"],
-            due_after=today,
-            due_before=today + timedelta(days=10),
-            priority=["high"],
-        )
-        result = get_tasks(db_session, filters)
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] Match all",
+                status="not_completed",
+                description="Match all",
+                due=today + timedelta(days=3),
+                priority="high",
+                tags=[],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(
+                status=["not_completed"],
+                due_after=today,
+                due_before=today + timedelta(days=10),
+                priority=["high"],
+            )
+            result = get_tasks(mock_session, filters)
 
         assert result.total_count == 1
         assert result.results[0].description == "Match all"

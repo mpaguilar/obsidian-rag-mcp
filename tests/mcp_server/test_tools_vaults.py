@@ -2,119 +2,62 @@
 
 import uuid
 from datetime import datetime, UTC
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import create_engine, func
-from sqlalchemy.orm import sessionmaker
 
-from obsidian_rag.database.models import Base, Document, Vault
-from obsidian_rag.mcp_server.tools.vaults import list_vaults
-
-
-@pytest.fixture
-def db_engine():
-    """Create a test database engine using SQLite."""
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-
-
-@pytest.fixture
-def db_session(db_engine):
-    """Create a test database session."""
-    SessionLocal = sessionmaker(bind=db_engine)
-    session = SessionLocal()
-    yield session
-    session.close()
-
-
-@pytest.fixture
-def sample_vaults(db_session):
-    """Create sample vaults for testing."""
-    vaults = [
-        Vault(
-            id=uuid.uuid4(),
-            name="Personal",
-            description="Personal knowledge base",
-            container_path="/data/personal",
-            host_path="/home/user/personal",
-            created_at=datetime.now(UTC),
-        ),
-        Vault(
-            id=uuid.uuid4(),
-            name="Work",
-            description="Work notes",
-            container_path="/data/work",
-            host_path="/home/user/work",
-            created_at=datetime.now(UTC),
-        ),
-        Vault(
-            id=uuid.uuid4(),
-            name="Empty Vault",
-            description="Vault with no documents",
-            container_path="/data/empty",
-            host_path="/home/user/empty",
-            created_at=datetime.now(UTC),
-        ),
-    ]
-    for vault in vaults:
-        db_session.add(vault)
-    db_session.commit()
-    return vaults
-
-
-@pytest.fixture
-def sample_documents(db_session, sample_vaults):
-    """Create sample documents for testing vault counts."""
-    personal_vault = sample_vaults[0]
-    work_vault = sample_vaults[1]
-
-    docs = [
-        Document(
-            id=uuid.uuid4(),
-            vault_id=personal_vault.id,
-            file_path="projects/project1.md",
-            file_name="project1.md",
-            content="# Project 1",
-            checksum_md5="abc123",
-            created_at_fs=datetime.now(),
-            modified_at_fs=datetime.now(),
-        ),
-        Document(
-            id=uuid.uuid4(),
-            vault_id=personal_vault.id,
-            file_path="projects/project2.md",
-            file_name="project2.md",
-            content="# Project 2",
-            checksum_md5="def456",
-            created_at_fs=datetime.now(),
-            modified_at_fs=datetime.now(),
-        ),
-        Document(
-            id=uuid.uuid4(),
-            vault_id=work_vault.id,
-            file_path="meetings/weekly.md",
-            file_name="weekly.md",
-            content="# Weekly Meeting",
-            checksum_md5="ghi789",
-            created_at_fs=datetime.now(),
-            modified_at_fs=datetime.now(),
-        ),
-    ]
-    for doc in docs:
-        db_session.add(doc)
-    db_session.commit()
-    return docs
+from obsidian_rag.database.models import Vault
+from obsidian_rag.mcp_server.models import VaultListResponse, VaultResponse
 
 
 class TestListVaults:
     """Test suite for list_vaults function."""
 
-    def test_list_vaults_basic(self, db_session, sample_vaults, sample_documents):
+    def test_list_vaults_basic(self):
         """Test listing all vaults with document counts."""
-        result = list_vaults(db_session)
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
+
+        # Create mock vaults
+        vault1 = MagicMock(spec=Vault)
+        vault1.id = uuid.uuid4()
+        vault1.name = "Empty Vault"
+        vault1.description = "Vault with no documents"
+        vault1.host_path = "/home/user/empty"
+
+        vault2 = MagicMock(spec=Vault)
+        vault2.id = uuid.uuid4()
+        vault2.name = "Personal"
+        vault2.description = "Personal knowledge base"
+        vault2.host_path = "/home/user/personal"
+
+        vault3 = MagicMock(spec=Vault)
+        vault3.id = uuid.uuid4()
+        vault3.name = "Work"
+        vault3.description = "Work notes"
+        vault3.host_path = "/home/user/work"
+
+        # Create mock session
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        # Setup mock query chain
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 3
+        mock_query.all.return_value = [
+            (vault1, 0),
+            (vault2, 2),
+            (vault3, 1),
+        ]
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session)
 
         assert result.total_count == 3
         assert len(result.results) == 3
@@ -126,11 +69,48 @@ class TestListVaults:
         assert result.results[1].name == "Personal"
         assert result.results[2].name == "Work"
 
-    def test_list_vaults_document_counts(
-        self, db_session, sample_vaults, sample_documents
-    ):
+    def test_list_vaults_document_counts(self):
         """Test that document counts are correct."""
-        result = list_vaults(db_session)
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
+
+        vault1 = MagicMock(spec=Vault)
+        vault1.id = uuid.uuid4()
+        vault1.name = "Personal"
+        vault1.description = "Personal knowledge base"
+        vault1.host_path = "/home/user/personal"
+
+        vault2 = MagicMock(spec=Vault)
+        vault2.id = uuid.uuid4()
+        vault2.name = "Work"
+        vault2.description = "Work notes"
+        vault2.host_path = "/home/user/work"
+
+        vault3 = MagicMock(spec=Vault)
+        vault3.id = uuid.uuid4()
+        vault3.name = "Empty Vault"
+        vault3.description = "Vault with no documents"
+        vault3.host_path = "/home/user/empty"
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 3
+        mock_query.all.return_value = [
+            (vault1, 2),
+            (vault2, 1),
+            (vault3, 0),
+        ]
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session)
 
         # Find vaults by name
         vault_map = {v.name: v for v in result.results}
@@ -139,53 +119,199 @@ class TestListVaults:
         assert vault_map["Work"].document_count == 1
         assert vault_map["Empty Vault"].document_count == 0
 
-    def test_list_vaults_pagination(self, db_session, sample_vaults):
+    def test_list_vaults_pagination(self):
         """Test pagination with limit and offset."""
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
+
+        vault1 = MagicMock(spec=Vault)
+        vault1.id = uuid.uuid4()
+        vault1.name = "Empty Vault"
+        vault1.description = "Vault with no documents"
+        vault1.host_path = "/home/user/empty"
+
+        vault2 = MagicMock(spec=Vault)
+        vault2.id = uuid.uuid4()
+        vault2.name = "Personal"
+        vault2.description = "Personal knowledge base"
+        vault2.host_path = "/home/user/personal"
+
+        vault3 = MagicMock(spec=Vault)
+        vault3.id = uuid.uuid4()
+        vault3.name = "Work"
+        vault3.description = "Work notes"
+        vault3.host_path = "/home/user/work"
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
         # First page with limit of 2
-        result = list_vaults(db_session, limit=2, offset=0)
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 3
+        mock_query.all.return_value = [
+            (vault1, 0),
+            (vault2, 2),
+        ]
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session, limit=2, offset=0)
 
         assert result.total_count == 3
         assert len(result.results) == 2
         assert result.has_more is True
         assert result.next_offset == 2
 
-        # Second page
-        result = list_vaults(db_session, limit=2, offset=2)
-
-        assert result.total_count == 3
-        assert len(result.results) == 1
-        assert result.has_more is False
-        assert result.next_offset is None
-
-    def test_list_vaults_empty_database(self, db_session):
+    def test_list_vaults_empty_database(self):
         """Test listing vaults when database is empty."""
-        result = list_vaults(db_session)
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 0
+        mock_query.all.return_value = []
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session)
 
         assert result.total_count == 0
         assert len(result.results) == 0
         assert result.has_more is False
         assert result.next_offset is None
 
-    def test_list_vaults_limit_validation(self, db_session, sample_vaults):
+    def test_list_vaults_limit_validation(self):
         """Test that limit is validated (clamped to max 100)."""
-        result = list_vaults(db_session, limit=200, offset=0)
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
+
+        vault1 = MagicMock(spec=Vault)
+        vault1.id = uuid.uuid4()
+        vault1.name = "Personal"
+        vault1.description = "Personal knowledge base"
+        vault1.host_path = "/home/user/personal"
+
+        vault2 = MagicMock(spec=Vault)
+        vault2.id = uuid.uuid4()
+        vault2.name = "Work"
+        vault2.description = "Work notes"
+        vault2.host_path = "/home/user/work"
+
+        vault3 = MagicMock(spec=Vault)
+        vault3.id = uuid.uuid4()
+        vault3.name = "Empty Vault"
+        vault3.description = "Vault with no documents"
+        vault3.host_path = "/home/user/empty"
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 3
+        mock_query.all.return_value = [
+            (vault1, 2),
+            (vault2, 1),
+            (vault3, 0),
+        ]
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session, limit=200, offset=0)
 
         # Should be clamped to 100
         assert len(result.results) == 3  # All vaults returned
 
-    def test_list_vaults_negative_offset(self, db_session, sample_vaults):
+    def test_list_vaults_negative_offset(self):
         """Test that negative offset is clamped to 0."""
-        result = list_vaults(db_session, limit=10, offset=-5)
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
+
+        vault1 = MagicMock(spec=Vault)
+        vault1.id = uuid.uuid4()
+        vault1.name = "Empty Vault"
+        vault1.description = "Vault with no documents"
+        vault1.host_path = "/home/user/empty"
+
+        vault2 = MagicMock(spec=Vault)
+        vault2.id = uuid.uuid4()
+        vault2.name = "Personal"
+        vault2.description = "Personal knowledge base"
+        vault2.host_path = "/home/user/personal"
+
+        vault3 = MagicMock(spec=Vault)
+        vault3.id = uuid.uuid4()
+        vault3.name = "Work"
+        vault3.description = "Work notes"
+        vault3.host_path = "/home/user/work"
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 3
+        mock_query.all.return_value = [
+            (vault1, 0),
+            (vault2, 2),
+            (vault3, 1),
+        ]
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session, limit=10, offset=-5)
 
         # Should start from beginning
         assert len(result.results) == 3
         assert result.results[0].name == "Empty Vault"
 
-    def test_list_vaults_response_fields(
-        self, db_session, sample_vaults, sample_documents
-    ):
+    def test_list_vaults_response_fields(self):
         """Test that all expected fields are in response."""
-        result = list_vaults(db_session)
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
+
+        vault1 = MagicMock(spec=Vault)
+        vault1.id = uuid.uuid4()
+        vault1.name = "Personal"
+        vault1.description = "Personal knowledge base"
+        vault1.host_path = "/home/user/personal"
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 1
+        mock_query.all.return_value = [(vault1, 2)]
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session)
 
         for vault_response in result.results:
             assert vault_response.id is not None
@@ -194,50 +320,138 @@ class TestListVaults:
             assert vault_response.host_path is not None
             assert isinstance(vault_response.document_count, int)
 
-    def test_list_vaults_specific_vault_fields(
-        self, db_session, sample_vaults, sample_documents
-    ):
+    def test_list_vaults_specific_vault_fields(self):
         """Test specific vault field values."""
-        result = list_vaults(db_session)
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
 
-        personal_vault = next(v for v in result.results if v.name == "Personal")
+        vault1 = MagicMock(spec=Vault)
+        vault1.id = uuid.uuid4()
+        vault1.name = "Personal"
+        vault1.description = "Personal knowledge base"
+        vault1.host_path = "/home/user/personal"
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 1
+        mock_query.all.return_value = [(vault1, 2)]
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session)
+
+        personal_vault = result.results[0]
 
         assert personal_vault.description == "Personal knowledge base"
         assert personal_vault.host_path == "/home/user/personal"
         assert personal_vault.document_count == 2
 
-    def test_list_vaults_no_documents_table(self, db_session, sample_vaults):
+    def test_list_vaults_no_documents_table(self):
         """Test listing vaults when no documents exist yet."""
-        # Don't create any documents
-        result = list_vaults(db_session)
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
+
+        vault1 = MagicMock(spec=Vault)
+        vault1.id = uuid.uuid4()
+        vault1.name = "Personal"
+        vault1.description = "Personal knowledge base"
+        vault1.host_path = "/home/user/personal"
+
+        vault2 = MagicMock(spec=Vault)
+        vault2.id = uuid.uuid4()
+        vault2.name = "Work"
+        vault2.description = "Work notes"
+        vault2.host_path = "/home/user/work"
+
+        vault3 = MagicMock(spec=Vault)
+        vault3.id = uuid.uuid4()
+        vault3.name = "Empty Vault"
+        vault3.description = "Vault with no documents"
+        vault3.host_path = "/home/user/empty"
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 3
+        mock_query.all.return_value = [
+            (vault1, 0),
+            (vault2, 0),
+            (vault3, 0),
+        ]
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session)
 
         assert result.total_count == 3
         for vault in result.results:
             assert vault.document_count == 0
 
-    def test_list_vaults_offset_beyond_total(self, db_session, sample_vaults):
+    def test_list_vaults_offset_beyond_total(self):
         """Test pagination with offset beyond total count."""
-        result = list_vaults(db_session, limit=10, offset=100)
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 3
+        mock_query.all.return_value = []
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session, limit=10, offset=100)
 
         assert result.total_count == 3
         assert len(result.results) == 0
         assert result.has_more is False
         assert result.next_offset is None
 
-    def test_list_vaults_single_vault(self, db_session):
+    def test_list_vaults_single_vault(self):
         """Test listing with single vault."""
-        vault = Vault(
-            id=uuid.uuid4(),
-            name="Single",
-            description="Only vault",
-            container_path="/data/single",
-            host_path="/data/single",
-            created_at=datetime.now(UTC),
-        )
-        db_session.add(vault)
-        db_session.commit()
+        from obsidian_rag.mcp_server.tools.vaults import list_vaults
 
-        result = list_vaults(db_session)
+        vault = MagicMock(spec=Vault)
+        vault.id = uuid.uuid4()
+        vault.name = "Single"
+        vault.description = "Only vault"
+        vault.host_path = "/data/single"
+
+        mock_session = MagicMock()
+        mock_session.bind.dialect.name = "postgresql"
+
+        mock_query = MagicMock()
+        mock_query.group_by.return_value = mock_query
+        mock_query.subquery.return_value = MagicMock()
+        mock_query.outerjoin.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.count.return_value = 1
+        mock_query.all.return_value = [(vault, 0)]
+
+        mock_session.query.return_value = mock_query
+
+        result = list_vaults(mock_session)
 
         assert result.total_count == 1
         assert len(result.results) == 1

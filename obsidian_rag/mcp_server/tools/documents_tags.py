@@ -1,6 +1,6 @@
 """Tag filtering utilities for document queries.
 
-This module contains tag filtering logic for both PostgreSQL and SQLite databases.
+This module contains tag filtering logic for PostgreSQL databases.
 All functions are pure logic functions that can be tested independently.
 """
 

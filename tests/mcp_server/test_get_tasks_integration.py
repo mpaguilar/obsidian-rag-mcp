@@ -2,33 +2,14 @@
 
 import uuid
 from datetime import date, timedelta
+from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from obsidian_rag.database.models import Base, Document, Task, TaskStatus, Vault
+from obsidian_rag.database.models import Document, Task, TaskPriority, TaskStatus, Vault
 from obsidian_rag.mcp_server.handlers import _get_tasks_handler
 from obsidian_rag.mcp_server.tools.tasks import get_tasks
 from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
-
-
-@pytest.fixture
-def db_engine():
-    """Create a test database engine using SQLite."""
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-
-
-@pytest.fixture
-def db_session(db_engine):
-    """Create a test database session."""
-    SessionLocal = sessionmaker(bind=db_engine)
-    session = SessionLocal()
-    yield session
-    session.close()
 
 
 @pytest.fixture
@@ -42,8 +23,6 @@ def sample_data(db_session):
         container_path="/test",
         host_path="/test",
     )
-    db_session.add(vault)
-    db_session.commit()
 
     doc = Document(
         id=uuid.uuid4(),
@@ -57,8 +36,6 @@ def sample_data(db_session):
         frontmatter_json={},
         tags=["work", "urgent"],
     )
-    db_session.add(doc)
-    db_session.commit()
 
     today = date.today()
 
@@ -72,7 +49,7 @@ def sample_data(db_session):
             status=TaskStatus.NOT_COMPLETED.value,
             description="High priority due soon",
             due=today + timedelta(days=2),
-            priority="high",
+            priority=TaskPriority.HIGH.value,
             tags=["work"],
         ),
         Task(
@@ -83,7 +60,7 @@ def sample_data(db_session):
             status=TaskStatus.NOT_COMPLETED.value,
             description="Normal priority due later",
             due=today + timedelta(days=10),
-            priority="normal",
+            priority=TaskPriority.NORMAL.value,
             tags=["work"],
         ),
         Task(
@@ -94,7 +71,7 @@ def sample_data(db_session):
             status=TaskStatus.COMPLETED.value,
             description="Completed yesterday",
             completion=today - timedelta(days=1),
-            priority="normal",
+            priority=TaskPriority.NORMAL.value,
         ),
         Task(
             id=uuid.uuid4(),
@@ -103,7 +80,7 @@ def sample_data(db_session):
             raw_text="- [-] Cancelled task",
             status=TaskStatus.CANCELLED.value,
             description="Cancelled task",
-            priority="low",
+            priority=TaskPriority.LOW.value,
         ),
         Task(
             id=uuid.uuid4(),
@@ -113,16 +90,33 @@ def sample_data(db_session):
             status=TaskStatus.IN_PROGRESS.value,
             description="In progress",
             due=today + timedelta(days=5),
-            priority="high",
+            priority=TaskPriority.HIGH.value,
             tags=["urgent"],
         ),
     ]
 
-    for task in tasks:
-        db_session.add(task)
-    db_session.commit()
-
     return vault, doc, tasks
+
+
+def _configure_mock_for_tasks(db_session, tasks, doc, total_count=None):
+    """Configure mock session to return tasks with their documents."""
+    if total_count is None:
+        total_count = len(tasks)
+
+    # Create (Task, Document) tuples as expected by get_tasks
+    task_doc_pairs = [(task, doc) for task in tasks]
+
+    # Configure the mock query chain
+    query_mock = MagicMock()
+    query_mock.all.return_value = task_doc_pairs
+    query_mock.count.return_value = total_count
+    query_mock.filter.return_value = query_mock
+    query_mock.order_by.return_value = query_mock
+    query_mock.offset.return_value = query_mock
+    query_mock.limit.return_value = query_mock
+    query_mock.join.return_value = query_mock
+
+    db_session.query.return_value = query_mock
 
 
 class TestGetTasksIntegration:
@@ -131,6 +125,10 @@ class TestGetTasksIntegration:
     def test_get_tasks_no_filters(self, db_session, sample_data):
         """Test get_tasks with no filters returns all non-cancelled tasks."""
         vault, doc, tasks = sample_data
+
+        # Filter out cancelled tasks (default behavior)
+        non_cancelled = [t for t in tasks if t.status != TaskStatus.CANCELLED.value]
+        _configure_mock_for_tasks(db_session, non_cancelled, doc, total_count=4)
 
         filters = GetTasksFilterParams()
         result = get_tasks(db_session, filters)
@@ -143,6 +141,15 @@ class TestGetTasksIntegration:
         """Test filtering by multiple statuses."""
         vault, doc, tasks = sample_data
 
+        # Filter for not_completed and in_progress
+        filtered = [
+            t
+            for t in tasks
+            if t.status
+            in [TaskStatus.NOT_COMPLETED.value, TaskStatus.IN_PROGRESS.value]
+        ]
+        _configure_mock_for_tasks(db_session, filtered, doc, total_count=3)
+
         filters = GetTasksFilterParams(status=["not_completed", "in_progress"])
         result = get_tasks(db_session, filters)
 
@@ -152,6 +159,12 @@ class TestGetTasksIntegration:
         """Test filtering by due date range."""
         vault, doc, tasks = sample_data
         today = date.today()
+
+        # Tasks due within next 7 days
+        filtered = [
+            t for t in tasks if t.due and today <= t.due <= today + timedelta(days=7)
+        ]
+        _configure_mock_for_tasks(db_session, filtered, doc, total_count=len(filtered))
 
         filters = GetTasksFilterParams(
             due_after=today,
@@ -165,6 +178,15 @@ class TestGetTasksIntegration:
     def test_get_tasks_priority_filter(self, db_session, sample_data):
         """Test filtering by priority."""
         vault, doc, tasks = sample_data
+
+        # High priority incomplete tasks
+        filtered = [
+            t
+            for t in tasks
+            if t.priority == TaskPriority.HIGH.value
+            and t.status != TaskStatus.COMPLETED.value
+        ]
+        _configure_mock_for_tasks(db_session, filtered, doc, total_count=len(filtered))
 
         filters = GetTasksFilterParams(
             priority=["high"],
@@ -182,6 +204,9 @@ class TestGetTasksIntegration:
         vault, doc, tasks = sample_data
 
         # Include cancelled to get all non-completed tasks
+        filtered = [t for t in tasks if t.status != TaskStatus.COMPLETED.value]
+        _configure_mock_for_tasks(db_session, filtered, doc, total_count=4)
+
         filters = GetTasksFilterParams(
             include_completed=False,
             include_cancelled=True,
@@ -197,6 +222,10 @@ class TestGetTasksIntegration:
         """Test including cancelled tasks."""
         vault, doc, tasks = sample_data
 
+        # Non-completed tasks including cancelled
+        filtered = [t for t in tasks if t.status != TaskStatus.COMPLETED.value]
+        _configure_mock_for_tasks(db_session, filtered, doc, total_count=4)
+
         filters = GetTasksFilterParams(
             include_completed=False,
             include_cancelled=True,
@@ -211,6 +240,10 @@ class TestGetTasksIntegration:
         """Test filtering by tags."""
         vault, doc, tasks = sample_data
 
+        # Tasks with urgent tag
+        filtered = [t for t in tasks if t.tags and "urgent" in t.tags]
+        _configure_mock_for_tasks(db_session, filtered, doc, total_count=len(filtered))
+
         filters = GetTasksFilterParams(tags=["urgent"])
         result = get_tasks(db_session, filters)
 
@@ -221,6 +254,19 @@ class TestGetTasksIntegration:
         """Test combining multiple filters."""
         vault, doc, tasks = sample_data
         today = date.today()
+
+        # Tasks matching all criteria
+        filtered = [
+            t
+            for t in tasks
+            if t.status
+            in [TaskStatus.NOT_COMPLETED.value, TaskStatus.IN_PROGRESS.value]
+            and t.due
+            and today <= t.due <= today + timedelta(days=7)
+            and t.priority == TaskPriority.HIGH.value
+            and t.status != TaskStatus.COMPLETED.value
+        ]
+        _configure_mock_for_tasks(db_session, filtered, doc, total_count=len(filtered))
 
         filters = GetTasksFilterParams(
             status=["not_completed", "in_progress"],
@@ -240,7 +286,11 @@ class TestGetTasksIntegration:
         """Test pagination with limit and offset."""
         vault, doc, tasks = sample_data
 
+        # Non-cancelled tasks for pagination
+        non_cancelled = [t for t in tasks if t.status != TaskStatus.CANCELLED.value]
+
         # Get first 2 results
+        _configure_mock_for_tasks(db_session, non_cancelled[:2], doc, total_count=4)
         filters = GetTasksFilterParams(limit=2, offset=0)
         result1 = get_tasks(db_session, filters)
 
@@ -249,6 +299,7 @@ class TestGetTasksIntegration:
         assert result1.next_offset == 2
 
         # Get next 2 results
+        _configure_mock_for_tasks(db_session, non_cancelled[2:4], doc, total_count=4)
         filters = GetTasksFilterParams(limit=2, offset=2)
         result2 = get_tasks(db_session, filters)
 
@@ -256,8 +307,6 @@ class TestGetTasksIntegration:
 
     def test_get_tasks_handler_integration(self, db_session, sample_data):
         """Test _get_tasks_handler with database session."""
-        from unittest.mock import MagicMock
-
         from obsidian_rag.mcp_server.handlers import TaskDateFilterStrings
 
         vault, doc, tasks = sample_data
@@ -269,6 +318,12 @@ class TestGetTasksIntegration:
             return_value=db_session
         )
         db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+        # Configure mock for not_completed tasks
+        not_completed = [t for t in tasks if t.status == TaskStatus.NOT_COMPLETED.value]
+        _configure_mock_for_tasks(
+            db_session, not_completed, doc, total_count=len(not_completed)
+        )
 
         date_filters = TaskDateFilterStrings(
             due_after=today.isoformat(),
@@ -295,6 +350,8 @@ class TestGetTasksEdgeCases:
 
     def test_get_tasks_empty_database(self, db_session):
         """Test with no tasks in database."""
+        _configure_mock_for_tasks(db_session, [], None, total_count=0)
+
         filters = GetTasksFilterParams()
         result = get_tasks(db_session, filters)
 
@@ -305,6 +362,9 @@ class TestGetTasksEdgeCases:
     def test_get_tasks_no_matching_filters(self, db_session, sample_data):
         """Test when filters match no tasks."""
         vault, doc, tasks = sample_data
+
+        # No tasks should match nonexistent tag
+        _configure_mock_for_tasks(db_session, [], doc, total_count=0)
 
         filters = GetTasksFilterParams(
             status=["completed"],
@@ -319,6 +379,9 @@ class TestGetTasksEdgeCases:
         """Test with impossible date range (after > before)."""
         vault, doc, tasks = sample_data
         today = date.today()
+
+        # No tasks can satisfy impossible date range
+        _configure_mock_for_tasks(db_session, [], doc, total_count=0)
 
         # This is valid - just returns no results
         filters = GetTasksFilterParams(

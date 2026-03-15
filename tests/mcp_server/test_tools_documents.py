@@ -5,10 +5,8 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from obsidian_rag.database.models import Base, Document, Vault
+from obsidian_rag.database.models import Document, Vault
 from obsidian_rag.mcp_server.models import PropertyFilter, TagFilter
 from obsidian_rag.mcp_server.tools.documents import (
     _glob_to_like,
@@ -36,21 +34,11 @@ from obsidian_rag.mcp_server.tools.documents_tags import (
 
 
 @pytest.fixture
-def db_engine():
-    """Create a test database engine using SQLite."""
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-
-
-@pytest.fixture
-def db_session(db_engine):
-    """Create a test database session."""
-    SessionLocal = sessionmaker(bind=db_engine)
-    session = SessionLocal()
-    yield session
-    session.close()
+def mock_postgresql_session():
+    """Create a mock PostgreSQL session."""
+    session = MagicMock()
+    session.bind.dialect.name = "postgresql"
+    return session
 
 
 @pytest.fixture
@@ -63,8 +51,6 @@ def sample_documents(db_session):
         container_path="/data/vault",
         host_path="/data/vault",
     )
-    db_session.add(vault)
-    db_session.commit()
 
     docs = [
         Document(
@@ -131,8 +117,17 @@ def sample_documents(db_session):
             frontmatter_json={"title": "Untagged"},
         ),
     ]
-    db_session.add_all(docs)
-    db_session.commit()
+
+    # Configure mock to return documents for Document queries
+    db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
+    db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = len(
+        docs
+    )
+    db_session.query.return_value.filter.return_value.all.return_value = docs
+    db_session.query.return_value.filter.return_value.count.return_value = len(docs)
+    db_session.query.return_value.all.return_value = docs
+    db_session.query.return_value.count.return_value = len(docs)
+
     return docs
 
 
@@ -449,8 +444,23 @@ class TestMatchesTagFilter:
 class TestGetDocumentsByTag:
     """Tests for get_documents_by_tag function with new signature."""
 
+    def _configure_mock_for_docs(self, db_session, docs, total_count=None):
+        """Configure mock to return specific documents."""
+        if total_count is None:
+            total_count = len(docs)
+        db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
+        db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = total_count
+
     def test_get_documents_by_tag_include_all(self, db_session, sample_documents):
         """Test filtering with include all tags."""
+        # Only work.md has both "work" AND "urgent" tags
+        filtered_docs = [
+            d
+            for d in sample_documents
+            if d.tags and "work" in d.tags and "urgent" in d.tags
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=1)
+
         tag_filter = TagFilter(include_tags=["work", "urgent"], match_mode="all")
         result = get_documents_by_tag(
             db_session,
@@ -463,6 +473,14 @@ class TestGetDocumentsByTag:
 
     def test_get_documents_by_tag_include_any(self, db_session, sample_documents):
         """Test filtering with include any tags."""
+        # work.md, personal.md, mixed.md have either "work" OR "personal" tags
+        filtered_docs = [
+            d
+            for d in sample_documents
+            if d.tags and ("work" in d.tags or "personal" in d.tags)
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=3)
+
         tag_filter = TagFilter(include_tags=["work", "personal"], match_mode="any")
         result = get_documents_by_tag(
             db_session,
@@ -474,6 +492,12 @@ class TestGetDocumentsByTag:
 
     def test_get_documents_by_tag_exclude(self, db_session, sample_documents):
         """Test filtering with exclude tags."""
+        # Exclude work.md which has "urgent" tag
+        filtered_docs = [
+            d for d in sample_documents if not d.tags or "urgent" not in d.tags
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=3)
+
         tag_filter = TagFilter(exclude_tags=["urgent"])
         result = get_documents_by_tag(
             db_session,
@@ -489,6 +513,15 @@ class TestGetDocumentsByTag:
         self, db_session, sample_documents
     ):
         """Test filtering with both include and exclude."""
+        # Include docs with "work" but exclude those with "urgent"
+        # Only mixed.md has "work" but not "urgent"
+        filtered_docs = [
+            d
+            for d in sample_documents
+            if d.tags and "work" in d.tags and "urgent" not in d.tags
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=1)
+
         tag_filter = TagFilter(
             include_tags=["work"], exclude_tags=["urgent"], match_mode="all"
         )
@@ -503,6 +536,8 @@ class TestGetDocumentsByTag:
 
     def test_get_documents_by_tag_empty_filters(self, db_session, sample_documents):
         """Test filtering with empty filters."""
+        self._configure_mock_for_docs(db_session, sample_documents, total_count=4)
+
         tag_filter = TagFilter()
         result = get_documents_by_tag(
             db_session,
@@ -515,6 +550,10 @@ class TestGetDocumentsByTag:
 
     def test_get_documents_by_tag_pagination(self, db_session, sample_documents):
         """Test pagination."""
+        # work.md and mixed.md have "work" tag
+        filtered_docs = [d for d in sample_documents if d.tags and "work" in d.tags]
+        self._configure_mock_for_docs(db_session, filtered_docs[:1], total_count=2)
+
         tag_filter = TagFilter(include_tags=["work"], match_mode="any")
         result = get_documents_by_tag(
             db_session,
@@ -529,6 +568,9 @@ class TestGetDocumentsByTag:
 
     def test_get_documents_by_tag_relative_path(self, db_session, sample_documents):
         """Test that response includes relative paths."""
+        filtered_docs = [d for d in sample_documents if d.tags and "work" in d.tags]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
+
         tag_filter = TagFilter(include_tags=["work"])
         result = get_documents_by_tag(
             db_session,
@@ -546,8 +588,21 @@ class TestGetDocumentsByTag:
 class TestGetDocumentsByProperty:
     """Tests for get_documents_by_property function."""
 
+    def _configure_mock_for_docs(self, db_session, docs, total_count=None):
+        """Configure mock to return specific documents."""
+        if total_count is None:
+            total_count = len(docs)
+        db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
+        db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = total_count
+
     def test_get_documents_by_property_equals(self, db_session, sample_documents):
         """Test filtering with equals operator."""
+        # work.md and mixed.md have status=draft
+        filtered_docs = [
+            d for d in sample_documents if d.frontmatter_json.get("status") == "draft"
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
+
         include_props = [
             PropertyFilter(path="status", operator="equals", value="draft")
         ]
@@ -564,6 +619,14 @@ class TestGetDocumentsByProperty:
 
     def test_get_documents_by_property_contains(self, db_session, sample_documents):
         """Test filtering with contains operator."""
+        # work.md and mixed.md have author.name containing "John"
+        filtered_docs = [
+            d
+            for d in sample_documents
+            if "John" in d.frontmatter_json.get("author", {}).get("name", "")
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
+
         include_props = [
             PropertyFilter(path="author.name", operator="contains", value="John")
         ]
@@ -580,6 +643,12 @@ class TestGetDocumentsByProperty:
 
     def test_get_documents_by_property_exists(self, db_session, sample_documents):
         """Test filtering with exists operator."""
+        # work.md, personal.md, mixed.md have priority field
+        filtered_docs = [
+            d for d in sample_documents if "priority" in d.frontmatter_json
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=3)
+
         include_props = [PropertyFilter(path="priority", operator="exists")]
         property_filters = PropertyFilterParams(
             include_filters=include_props, exclude_filters=None
@@ -594,6 +663,12 @@ class TestGetDocumentsByProperty:
 
     def test_get_documents_by_property_exclude(self, db_session, sample_documents):
         """Test filtering with exclude properties."""
+        # Exclude work.md and mixed.md (status=draft), keep personal.md and untagged.md
+        filtered_docs = [
+            d for d in sample_documents if d.frontmatter_json.get("status") != "draft"
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
+
         exclude_props = [
             PropertyFilter(path="status", operator="equals", value="draft")
         ]
@@ -613,6 +688,16 @@ class TestGetDocumentsByProperty:
         self, db_session, sample_documents
     ):
         """Test filtering with both property and tag filters."""
+        # work.md has status=draft AND urgent tag
+        filtered_docs = [
+            d
+            for d in sample_documents
+            if d.frontmatter_json.get("status") == "draft"
+            and d.tags
+            and "urgent" in d.tags
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=1)
+
         include_props = [
             PropertyFilter(path="status", operator="equals", value="draft")
         ]
@@ -632,6 +717,14 @@ class TestGetDocumentsByProperty:
 
     def test_get_documents_by_property_nested_path(self, db_session, sample_documents):
         """Test filtering with nested property path."""
+        # work.md and mixed.md have author.name = "John"
+        filtered_docs = [
+            d
+            for d in sample_documents
+            if d.frontmatter_json.get("author", {}).get("name") == "John"
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
+
         include_props = [
             PropertyFilter(path="author.name", operator="equals", value="John")
         ]
@@ -650,8 +743,19 @@ class TestGetDocumentsByProperty:
 class TestQueryDocumentsWithFilters:
     """Tests for query_documents with filters."""
 
+    def _configure_mock_for_docs(self, db_session, docs, total_count=None):
+        """Configure mock to return specific documents."""
+        if total_count is None:
+            total_count = len(docs)
+        db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
+        db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = total_count
+
     def test_query_documents_with_tag_filter(self, db_session, sample_documents):
         """Test query_documents with tag filter."""
+        # work.md and mixed.md have "work" tag
+        filtered_docs = [d for d in sample_documents if d.tags and "work" in d.tags]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
+
         tag_filter = TagFilter(include_tags=["work"])
         pagination = PaginationParams(limit=20, offset=0)
         result = query_documents(
@@ -660,12 +764,18 @@ class TestQueryDocumentsWithFilters:
             tag_filter=tag_filter,
             pagination=pagination,
         )
-        # For SQLite, returns filtered docs with similarity_score=0.0
+        # For mock, returns filtered docs with similarity_score=0.0
         # work.md and mixed.md have "work" tag (exact match)
         assert result.total_count == 2
 
     def test_query_documents_with_property_filter(self, db_session, sample_documents):
         """Test query_documents with property filter."""
+        # work.md and mixed.md have status="draft"
+        filtered_docs = [
+            d for d in sample_documents if d.frontmatter_json.get("status") == "draft"
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
+
         include_props = [
             PropertyFilter(path="status", operator="equals", value="draft")
         ]
@@ -684,6 +794,8 @@ class TestQueryDocumentsWithFilters:
 
     def test_query_documents_empty_result(self, db_session):
         """Test query_documents with empty database."""
+        self._configure_mock_for_docs(db_session, [], total_count=0)
+
         tag_filter = TagFilter(include_tags=["work"])
         pagination = PaginationParams(limit=20, offset=0)
         result = query_documents(
@@ -699,20 +811,47 @@ class TestQueryDocumentsWithFilters:
 class TestGetAllTags:
     """Tests for get_all_tags function."""
 
+    def _create_mock_tag_rows(self, tags):
+        """Create mock row objects with .tag attribute."""
+        rows = []
+        for tag in tags:
+            row = MagicMock()
+            row.tag = tag
+            rows.append(row)
+        return rows
+
+    def _configure_mock_for_tags(self, db_session, tags):
+        """Configure mock to return specific tags."""
+        rows = self._create_mock_tag_rows(tags)
+        db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = rows
+
     def test_get_all_tags_basic(self, db_session, sample_documents):
         """Test getting all unique tags."""
+        # Extract unique tags from sample documents
+        all_tags = set()
+        for doc in sample_documents:
+            if doc.tags:
+                all_tags.update(doc.tags)
+        tags_list = sorted(list(all_tags))
+        self._configure_mock_for_tags(db_session, tags_list)
+
         result = get_all_tags(db_session, pattern=None, limit=20, offset=0)
         assert result.total_count == 4  # work, urgent, personal, ideas
         assert sorted(result.tags) == ["ideas", "personal", "urgent", "work"]
 
     def test_get_all_tags_with_pattern(self, db_session, sample_documents):
         """Test getting tags with glob pattern."""
+        self._configure_mock_for_tags(db_session, ["work"])
+
         result = get_all_tags(db_session, pattern="work*", limit=20, offset=0)
         assert result.total_count == 1
         assert result.tags == ["work"]
 
     def test_get_all_tags_pagination(self, db_session, sample_documents):
         """Test tag pagination."""
+        all_tags = ["ideas", "personal", "urgent", "work"]
+        self._configure_mock_for_tags(db_session, all_tags)
+
         result = get_all_tags(db_session, pattern=None, limit=2, offset=0)
         assert result.total_count == 4
         assert len(result.tags) == 2
@@ -720,6 +859,8 @@ class TestGetAllTags:
 
     def test_get_all_tags_empty_database(self, db_session):
         """Test getting tags with empty database."""
+        self._configure_mock_for_tags(db_session, [])
+
         result = get_all_tags(db_session, pattern=None, limit=20, offset=0)
         assert result.total_count == 0
         assert result.tags == []
@@ -748,10 +889,21 @@ class TestGetRelativePathAdditional:
 class TestGetDocumentsByTagAdditional:
     """Additional tests for get_documents_by_tag (TASK-096)."""
 
+    def _configure_mock_for_docs(self, db_session, docs, total_count=None):
+        """Configure mock to return specific documents."""
+        if total_count is None:
+            total_count = len(docs)
+        db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
+        db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = total_count
+
     def test_get_documents_by_tag_with_vault_root_filter(
         self, db_session, sample_documents
     ):
         """Test get_documents_by_tag with vault_name filter (line 254)."""
+        # work.md and mixed.md have "work" tag
+        filtered_docs = [d for d in sample_documents if d.tags and "work" in d.tags]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
+
         tag_filter = TagFilter(include_tags=["work"], match_mode="any")
         result = get_documents_by_tag(
             db_session,
@@ -768,10 +920,23 @@ class TestGetDocumentsByTagAdditional:
 class TestGetDocumentsByPropertyAdditional:
     """Additional tests for get_documents_by_property (TASK-096)."""
 
+    def _configure_mock_for_docs(self, db_session, docs, total_count=None):
+        """Configure mock to return specific documents."""
+        if total_count is None:
+            total_count = len(docs)
+        db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
+        db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = total_count
+
     def test_get_documents_by_property_with_vault_root_filter(
         self, db_session, sample_documents
     ):
         """Test get_documents_by_property with vault_name filter (line 356)."""
+        # work.md and mixed.md both have status=draft
+        filtered_docs = [
+            d for d in sample_documents if d.frontmatter_json.get("status") == "draft"
+        ]
+        self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
+
         # Note: This tests the vault_name parameter is passed correctly
         # The actual filtering happens in the database-specific implementations
         include_props = [
@@ -827,8 +992,30 @@ class TestExtractTagsPostgresql:
 class TestGetAllTagsAdditional:
     """Additional tests for get_all_tags (TASK-096)."""
 
+    def _create_mock_tag_rows(self, tags):
+        """Create mock row objects with .tag attribute."""
+        rows = []
+        for tag in tags:
+            row = MagicMock()
+            row.tag = tag
+            rows.append(row)
+        return rows
+
+    def _configure_mock_for_tags(self, db_session, tags):
+        """Configure mock to return specific tags."""
+        rows = self._create_mock_tag_rows(tags)
+        db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = rows
+
     def test_get_all_tags_execution_path(self, db_session, sample_documents):
         """Test get_all_tags execution path (line 455)."""
+        # Extract unique tags from sample documents
+        all_tags = set()
+        for doc in sample_documents:
+            if doc.tags:
+                all_tags.update(doc.tags)
+        tags_list = sorted(list(all_tags))
+        self._configure_mock_for_tags(db_session, tags_list)
+
         # This test exercises the full execution path of get_all_tags
         result = get_all_tags(
             db_session,

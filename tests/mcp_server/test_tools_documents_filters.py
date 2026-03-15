@@ -6,10 +6,8 @@ Tests for property filtering utilities in documents_filters.py.
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from obsidian_rag.database.models import Base, Document
+from obsidian_rag.database.models import Document
 from obsidian_rag.mcp_server.models import PropertyFilter
 from obsidian_rag.mcp_server.tools.documents_filters import (
     apply_postgresql_property_filter,
@@ -407,68 +405,27 @@ class TestGetNestedValueAdditional:
 class TestKindFiltering:
     """Tests for filtering documents by kind using property filters."""
 
-    @pytest.fixture
-    def db_session(self):
-        """Create a test database session."""
-        engine = create_engine("sqlite:///:memory:")
-        Base.metadata.create_all(engine)
-        Session = sessionmaker(bind=engine)
-        session = Session()
-        yield session
-        session.close()
-        Base.metadata.drop_all(engine)
-
-    def test_filter_by_kind_equals(self, db_session):
+    def test_filter_by_kind_equals(self):
         """Test filtering documents by kind with equals operator."""
         from datetime import datetime
-        from obsidian_rag.database.models import Vault
+
         from obsidian_rag.mcp_server.models import PropertyFilter
         from obsidian_rag.mcp_server.tools.documents_filters import (
             matches_property_filter,
         )
 
-        # Create vault
-        vault = Vault(
-            name="Test Vault",
-            container_path="/test",
-            host_path="/test",
-        )
-        db_session.add(vault)
-        db_session.flush()
+        # Create documents with different kinds (mocked)
+        doc1 = MagicMock(spec=Document)
+        doc1.file_path = "note1.md"
+        doc1.frontmatter_json = {"kind": "note"}
 
-        # Create documents with different kinds
-        doc1 = Document(
-            vault_id=vault.id,
-            file_path="note1.md",
-            file_name="note1.md",
-            content="Content 1",
-            checksum_md5="abc123",
-            created_at_fs=datetime.now(),
-            modified_at_fs=datetime.now(),
-            frontmatter_json={"kind": "note"},
-        )
-        doc2 = Document(
-            vault_id=vault.id,
-            file_path="article1.md",
-            file_name="article1.md",
-            content="Content 2",
-            checksum_md5="def456",
-            created_at_fs=datetime.now(),
-            modified_at_fs=datetime.now(),
-            frontmatter_json={"kind": "article"},
-        )
-        doc3 = Document(
-            vault_id=vault.id,
-            file_path="no_kind.md",
-            file_name="no_kind.md",
-            content="Content 3",
-            checksum_md5="ghi789",
-            created_at_fs=datetime.now(),
-            modified_at_fs=datetime.now(),
-            frontmatter_json={},
-        )
-        db_session.add_all([doc1, doc2, doc3])
-        db_session.commit()
+        doc2 = MagicMock(spec=Document)
+        doc2.file_path = "article1.md"
+        doc2.frontmatter_json = {"kind": "article"}
+
+        doc3 = MagicMock(spec=Document)
+        doc3.file_path = "no_kind.md"
+        doc3.frontmatter_json = {}
 
         # Filter by kind=note using matches_property_filter
         filter_obj = PropertyFilter(path="kind", operator="equals", value="note")
@@ -481,46 +438,21 @@ class TestKindFiltering:
         assert len(results) == 1
         assert results[0].file_path == "note1.md"
 
-    def test_filter_by_kind_exists(self, db_session):
+    def test_filter_by_kind_exists(self):
         """Test filtering documents by kind with exists operator."""
-        from datetime import datetime
-        from obsidian_rag.database.models import Vault
         from obsidian_rag.mcp_server.models import PropertyFilter
         from obsidian_rag.mcp_server.tools.documents_filters import (
             matches_property_filter,
         )
 
-        # Create vault and documents
-        vault = Vault(
-            name="Test Vault",
-            container_path="/test",
-            host_path="/test",
-        )
-        db_session.add(vault)
-        db_session.flush()
+        # Create documents (mocked)
+        doc1 = MagicMock(spec=Document)
+        doc1.file_path = "with_kind.md"
+        doc1.frontmatter_json = {"kind": "note"}
 
-        doc1 = Document(
-            vault_id=vault.id,
-            file_path="with_kind.md",
-            file_name="with_kind.md",
-            content="Content",
-            checksum_md5="abc123",
-            created_at_fs=datetime.now(),
-            modified_at_fs=datetime.now(),
-            frontmatter_json={"kind": "note"},
-        )
-        doc2 = Document(
-            vault_id=vault.id,
-            file_path="without_kind.md",
-            file_name="without_kind.md",
-            content="Content",
-            checksum_md5="def456",
-            created_at_fs=datetime.now(),
-            modified_at_fs=datetime.now(),
-            frontmatter_json={"other": "value"},
-        )
-        db_session.add_all([doc1, doc2])
-        db_session.commit()
+        doc2 = MagicMock(spec=Document)
+        doc2.file_path = "without_kind.md"
+        doc2.frontmatter_json = {"other": "value"}
 
         # Filter by kind exists using matches_property_filter
         filter_obj = PropertyFilter(path="kind", operator="exists")
@@ -531,46 +463,21 @@ class TestKindFiltering:
         assert len(results) == 1
         assert results[0].file_path == "with_kind.md"
 
-    def test_filter_by_kind_contains(self, db_session):
+    def test_filter_by_kind_contains(self):
         """Test filtering documents by kind with contains operator."""
-        from datetime import datetime
-        from obsidian_rag.database.models import Vault
         from obsidian_rag.mcp_server.models import PropertyFilter
         from obsidian_rag.mcp_server.tools.documents_filters import (
             matches_property_filter,
         )
 
-        # Create vault and documents
-        vault = Vault(
-            name="Test Vault",
-            container_path="/test",
-            host_path="/test",
-        )
-        db_session.add(vault)
-        db_session.flush()
+        # Create documents (mocked)
+        doc1 = MagicMock(spec=Document)
+        doc1.file_path = "daily_note.md"
+        doc1.frontmatter_json = {"kind": "daily_note"}
 
-        doc1 = Document(
-            vault_id=vault.id,
-            file_path="daily_note.md",
-            file_name="daily_note.md",
-            content="Content",
-            checksum_md5="abc123",
-            created_at_fs=datetime.now(),
-            modified_at_fs=datetime.now(),
-            frontmatter_json={"kind": "daily_note"},
-        )
-        doc2 = Document(
-            vault_id=vault.id,
-            file_path="meeting_note.md",
-            file_name="meeting_note.md",
-            content="Content",
-            checksum_md5="def456",
-            created_at_fs=datetime.now(),
-            modified_at_fs=datetime.now(),
-            frontmatter_json={"kind": "meeting_note"},
-        )
-        db_session.add_all([doc1, doc2])
-        db_session.commit()
+        doc2 = MagicMock(spec=Document)
+        doc2.file_path = "meeting_note.md"
+        doc2.frontmatter_json = {"kind": "meeting_note"}
 
         # Filter by kind contains "daily" using matches_property_filter
         filter_obj = PropertyFilter(path="kind", operator="contains", value="daily")
@@ -580,3 +487,165 @@ class TestKindFiltering:
 
         assert len(results) == 1
         assert results[0].file_path == "daily_note.md"
+
+
+class TestCheckFiltersMatch:
+    """Tests for check_filters_match function."""
+
+    def test_check_filters_match_empty_list(self):
+        """Test check_filters_match with empty filters list."""
+        from obsidian_rag.mcp_server.tools.documents_filters import check_filters_match
+
+        doc = MagicMock()
+        result = check_filters_match(doc, [], should_match=True)
+        assert result is True
+
+    def test_check_filters_match_all_match_should_match_true(self):
+        """Test check_filters_match when all filters match and should_match=True."""
+        from obsidian_rag.mcp_server.tools.documents_filters import check_filters_match
+
+        doc = MagicMock()
+        doc.frontmatter_json = {"status": "draft", "priority": "high"}
+
+        filters = [
+            PropertyFilter(path="status", operator="equals", value="draft"),
+            PropertyFilter(path="priority", operator="equals", value="high"),
+        ]
+
+        result = check_filters_match(doc, filters, should_match=True)
+        assert result is True
+
+    def test_check_filters_match_one_fails_should_match_true(self):
+        """Test check_filters_match when one filter fails and should_match=True."""
+        from obsidian_rag.mcp_server.tools.documents_filters import check_filters_match
+
+        doc = MagicMock()
+        doc.frontmatter_json = {"status": "draft", "priority": "low"}
+
+        filters = [
+            PropertyFilter(path="status", operator="equals", value="draft"),
+            PropertyFilter(path="priority", operator="equals", value="high"),
+        ]
+
+        result = check_filters_match(doc, filters, should_match=True)
+        assert result is False
+
+    def test_check_filters_match_none_match_should_match_false(self):
+        """Test check_filters_match when no filters match and should_match=False."""
+        from obsidian_rag.mcp_server.tools.documents_filters import check_filters_match
+
+        doc = MagicMock()
+        doc.frontmatter_json = {"status": "published", "priority": "low"}
+
+        filters = [
+            PropertyFilter(path="status", operator="equals", value="draft"),
+            PropertyFilter(path="priority", operator="equals", value="high"),
+        ]
+
+        result = check_filters_match(doc, filters, should_match=False)
+        assert result is True
+
+    def test_check_filters_match_one_matches_should_match_false(self):
+        """Test check_filters_match when one filter matches and should_match=False."""
+        from obsidian_rag.mcp_server.tools.documents_filters import check_filters_match
+
+        doc = MagicMock()
+        doc.frontmatter_json = {"status": "draft", "priority": "low"}
+
+        filters = [
+            PropertyFilter(path="status", operator="equals", value="draft"),
+            PropertyFilter(path="priority", operator="equals", value="high"),
+        ]
+
+        result = check_filters_match(doc, filters, should_match=False)
+        assert result is False
+
+
+class TestMatchesPropertyFilters:
+    """Tests for matches_property_filters function."""
+
+    def test_matches_property_filters_include_only(self):
+        """Test matches_property_filters with only include filters."""
+        from obsidian_rag.mcp_server.tools.documents_filters import (
+            matches_property_filters,
+        )
+
+        doc = MagicMock()
+        doc.frontmatter_json = {"status": "draft", "priority": "high"}
+
+        include_filters = [
+            PropertyFilter(path="status", operator="equals", value="draft"),
+        ]
+
+        result = matches_property_filters(doc, include_filters, None)
+        assert result is True
+
+    def test_matches_property_filters_exclude_only(self):
+        """Test matches_property_filters with only exclude filters."""
+        from obsidian_rag.mcp_server.tools.documents_filters import (
+            matches_property_filters,
+        )
+
+        doc = MagicMock()
+        doc.frontmatter_json = {"status": "draft", "priority": "high"}
+
+        exclude_filters = [
+            PropertyFilter(path="status", operator="equals", value="archived"),
+        ]
+
+        result = matches_property_filters(doc, None, exclude_filters)
+        assert result is True
+
+    def test_matches_property_filters_include_and_exclude(self):
+        """Test matches_property_filters with both include and exclude filters."""
+        from obsidian_rag.mcp_server.tools.documents_filters import (
+            matches_property_filters,
+        )
+
+        doc = MagicMock()
+        doc.frontmatter_json = {"status": "draft", "priority": "high"}
+
+        include_filters = [
+            PropertyFilter(path="status", operator="equals", value="draft"),
+        ]
+        exclude_filters = [
+            PropertyFilter(path="priority", operator="equals", value="low"),
+        ]
+
+        result = matches_property_filters(doc, include_filters, exclude_filters)
+        assert result is True
+
+    def test_matches_property_filters_include_fails(self):
+        """Test matches_property_filters when include filters fail."""
+        from obsidian_rag.mcp_server.tools.documents_filters import (
+            matches_property_filters,
+        )
+
+        doc = MagicMock()
+        doc.frontmatter_json = {"status": "published", "priority": "high"}
+
+        include_filters = [
+            PropertyFilter(path="status", operator="equals", value="draft"),
+        ]
+
+        result = matches_property_filters(doc, include_filters, None)
+        assert result is False
+
+    def test_matches_property_filters_exclude_fails(self):
+        """Test matches_property_filters when exclude filters match (doc excluded)."""
+        from obsidian_rag.mcp_server.tools.documents_filters import (
+            matches_property_filters,
+        )
+
+        doc = MagicMock()
+        doc.frontmatter_json = {"status": "archived", "priority": "high"}
+
+        include_filters = [
+            PropertyFilter(path="priority", operator="equals", value="high"),
+        ]
+        exclude_filters = [
+            PropertyFilter(path="status", operator="equals", value="archived"),
+        ]
+
+        result = matches_property_filters(doc, include_filters, exclude_filters)
+        assert result is False

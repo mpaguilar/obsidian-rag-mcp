@@ -33,20 +33,13 @@ class TestNormalizePostgresUrl:
         # Should remain unchanged
         assert result == "postgresql+psycopg://user:pass@localhost:5432/dbname"
 
-    def test_normalize_postgres_url_with_different_prefix(self):
+    def test_normalize_postgres_url_with_unrelated_prefix(self):
         """Test URL with unrelated prefix."""
         url = "mysql://user:pass@localhost:3306/dbname"
         result = _normalize_postgres_url(url)
 
         # Should not be modified
         assert result == "mysql://user:pass@localhost:3306/dbname"
-
-    def test_normalize_postgres_url_with_sqlite(self):
-        """Test SQLite URL is not modified."""
-        url = "sqlite:///path/to/database.db"
-        result = _normalize_postgres_url(url)
-
-        assert result == "sqlite:///path/to/database.db"
 
     def test_normalize_postgres_url_with_special_chars(self):
         """Test URL with special characters in password."""

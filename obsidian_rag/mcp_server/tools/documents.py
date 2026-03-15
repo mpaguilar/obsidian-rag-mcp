@@ -3,7 +3,7 @@
 All tools in this module are read-only and only use SELECT queries.
 
 This module serves as the public API that re-exports functions from
-dedicated submodules for PostgreSQL, SQLite, filters, and tags.
+dedicated submodules for PostgreSQL, filters, and tags.
 """
 
 import logging
@@ -30,10 +30,6 @@ from obsidian_rag.mcp_server.tools.documents_params import (
 from obsidian_rag.mcp_server.tools.documents_postgres import (
     get_documents_by_property_postgresql,
     query_documents_postgresql,
-)
-from obsidian_rag.mcp_server.tools.documents_sqlite import (
-    get_documents_by_property_sqlite,
-    query_documents_sqlite,
 )
 from obsidian_rag.mcp_server.tools.documents_tags import validate_tag_filter
 
@@ -129,7 +125,6 @@ def query_documents(
     Notes:
         Uses cosine distance for similarity (lower is better).
         Documents without embeddings are excluded.
-        For SQLite databases, filtering is done in Python.
 
     """
     _msg = "query_documents starting"
@@ -148,9 +143,6 @@ def query_documents(
     validate_property_filters(property_filters_exclude)
     validate_tag_filter(tag_filter)
 
-    dialect = session.bind.dialect.name if session.bind else "unknown"
-    is_postgresql = dialect == "postgresql"
-
     # Build filter parameters
     property_filter_params = PropertyFilterParams(
         include_filters=property_filters_include,
@@ -168,12 +160,6 @@ def query_documents(
         filter_params=query_filter_params,
         pagination=pagination,
     )
-
-    if not is_postgresql:
-        result = query_documents_sqlite(query_params)
-        _msg = "query_documents returning (SQLite path)"
-        log.debug(_msg)
-        return result
 
     result = query_documents_postgresql(query_params)
     _msg = "query_documents returning"
@@ -206,7 +192,6 @@ def get_documents_by_tag(
     Notes:
         Tag matching is case-insensitive substring match.
         File paths are returned as relative paths from vault root.
-        For SQLite databases, filtering is done in Python.
 
     """
     _msg = "get_documents_by_tag starting"
@@ -218,9 +203,6 @@ def get_documents_by_tag(
     # Validate tag filter
     validate_tag_filter(tag_filter)
 
-    dialect = session.bind.dialect.name if session.bind else "unknown"
-    is_postgresql = dialect == "postgresql"
-
     # Build query with vault join if filtering by vault_name
     if vault_name is not None:
         query = session.query(Document).join(Vault)
@@ -228,23 +210,14 @@ def get_documents_by_tag(
     else:
         query = session.query(Document)
 
-    if is_postgresql:
-        from obsidian_rag.mcp_server.tools.documents_tags import (
-            apply_postgresql_tag_filter,
-        )
+    from obsidian_rag.mcp_server.tools.documents_tags import (
+        apply_postgresql_tag_filter,
+    )
 
-        query = apply_postgresql_tag_filter(query, tag_filter)
-        query = query.order_by(Document.file_name)
-        total_count = query.count()
-        results = query.offset(offset).limit(limit).all()
-    else:
-        from obsidian_rag.mcp_server.tools.documents_tags import matches_tag_filter
-
-        query = query.order_by(Document.file_name)
-        all_docs = query.all()
-        filtered_docs = [doc for doc in all_docs if matches_tag_filter(doc, tag_filter)]
-        total_count = len(filtered_docs)
-        results = filtered_docs[offset : offset + limit]
+    query = apply_postgresql_tag_filter(query, tag_filter)
+    query = query.order_by(Document.file_name)
+    total_count = query.count()
+    results = query.offset(offset).limit(limit).all()
 
     document_responses = []
     for doc in results:
@@ -290,7 +263,6 @@ def get_documents_by_property(
     Notes:
         Property paths use dot notation (e.g., "author.name").
         Supported operators: equals, contains, exists, in, starts_with, regex.
-        For SQLite databases, filtering is done in Python.
 
     """
     _msg = "get_documents_by_property starting"
@@ -309,9 +281,6 @@ def get_documents_by_property(
     validate_property_filters(exclude_properties)
     validate_tag_filter(tag_filter)
 
-    dialect = session.bind.dialect.name if session.bind else "unknown"
-    is_postgresql = dialect == "postgresql"
-
     # Build query parameters
     filter_params = PropertyFilterParams(
         include_filters=include_properties,
@@ -327,10 +296,7 @@ def get_documents_by_property(
         pagination=pagination,
     )
 
-    if is_postgresql:
-        results, total_count = get_documents_by_property_postgresql(query_params)
-    else:
-        results, total_count = get_documents_by_property_sqlite(query_params)
+    results, total_count = get_documents_by_property_postgresql(query_params)
 
     _msg = "get_documents_by_property returning"
     log.debug(_msg)
@@ -365,33 +331,6 @@ def _extract_tags_postgresql(session: "Session", pattern: str | None) -> list[st
     return [row.tag for row in tags_query.all() if row.tag is not None]
 
 
-def _extract_tags_sqlite(session: "Session", pattern: str | None) -> list[str]:
-    """Extract tags using Python for SQLite.
-
-    Args:
-        session: Database session.
-        pattern: Optional glob pattern to filter tags.
-
-    Returns:
-        Sorted list of unique tags.
-
-    """
-    docs_with_tags = session.query(Document).filter(Document.tags.isnot(None)).all()
-
-    unique_tags = set()
-    for doc in docs_with_tags:
-        if doc.tags:
-            for tag in doc.tags:
-                unique_tags.add(tag)
-
-    if pattern is not None:
-        from obsidian_rag.mcp_server.tools.documents_tags import _matches_glob
-
-        unique_tags = {t for t in unique_tags if _matches_glob(t, pattern)}
-
-    return sorted(unique_tags)
-
-
 def get_all_tags(
     session: "Session",
     pattern: str | None,
@@ -414,7 +353,6 @@ def get_all_tags(
         Tags are extracted from documents.tags column.
         Duplicate tags across documents are deduplicated.
         Pattern matching is case-insensitive.
-        For SQLite databases, extraction is done in Python.
 
     """
     _msg = "get_all_tags starting"
@@ -423,13 +361,7 @@ def get_all_tags(
     limit = _validate_limit(limit)
     offset = _validate_offset(offset)
 
-    dialect = session.bind.dialect.name if session.bind else "unknown"
-    is_postgresql = dialect == "postgresql"
-
-    if is_postgresql:
-        all_tags = _extract_tags_postgresql(session, pattern)
-    else:
-        all_tags = _extract_tags_sqlite(session, pattern)
+    all_tags = _extract_tags_postgresql(session, pattern)
 
     total_count = len(all_tags)
     paginated_tags = all_tags[offset : offset + limit]

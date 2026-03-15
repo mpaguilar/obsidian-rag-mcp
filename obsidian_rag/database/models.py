@@ -36,13 +36,13 @@ log = logging.getLogger(__name__)
 
 
 class ArrayType(TypeDecorator[list[str]]):
-    """Platform-independent array type.
+    """PostgreSQL array type.
 
-    Uses PostgreSQL ARRAY type when available, falls back to JSON for SQLite.
-    This allows testing with SQLite while using proper PostgreSQL arrays in production.
+    Uses PostgreSQL ARRAY type for storing string arrays.
+    This type is only supported with PostgreSQL databases.
 
     Attributes:
-        impl: The underlying type implementation (JSON for fallback).
+        impl: The underlying type implementation.
 
     """
 
@@ -50,18 +50,22 @@ class ArrayType(TypeDecorator[list[str]]):
     cache_ok = True
 
     def load_dialect_impl(self, dialect: "Dialect") -> TypeEngine[Any]:
-        """Load the appropriate implementation for the dialect.
+        """Load the PostgreSQL ARRAY implementation.
 
         Args:
             dialect: The SQLAlchemy dialect in use.
 
         Returns:
-            The type implementation for the dialect (ARRAY for PostgreSQL, JSON otherwise).
+            The PostgreSQL ARRAY type implementation.
+
+        Raises:
+            RuntimeError: If the dialect is not PostgreSQL.
 
         """
         if dialect.name == "postgresql":
             return dialect.type_descriptor(PG_ARRAY(Text))
-        return dialect.type_descriptor(JSON())
+        _msg = f"ArrayType only supports PostgreSQL, got {dialect.name}"
+        raise RuntimeError(_msg)
 
 
 # Vector dimension - configurable, default 1536 for OpenAI embeddings
