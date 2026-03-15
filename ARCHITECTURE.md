@@ -278,6 +278,9 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 - `due_after`/`due_before`: Date range filtering for due dates (inclusive)
 - `scheduled_after`/`scheduled_before`: Date range filtering for scheduled dates (inclusive)
 - `completion_after`/`completion_before`: Date range filtering for completion dates (inclusive)
+- `date_match_mode`: How to combine date filters - "all" (AND logic, default) or "any" (OR logic)
+  - "all": Task must satisfy ALL date conditions to match (backward compatible)
+  - "any": Task matches if ANY date condition is satisfied
 - `tags`: List of tags that tasks must have (all tags required, AND logic)
 - `priority`: List of priorities to filter by (e.g., ['high', 'highest'])
 - `include_completed`: Whether to include completed tasks (default: True)

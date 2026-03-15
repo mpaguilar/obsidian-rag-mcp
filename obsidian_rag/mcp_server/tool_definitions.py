@@ -383,7 +383,9 @@ def get_tasks_tool(  # noqa: PLR0913
     Args:
         db_manager: Database manager for session management.
         status: List of statuses to filter by.
-        date_filters: Date filter parameters with ISO date strings.
+        date_filters: Date filter parameters with ISO date strings and match mode.
+            Use date_match_mode="all" (default) for AND logic across all date filters,
+            or "any" for OR logic (task matches if ANY date condition is satisfied).
         tags: List of tags to filter by.
         priority: List of priorities to filter by.
         include_completed: Whether to include completed tasks.

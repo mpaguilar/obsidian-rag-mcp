@@ -2,13 +2,15 @@
 
 from dataclasses import dataclass
 from datetime import date
+from typing import Literal
 
 
 @dataclass
 class GetTasksFilterParams:
     """Parameters for the generic get_tasks tool.
 
-    All filters are optional and combined with AND logic.
+    All filters are optional and combined with AND logic by default.
+    Use date_match_mode="any" for OR logic across date conditions.
     Date comparisons are inclusive (>= for after, <= for before).
 
     Attributes:
@@ -23,6 +25,8 @@ class GetTasksFilterParams:
         priority: List of priorities to filter by.
         include_completed: Whether to include completed tasks (default: True).
         include_cancelled: Whether to include cancelled tasks (default: False).
+        date_match_mode: How to combine date filters - "all" for AND logic (default),
+            "any" for OR logic across all date conditions.
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
 
@@ -39,5 +43,6 @@ class GetTasksFilterParams:
     priority: list[str] | None = None
     include_completed: bool = True
     include_cancelled: bool = False
+    date_match_mode: Literal["all", "any"] = "all"
     limit: int = 20
     offset: int = 0

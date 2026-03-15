@@ -301,6 +301,8 @@ class TaskDateFilterStrings:
         scheduled_before: ISO date string for scheduled date upper bound.
         completion_after: ISO date string for completion date lower bound.
         completion_before: ISO date string for completion date upper bound.
+        date_match_mode: How to combine date filters - "all" for AND logic (default),
+            "any" for OR logic across all date conditions.
 
     """
 
@@ -310,6 +312,7 @@ class TaskDateFilterStrings:
     scheduled_before: str | None = None
     completion_after: str | None = None
     completion_before: str | None = None
+    date_match_mode: Literal["all", "any"] = "all"
 
 
 def _get_tasks_handler(  # noqa: PLR0913
@@ -359,7 +362,7 @@ def _get_tasks_handler(  # noqa: PLR0913
     completion_after_date = parse_iso_date(date_filters.completion_after)
     completion_before_date = parse_iso_date(date_filters.completion_before)
 
-    # Build filter parameters
+    # Build filter parameters with date_match_mode
     filters = GetTasksFilterParams(
         status=status,
         due_after=due_after_date,
@@ -372,6 +375,7 @@ def _get_tasks_handler(  # noqa: PLR0913
         priority=priority,
         include_completed=include_completed,
         include_cancelled=include_cancelled,
+        date_match_mode=date_filters.date_match_mode,
         limit=limit,
         offset=offset,
     )

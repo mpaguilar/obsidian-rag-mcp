@@ -57,3 +57,31 @@ class TestGetTasksFilterParams:
         assert params.include_cancelled is True
         assert params.limit == 50
         assert params.offset == 10
+
+    def test_default_date_match_mode(self):
+        """Test that date_match_mode defaults to 'all'."""
+        params = GetTasksFilterParams()
+        assert params.date_match_mode == "all"
+
+    def test_explicit_all_mode(self):
+        """Test explicit 'all' date_match_mode."""
+        params = GetTasksFilterParams(date_match_mode="all")
+        assert params.date_match_mode == "all"
+
+    def test_any_mode(self):
+        """Test 'any' date_match_mode."""
+        params = GetTasksFilterParams(date_match_mode="any")
+        assert params.date_match_mode == "any"
+
+    def test_date_match_mode_with_date_filters(self):
+        """Test GetTasksFilterParams with date filters and match mode."""
+        params = GetTasksFilterParams(
+            due_after=date(2026, 3, 1),
+            due_before=date(2026, 3, 31),
+            scheduled_after=date(2026, 3, 15),
+            date_match_mode="any",
+        )
+        assert params.due_after == date(2026, 3, 1)
+        assert params.due_before == date(2026, 3, 31)
+        assert params.scheduled_after == date(2026, 3, 15)
+        assert params.date_match_mode == "any"

@@ -287,11 +287,14 @@ def get_tasks(  # noqa: PLR0913
 
     This tool provides comprehensive task filtering with support for date ranges,
     status lists, tag filtering, and priority filtering. All filters are optional
-    and combined with AND logic.
+    and combined with AND logic by default. Use date_match_mode="any" for OR logic
+    across date conditions.
 
     Args:
         status: List of statuses to filter by (e.g., ['not_completed', 'in_progress']).
-        date_filters: Date filter parameters with ISO date strings.
+        date_filters: Date filter parameters with ISO date strings and match mode.
+            Use date_match_mode="all" (default) for AND logic across all date filters,
+            or "any" for OR logic (task matches if ANY date condition is satisfied).
         tags: List of tags that tasks must have (all tags required).
         priority: List of priorities to filter by (e.g., ['high', 'highest']).
         include_completed: Whether to include completed tasks (default: True).
@@ -304,7 +307,8 @@ def get_tasks(  # noqa: PLR0913
 
     Notes:
         Date comparisons are inclusive (>= for after, <= for before).
-        Multiple filters are combined with AND logic.
+        Multiple filters are combined with AND logic by default.
+        Use date_match_mode="any" for OR logic across date conditions.
         Returns empty results if no tasks match the criteria.
 
     """

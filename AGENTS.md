@@ -148,6 +148,63 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 018.date-task-filtering (Completed 2026-03-15)
+
+**Objective:** Add `date_match_mode` parameter to task date filtering with "all" and "any" options. When "any", OR logic applies across all date filter types (e.g., due_before OR scheduled_after OR completion_before).
+
+**Changes Made:**
+- **obsidian_rag/mcp_server/tools/tasks_params.py**: Added `date_match_mode` field to `GetTasksFilterParams` dataclass with Literal["all", "any"] type, defaulting to "all" for backward compatibility
+- **obsidian_rag/mcp_server/handlers.py**: Added `date_match_mode` field to `TaskDateFilterStrings` dataclass and updated `_get_tasks_handler()` to pass the parameter through to `GetTasksFilterParams`
+- **obsidian_rag/mcp_server/tools/tasks.py**: Refactored date filtering logic:
+  - Added `_apply_date_filters()` function that handles both "all" (AND) and "any" (OR) match modes
+  - Added `_task_matches_date_filters()` for Python-level SQLite filtering with match mode support
+  - Modified `get_tasks()` to use new combined date filtering approach
+  - PostgreSQL: Uses SQL OR conditions for "any" mode across all date types
+  - SQLite: Applies Python-level filtering with OR logic when match_mode="any"
+- **obsidian_rag/mcp_server/server.py**: Updated `get_tasks()` tool wrapper to accept `date_match_mode` parameter
+- **obsidian_rag/mcp_server/tool_definitions.py**: Updated `get_tasks_tool()` to pass `date_match_mode` parameter and updated tool description
+- **tests/mcp_server/test_tasks_params.py**: Added tests for `date_match_mode` field in `GetTasksFilterParams`
+- **tests/mcp_server/test_handlers.py**: Added `TestTaskDateFilterStrings` and `TestGetTasksHandlerDateMatchMode` test classes
+- **tests/mcp_server/test_tools_tasks_postgres_date_match.py**: Comprehensive PostgreSQL-specific tests for date match mode:
+  - `test_apply_date_filters_all_mode`: Verifies AND logic within date types
+  - `test_apply_date_filters_any_mode`: Verifies OR logic across date types
+  - `test_apply_date_filters_no_conditions`: Verifies no filtering when no date conditions
+  - `test_apply_date_filters_with_completion_dates`: Tests completion date filtering
+  - `test_apply_date_filters_all_three_date_types_any_mode`: Tests OR logic across due, scheduled, and completion dates
+  - `TestTaskMatchesDateFilters`: Python-level filtering tests for SQLite
+- **tests/mcp_server/test_tools_tasks.py**: Added `TestGetTasksDateMatchMode` test class with integration tests
+- **tests/mcp_server/test_get_tasks_integration.py**: Added `test_get_tasks_date_match_mode_any` for end-to-end verification
+
+**Key Design Decisions:**
+
+**Date Match Mode Behavior:**
+- "all" mode (default): AND logic across all date filter conditions. Task must satisfy ALL date conditions to match. This preserves existing behavior for backward compatibility.
+- "any" mode: OR logic across all date filter types. Task matches if ANY date condition is satisfied. Tasks with NULL date fields are excluded from that specific condition evaluation but can still match via other conditions.
+
+**Implementation Pattern:**
+- Followed existing tag filtering pattern from `documents_tags.py` which uses `match_mode` with Literal["all", "any"]
+- PostgreSQL: Uses SQLAlchemy `or_()` and `and_()` operators to build dynamic queries
+- SQLite: Python-level filtering with `_task_matches_date_filters()` function that evaluates conditions based on match_mode
+- Consistent behavior across both database dialects
+
+**Backward Compatibility:**
+- Default value of "all" preserves existing AND logic behavior
+- No breaking changes to API - existing clients continue working without modification
+- All existing tests pass without modification
+
+**Edge Cases Handled:**
+- Zero date filters: match_mode has no effect, all tasks pass date filtering
+- Single date filter: "any" mode works same as "all" (only one condition to satisfy)
+- Task with NULL date field: excluded from that condition evaluation only, can still match via other conditions
+- All date filters NULL: no date filtering applied regardless of match_mode
+
+**Verification:**
+- All 932 tests pass (1 skipped)
+- 100% code coverage (3145 statements, 620 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All files under 1000 lines
+
 ### 017.task-ingest-improvments (Completed 2026-03-13)
 
 **Objective:** Fix TAG_PATTERN regex in tasks.py to support hierarchical tags with forward slashes and dots. Fix OpenRouter embedding provider routing bug to use correct API endpoint.
