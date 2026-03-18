@@ -278,8 +278,6 @@ def get_tasks(  # noqa: PLR0913
     tags: list[str] | None = None,
     priority: list[str] | None = None,
     *,
-    include_completed: bool = True,
-    include_cancelled: bool = False,
     limit: int = 20,
     offset: int = 0,
 ) -> dict[str, object]:
@@ -290,15 +288,39 @@ def get_tasks(  # noqa: PLR0913
     and combined with AND logic by default. Use date_match_mode="any" for OR logic
     across date conditions.
 
+    Valid Status Values:
+        - "not_completed": Tasks that are not yet completed
+        - "completed": Tasks that have been completed
+        - "in_progress": Tasks currently being worked on
+        - "cancelled": Tasks that have been cancelled
+
+    Valid Priority Values:
+        - "highest": Critical priority tasks
+        - "high": High priority tasks
+        - "normal": Normal priority tasks (default)
+        - "low": Low priority tasks
+        - "lowest": Lowest priority tasks
+
+    Filter Logic:
+        - Multiple status values: OR logic (task matches ANY status)
+        - Multiple priority values: OR logic (task matches ANY priority)
+        - Multiple tags: AND logic (task must have ALL tags)
+        - Date filters: Configurable via date_match_mode
+            - "all" (default): AND logic across all date conditions
+            - "any": OR logic across all date conditions
+        - Different filter types (status, tags, priority, dates): AND logic
+
     Args:
-        status: List of statuses to filter by (e.g., ['not_completed', 'in_progress']).
+        status: List of statuses to filter by.
+            Valid values: "not_completed", "completed", "in_progress", "cancelled".
+            Multiple values use OR logic (task matches any).
         date_filters: Date filter parameters with ISO date strings and match mode.
             Use date_match_mode="all" (default) for AND logic across all date filters,
             or "any" for OR logic (task matches if ANY date condition is satisfied).
-        tags: List of tags that tasks must have (all tags required).
-        priority: List of priorities to filter by (e.g., ['high', 'highest']).
-        include_completed: Whether to include completed tasks (default: True).
-        include_cancelled: Whether to include cancelled tasks (default: False).
+        tags: List of tags that tasks must have (all tags required, AND logic).
+        priority: List of priorities to filter by.
+            Valid values: "highest", "high", "normal", "low", "lowest".
+            Multiple values use OR logic (task matches any).
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
 
@@ -307,8 +329,6 @@ def get_tasks(  # noqa: PLR0913
 
     Notes:
         Date comparisons are inclusive (>= for after, <= for before).
-        Multiple filters are combined with AND logic by default.
-        Use date_match_mode="any" for OR logic across date conditions.
         Returns empty results if no tasks match the criteria.
 
     """
@@ -326,8 +346,6 @@ def get_tasks(  # noqa: PLR0913
         date_filters=date_filters,
         tags=tags,
         priority=priority,
-        include_completed=include_completed,
-        include_cancelled=include_cancelled,
         limit=limit,
         offset=offset,
     )

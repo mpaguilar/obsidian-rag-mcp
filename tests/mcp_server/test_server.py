@@ -841,8 +841,6 @@ class TestToolImplementations:
                 date_filters=date_filters,
                 tags=["work"],
                 priority=["high"],
-                include_completed=False,
-                include_cancelled=True,
                 limit=20,
                 offset=0,
             )

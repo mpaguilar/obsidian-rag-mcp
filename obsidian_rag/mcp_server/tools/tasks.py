@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from sqlalchemy import and_, func, or_
 from sqlalchemy.sql.elements import ColumnElement
 
-from obsidian_rag.database.models import Document, Task, TaskStatus
+from obsidian_rag.database.models import Document, Task
 from obsidian_rag.mcp_server.models import (
     TaskListResponse,
     _validate_limit,
@@ -243,30 +243,6 @@ def _apply_priority_filter(query: "Query[Any]", priority: list[str] | None):
     return query
 
 
-def _apply_status_exclusion_filters(
-    query: "Query[Any]",
-    *,
-    include_completed: bool,
-    include_cancelled: bool,
-):
-    """Apply status exclusion filters to query.
-
-    Args:
-        query: The base query to filter.
-        include_completed: Whether to include completed tasks.
-        include_cancelled: Whether to include cancelled tasks.
-
-    Returns:
-        Query with status exclusion filters applied.
-
-    """
-    if not include_completed:
-        query = query.filter(Task.status != TaskStatus.COMPLETED.value)
-    if not include_cancelled:
-        query = query.filter(Task.status != TaskStatus.CANCELLED.value)
-    return query
-
-
 def get_tasks(
     session: "Session",
     filters: GetTasksFilterParams | None = None,
@@ -277,6 +253,28 @@ def get_tasks(
     date ranges, tags, and priority. All filters are optional and combined
     with AND logic by default. Use date_match_mode="any" for OR logic across
     date conditions.
+
+    Valid Status Values:
+        - "not_completed": Tasks that are not yet completed
+        - "completed": Tasks that have been completed
+        - "in_progress": Tasks currently being worked on
+        - "cancelled": Tasks that have been cancelled
+
+    Valid Priority Values:
+        - "highest": Critical priority tasks
+        - "high": High priority tasks
+        - "normal": Normal priority tasks (default)
+        - "low": Low priority tasks
+        - "lowest": Lowest priority tasks
+
+    Filter Logic:
+        - Multiple status values: OR logic (task matches ANY status)
+        - Multiple priority values: OR logic (task matches ANY priority)
+        - Multiple tags: AND logic (task must have ALL tags)
+        - Date filters: Configurable via date_match_mode
+            - "all" (default): AND logic across all date conditions
+            - "any": OR logic across all date conditions
+        - Different filter types (status, tags, priority, dates): AND logic
 
     Args:
         session: Database session.
@@ -289,11 +287,6 @@ def get_tasks(
     Notes:
         Date comparisons are inclusive (>= for after, <= for before).
         Tasks without dates are excluded from date filter comparisons.
-        Multiple status filters use OR logic (task matches any status).
-        Multiple tag filters use AND logic (task must have all tags).
-        Multiple priority filters use OR logic (task matches any priority).
-        Date filters use AND logic by default (all must match), or OR logic
-        when date_match_mode="any" (any one can match).
 
     """
     _msg = "get_tasks starting"
@@ -316,11 +309,6 @@ def get_tasks(
     query = _apply_date_filters(query, filters)  # type: ignore[assignment]
     query = _apply_tag_filters(query, filters.tags)
     query = _apply_priority_filter(query, filters.priority)
-    query = _apply_status_exclusion_filters(
-        query,
-        include_completed=filters.include_completed,
-        include_cancelled=filters.include_cancelled,
-    )
 
     # Order by priority and due date
     query = query.order_by(Task.priority, Task.due)

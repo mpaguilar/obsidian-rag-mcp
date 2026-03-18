@@ -13,18 +13,42 @@ class GetTasksFilterParams:
     Use date_match_mode="any" for OR logic across date conditions.
     Date comparisons are inclusive (>= for after, <= for before).
 
+    Valid Status Values:
+        - "not_completed": Tasks that are not yet completed
+        - "completed": Tasks that have been completed
+        - "in_progress": Tasks currently being worked on
+        - "cancelled": Tasks that have been cancelled
+
+    Valid Priority Values:
+        - "highest": Critical priority tasks
+        - "high": High priority tasks
+        - "normal": Normal priority tasks (default)
+        - "low": Low priority tasks
+        - "lowest": Lowest priority tasks
+
+    Filter Logic:
+        - Multiple status values: OR logic (task matches ANY status)
+        - Multiple priority values: OR logic (task matches ANY priority)
+        - Multiple tags: AND logic (task must have ALL tags)
+        - Date filters: Configurable via date_match_mode
+            - "all" (default): AND logic across all date conditions
+            - "any": OR logic across all date conditions
+        - Different filter types (status, tags, priority, dates): AND logic
+
     Attributes:
-        status: List of statuses to filter by (e.g., ['not_completed', 'in_progress']).
-        due_after: Filter tasks due on or after this date.
-        due_before: Filter tasks due on or before this date.
-        scheduled_after: Filter tasks scheduled on or after this date.
-        scheduled_before: Filter tasks scheduled on or before this date.
-        completion_after: Filter tasks completed on or after this date.
-        completion_before: Filter tasks completed on or before this date.
-        tags: List of tags that tasks must have (all tags required).
+        status: List of statuses to filter by.
+            Valid values: "not_completed", "completed", "in_progress", "cancelled".
+            Multiple values use OR logic (task matches any).
+        due_after: Filter tasks due on or after this date (inclusive).
+        due_before: Filter tasks due on or before this date (inclusive).
+        scheduled_after: Filter tasks scheduled on or after this date (inclusive).
+        scheduled_before: Filter tasks scheduled on or before this date (inclusive).
+        completion_after: Filter tasks completed on or after this date (inclusive).
+        completion_before: Filter tasks completed on or before this date (inclusive).
+        tags: List of tags that tasks must have (all tags required, AND logic).
         priority: List of priorities to filter by.
-        include_completed: Whether to include completed tasks (default: True).
-        include_cancelled: Whether to include cancelled tasks (default: False).
+            Valid values: "highest", "high", "normal", "low", "lowest".
+            Multiple values use OR logic (task matches any).
         date_match_mode: How to combine date filters - "all" for AND logic (default),
             "any" for OR logic across all date conditions.
         limit: Maximum number of results (default: 20, max: 100).
@@ -41,8 +65,6 @@ class GetTasksFilterParams:
     completion_before: date | None = None
     tags: list[str] | None = None
     priority: list[str] | None = None
-    include_completed: bool = True
-    include_cancelled: bool = False
     date_match_mode: Literal["all", "any"] = "all"
     limit: int = 20
     offset: int = 0

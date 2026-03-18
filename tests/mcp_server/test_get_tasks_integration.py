@@ -123,19 +123,18 @@ class TestGetTasksIntegration:
     """Integration tests for get_tasks tool."""
 
     def test_get_tasks_no_filters(self, db_session, sample_data):
-        """Test get_tasks with no filters returns all non-cancelled tasks."""
+        """Test get_tasks with no filters returns all tasks."""
         vault, doc, tasks = sample_data
 
-        # Filter out cancelled tasks (default behavior)
-        non_cancelled = [t for t in tasks if t.status != TaskStatus.CANCELLED.value]
-        _configure_mock_for_tasks(db_session, non_cancelled, doc, total_count=4)
+        # Use all tasks (no filtering)
+        _configure_mock_for_tasks(db_session, tasks, doc, total_count=5)
 
         filters = GetTasksFilterParams()
         result = get_tasks(db_session, filters)
 
-        # Default is include_cancelled=False, so we get 4 tasks (all except cancelled)
-        assert result.total_count == 4
-        assert len(result.results) == 4
+        # Without filters, we get all 5 tasks
+        assert result.total_count == 5
+        assert len(result.results) == 5
 
     def test_get_tasks_status_filter(self, db_session, sample_data):
         """Test filtering by multiple statuses."""
@@ -190,7 +189,7 @@ class TestGetTasksIntegration:
 
         filters = GetTasksFilterParams(
             priority=["high"],
-            include_completed=False,
+            status=["not_completed", "in_progress", "cancelled"],
         )
         result = get_tasks(db_session, filters)
 
@@ -200,16 +199,15 @@ class TestGetTasksIntegration:
             assert task.priority == "high"
 
     def test_get_tasks_exclude_completed(self, db_session, sample_data):
-        """Test excluding completed tasks."""
+        """Test excluding completed tasks using status filter."""
         vault, doc, tasks = sample_data
 
-        # Include cancelled to get all non-completed tasks
+        # Filter to get all non-completed tasks
         filtered = [t for t in tasks if t.status != TaskStatus.COMPLETED.value]
         _configure_mock_for_tasks(db_session, filtered, doc, total_count=4)
 
         filters = GetTasksFilterParams(
-            include_completed=False,
-            include_cancelled=True,
+            status=["not_completed", "in_progress", "cancelled"],
         )
         result = get_tasks(db_session, filters)
 
@@ -219,7 +217,7 @@ class TestGetTasksIntegration:
             assert task.status != "completed"
 
     def test_get_tasks_include_cancelled(self, db_session, sample_data):
-        """Test including cancelled tasks."""
+        """Test including cancelled tasks using status filter."""
         vault, doc, tasks = sample_data
 
         # Non-completed tasks including cancelled
@@ -227,8 +225,7 @@ class TestGetTasksIntegration:
         _configure_mock_for_tasks(db_session, filtered, doc, total_count=4)
 
         filters = GetTasksFilterParams(
-            include_completed=False,
-            include_cancelled=True,
+            status=["not_completed", "in_progress", "cancelled"],
         )
         result = get_tasks(db_session, filters)
 
@@ -273,7 +270,6 @@ class TestGetTasksIntegration:
             due_after=today,
             due_before=today + timedelta(days=7),
             priority=["high"],
-            include_completed=False,
         )
         result = get_tasks(db_session, filters)
 
@@ -286,11 +282,11 @@ class TestGetTasksIntegration:
         """Test pagination with limit and offset."""
         vault, doc, tasks = sample_data
 
-        # Non-cancelled tasks for pagination
-        non_cancelled = [t for t in tasks if t.status != TaskStatus.CANCELLED.value]
+        # All tasks for pagination
+        all_tasks = tasks
 
         # Get first 2 results
-        _configure_mock_for_tasks(db_session, non_cancelled[:2], doc, total_count=4)
+        _configure_mock_for_tasks(db_session, all_tasks[:2], doc, total_count=5)
         filters = GetTasksFilterParams(limit=2, offset=0)
         result1 = get_tasks(db_session, filters)
 
@@ -299,7 +295,7 @@ class TestGetTasksIntegration:
         assert result1.next_offset == 2
 
         # Get next 2 results
-        _configure_mock_for_tasks(db_session, non_cancelled[2:4], doc, total_count=4)
+        _configure_mock_for_tasks(db_session, all_tasks[2:4], doc, total_count=5)
         filters = GetTasksFilterParams(limit=2, offset=2)
         result2 = get_tasks(db_session, filters)
 
@@ -334,8 +330,6 @@ class TestGetTasksIntegration:
             db_manager=db_manager,
             status=["not_completed"],
             date_filters=date_filters,
-            include_completed=False,
-            include_cancelled=True,
             limit=10,
         )
 

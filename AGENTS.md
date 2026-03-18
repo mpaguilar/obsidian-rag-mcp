@@ -147,6 +147,46 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 020.status-filtering (Completed 2026-03-18)
+
+**Objective:** Refactor task status filtering to use explicit status lists instead of boolean `include_completed` and `include_cancelled` flags. Simplify the API and improve filter composability.
+
+**Changes Made:**
+- **Updated `obsidian_rag/mcp_server/tools/tasks_params.py`**: Removed `include_completed` and `include_cancelled` fields from `GetTasksFilterParams` dataclass. Added comprehensive documentation for valid status values, priority values, and filter logic.
+- **Updated `obsidian_rag/mcp_server/tools/tasks.py`**: Removed `_apply_status_exclusion_filters()` function. Updated `get_tasks()` docstring with detailed filter behavior documentation.
+- **Updated `obsidian_rag/mcp_server/handlers.py`**: Removed `include_completed` and `include_cancelled` parameters from `_get_tasks_handler()`. Updated docstrings.
+- **Updated `obsidian_rag/mcp_server/server.py`**: Removed `include_completed` and `include_cancelled` parameters from `get_tasks()` tool wrapper. Added comprehensive documentation for valid values and filter logic.
+- **Updated `obsidian_rag/mcp_server/tool_definitions.py`**: Removed `include_completed` and `include_cancelled` parameters from `get_tasks_tool()`. Updated docstrings.
+- **Updated test files** to reflect API changes:
+  - `tests/mcp_server/test_tasks_params.py`
+  - `tests/mcp_server/test_server.py`
+  - `tests/mcp_server/test_tools_tasks_date_match.py`
+  - `tests/mcp_server/test_tools_tasks_get_tasks.py`
+  - `tests/mcp_server/test_get_tasks_integration.py`
+
+**Filter Logic Documentation:**
+- Multiple status values: OR logic (task matches ANY status)
+- Multiple priority values: OR logic (task matches ANY priority)
+- Multiple tags: AND logic (task must have ALL tags)
+- Date filters: Configurable via `date_match_mode`
+  - "all" (default): AND logic across all date conditions
+  - "any": OR logic across all date conditions
+- Different filter types (status, tags, priority, dates): AND logic
+
+**Migration Guide:**
+| Old Approach | New Approach |
+|--------------|--------------|
+| `include_completed=False` | `status=["not_completed", "in_progress", "cancelled"]` |
+| `include_cancelled=True` | Add `"cancelled"` to status list |
+| `include_completed=True, include_cancelled=False` (default) | `status=None` or explicit list |
+
+**Verification:**
+- All 913 tests pass (1 skipped)
+- 100% code coverage (2986 statements, 556 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All files under 1000 lines
+
 ### 019.remove-sqlite-testing (Completed 2026-03-15)
 
 **Objective:** Remove all SQLite-specific code paths and testing infrastructure. Migrate tests to use mocked PostgreSQL instead of SQLite in-memory database.

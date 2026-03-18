@@ -374,7 +374,6 @@ class TestDateMatchModeAny:
             scheduled_before=today + timedelta(days=10),
             completion_after=today - timedelta(days=7),
             completion_before=today,
-            include_completed=True,
             date_match_mode="any",
         )
         result = get_tasks(db_session, filters)
@@ -572,7 +571,6 @@ class TestDateMatchModeEdgeCases:
             scheduled_before=today + timedelta(days=10),
             completion_after=today - timedelta(days=7),
             completion_before=today,
-            include_completed=True,
             date_match_mode="any",
         )
         result = get_tasks(db_session, filters)

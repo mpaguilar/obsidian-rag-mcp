@@ -373,8 +373,6 @@ def get_tasks_tool(  # noqa: PLR0913
     tags: list[str] | None = None,
     priority: list[str] | None = None,
     *,
-    include_completed: bool = True,
-    include_cancelled: bool = False,
     limit: int = 20,
     offset: int = 0,
 ) -> dict[str, object]:
@@ -383,13 +381,15 @@ def get_tasks_tool(  # noqa: PLR0913
     Args:
         db_manager: Database manager for session management.
         status: List of statuses to filter by.
+            Valid values: "not_completed", "completed", "in_progress", "cancelled".
+            Multiple values use OR logic (task matches any status).
         date_filters: Date filter parameters with ISO date strings and match mode.
             Use date_match_mode="all" (default) for AND logic across all date filters,
             or "any" for OR logic (task matches if ANY date condition is satisfied).
-        tags: List of tags to filter by.
+        tags: List of tags that tasks must have (all tags required, AND logic).
         priority: List of priorities to filter by.
-        include_completed: Whether to include completed tasks.
-        include_cancelled: Whether to include cancelled tasks.
+            Valid values: "highest", "high", "normal", "low", "lowest".
+            Multiple values use OR logic (task matches any priority).
         limit: Maximum number of results.
         offset: Number of results to skip.
 
@@ -409,8 +409,6 @@ def get_tasks_tool(  # noqa: PLR0913
         date_filters=date_filters,
         tags=tags,
         priority=priority,
-        include_completed=include_completed,
-        include_cancelled=include_cancelled,
         limit=limit,
         offset=offset,
     )

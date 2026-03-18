@@ -21,8 +21,6 @@ class TestGetTasksFilterParams:
         assert params.completion_before is None
         assert params.tags is None
         assert params.priority is None
-        assert params.include_completed is True
-        assert params.include_cancelled is False
         assert params.limit == 20
         assert params.offset == 0
 
@@ -38,8 +36,6 @@ class TestGetTasksFilterParams:
             completion_before=date(2026, 3, 31),
             tags=["work", "urgent"],
             priority=["high", "highest"],
-            include_completed=False,
-            include_cancelled=True,
             limit=50,
             offset=10,
         )
@@ -53,8 +49,6 @@ class TestGetTasksFilterParams:
         assert params.completion_before == date(2026, 3, 31)
         assert params.tags == ["work", "urgent"]
         assert params.priority == ["high", "highest"]
-        assert params.include_completed is False
-        assert params.include_cancelled is True
         assert params.limit == 50
         assert params.offset == 10
 
