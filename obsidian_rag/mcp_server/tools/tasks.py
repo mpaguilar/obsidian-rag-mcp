@@ -28,6 +28,49 @@ _T = TypeVar("_T")
 log = logging.getLogger(__name__)
 
 
+def _validate_tag_filters(
+    include_tags: list[str] | None,
+    exclude_tags: list[str] | None,
+) -> None:
+    """Validate tag filter parameters.
+
+    Checks for conflicting tags (same tag in both include and exclude lists).
+    Tags are compared case-insensitively.
+
+    Args:
+        include_tags: List of tags that tasks must have.
+        exclude_tags: List of tags that tasks must NOT have.
+
+    Raises:
+        ValueError: If conflicting tags are found.
+
+    Notes:
+        This validation prevents logical contradictions in filter parameters.
+        Case-insensitive comparison ensures "Work" and "work" are treated as conflicts.
+
+    """
+    _msg = "_validate_tag_filters starting"
+    log.debug(_msg)
+
+    if not include_tags or not exclude_tags:
+        _msg = "_validate_tag_filters returning - no validation needed"
+        log.debug(_msg)
+        return
+
+    include_set = {tag.lower() for tag in include_tags}
+    exclude_set = {tag.lower() for tag in exclude_tags}
+    conflicts = include_set & exclude_set
+
+    if conflicts:
+        conflict_list = sorted(conflicts)
+        _msg = f"Conflicting tags found: {conflict_list}. Tags cannot appear in both include and exclude lists."
+        log.error(_msg)
+        raise ValueError(_msg)
+
+    _msg = "_validate_tag_filters returning - validation passed"
+    log.debug(_msg)
+
+
 def _apply_status_filter(query: "Query[Any]", status: list[str] | None):
     """Apply status filter to query.
 
@@ -196,34 +239,137 @@ def _apply_date_filters(
     )
 
 
-def _apply_tag_filters(
-    query: "Query[Any]",
-    tags: list[str] | None,
-):
-    """Apply tag filters to query.
+def _build_tag_condition(tag: str):
+    """Build SQL condition for a single tag match.
+
+    Args:
+        tag: Tag string to match (should already be lowercased).
+
+    Returns:
+        SQLAlchemy condition for tag matching.
+
+    """
+    return or_(
+        func.lower(func.array_to_string(Task.tags, ",")).contains(tag),
+        func.lower(func.array_to_string(Document.tags, ",")).contains(tag),
+    )
+
+
+def _apply_legacy_tags(query: "Query[Any]", tags: list[str]) -> "Query[Any]":
+    """Apply legacy 'tags' parameter with AND logic.
 
     Args:
         query: The base query to filter.
-        tags: List of tags that tasks must have.
+        tags: List of tags that tasks must have (all required).
+
+    Returns:
+        Query with legacy tag filters applied.
+
+    """
+    for tag in tags:
+        query = query.filter(_build_tag_condition(tag.lower()))
+    return query
+
+
+def _apply_include_tags_any(
+    query: "Query[Any]", include_tags: list[str]
+) -> "Query[Any]":
+    """Apply include_tags with OR logic (any match).
+
+    Args:
+        query: The base query to filter.
+        include_tags: List of tags that tasks must have (any of them).
+
+    Returns:
+        Query with include tag filters applied.
+
+    """
+    include_lower = [t.lower() for t in include_tags]
+    include_conditions = [_build_tag_condition(tag) for tag in include_lower]
+    return query.filter(or_(*include_conditions))
+
+
+def _apply_include_tags_all(
+    query: "Query[Any]", include_tags: list[str]
+) -> "Query[Any]":
+    """Apply include_tags with AND logic (all match).
+
+    Args:
+        query: The base query to filter.
+        include_tags: List of tags that tasks must have (all of them).
+
+    Returns:
+        Query with include tag filters applied.
+
+    """
+    include_lower = [t.lower() for t in include_tags]
+    for tag in include_lower:
+        query = query.filter(_build_tag_condition(tag))
+    return query
+
+
+def _apply_exclude_tags(query: "Query[Any]", exclude_tags: list[str]) -> "Query[Any]":
+    """Apply exclude_tags with OR logic (any match excludes).
+
+    Args:
+        query: The base query to filter.
+        exclude_tags: List of tags that tasks must NOT have.
+
+    Returns:
+        Query with exclude tag filters applied.
+
+    """
+    exclude_lower = [t.lower() for t in exclude_tags]
+    exclude_conditions = [_build_tag_condition(tag) for tag in exclude_lower]
+    return query.filter(~or_(*exclude_conditions))
+
+
+def _apply_tag_filters(
+    query: "Query[Any]",
+    filters: GetTasksFilterParams,
+) -> "Query[Any]":
+    """Apply tag filters to query with support for include/exclude and match modes.
+
+    Supports both legacy 'tags' parameter (AND logic) and new 'include_tags'
+    parameter with configurable match_mode ("all" for AND, "any" for OR).
+    Also supports 'exclude_tags' for exclusion filtering.
+
+    Args:
+        query: The base query to filter.
+        filters: Filter parameters including tags, include_tags, exclude_tags,
+            and tag_match_mode.
 
     Returns:
         Query with tag filters applied.
 
-    """
-    if not tags:
-        return query
+    Notes:
+        Legacy 'tags' parameter uses AND logic (all tags required).
+        'include_tags' with tag_match_mode="all" uses AND logic.
+        'include_tags' with tag_match_mode="any" uses OR logic.
+        'exclude_tags' always uses OR logic (any excluded tag disqualifies).
+        Tag matching is case-insensitive.
 
-    # For PostgreSQL, use array_to_string for proper array filtering
-    for tag in tags:
-        tag_lower = tag.lower()
-        query = query.filter(
-            or_(
-                func.lower(func.array_to_string(Task.tags, ",")).contains(tag_lower),
-                func.lower(func.array_to_string(Document.tags, ",")).contains(
-                    tag_lower
-                ),
-            ),
-        )
+    """
+    _msg = "_apply_tag_filters starting"
+    log.debug(_msg)
+
+    # Handle legacy 'tags' parameter (AND logic for backward compatibility)
+    if filters.tags:
+        query = _apply_legacy_tags(query, filters.tags)
+
+    # Handle new 'include_tags' parameter with match_mode
+    if filters.include_tags:
+        if filters.tag_match_mode == "any":
+            query = _apply_include_tags_any(query, filters.include_tags)
+        else:
+            query = _apply_include_tags_all(query, filters.include_tags)
+
+    # Handle 'exclude_tags' parameter (always OR logic)
+    if filters.exclude_tags:
+        query = _apply_exclude_tags(query, filters.exclude_tags)
+
+    _msg = "_apply_tag_filters returning"
+    log.debug(_msg)
     return query
 
 
@@ -252,7 +398,7 @@ def get_tasks(
     This is a generic task query tool that supports filtering by status,
     date ranges, tags, and priority. All filters are optional and combined
     with AND logic by default. Use date_match_mode="any" for OR logic across
-    date conditions.
+    date conditions. Use tag_match_mode="any" for OR logic across include_tags.
 
     Valid Status Values:
         - "not_completed": Tasks that are not yet completed
@@ -270,11 +416,20 @@ def get_tasks(
     Filter Logic:
         - Multiple status values: OR logic (task matches ANY status)
         - Multiple priority values: OR logic (task matches ANY priority)
-        - Multiple tags: AND logic (task must have ALL tags)
+        - Legacy tags parameter: AND logic (task must have ALL tags)
+        - include_tags with tag_match_mode="all" (default): AND logic
+        - include_tags with tag_match_mode="any": OR logic
+        - exclude_tags: OR logic (task excluded if it has ANY excluded tag)
         - Date filters: Configurable via date_match_mode
             - "all" (default): AND logic across all date conditions
             - "any": OR logic across all date conditions
         - Different filter types (status, tags, priority, dates): AND logic
+
+    Tag Filtering Examples:
+        - include_tags=["work", "urgent"], tag_match_mode="all": Task must have BOTH
+        - include_tags=["work", "personal"], tag_match_mode="any": Task has EITHER
+        - exclude_tags=["blocked"]: Task must NOT have "blocked" tag
+        - include_tags=["work"], exclude_tags=["blocked"]: Task has "work" but NOT "blocked"
 
     Args:
         session: Database session.
@@ -284,9 +439,13 @@ def get_tasks(
     Returns:
         TaskListResponse with results and pagination info.
 
+    Raises:
+        ValueError: If tag filter validation fails (conflicting tags).
+
     Notes:
         Date comparisons are inclusive (>= for after, <= for before).
         Tasks without dates are excluded from date filter comparisons.
+        Tag validation prevents conflicting tags in include/exclude lists.
 
     """
     _msg = "get_tasks starting"
@@ -294,6 +453,9 @@ def get_tasks(
 
     # Use default filters if none provided
     filters = filters or GetTasksFilterParams()
+
+    # Validate tag filters (checks for conflicting tags)
+    _validate_tag_filters(filters.include_tags, filters.exclude_tags)
 
     # Validate pagination
     limit = _validate_limit(filters.limit)
@@ -307,7 +469,7 @@ def get_tasks(
     # Apply all filters
     query = _apply_status_filter(query, filters.status)
     query = _apply_date_filters(query, filters)  # type: ignore[assignment]
-    query = _apply_tag_filters(query, filters.tags)
+    query = _apply_tag_filters(query, filters)  # type: ignore[assignment]
     query = _apply_priority_filter(query, filters.priority)
 
     # Order by priority and due date

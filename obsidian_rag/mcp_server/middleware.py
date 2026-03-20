@@ -49,9 +49,9 @@ class SessionLoggingMiddleware(BaseHTTPMiddleware):
 
         try:
             response = await call_next(request)
-        except Exception as e:  # noqa: BLE001
-            _msg = f"HTTP response exception: {request.method} {request.url.path} - {e}"
-            log.debug(_msg)
+        except Exception:
+            _msg = f"HTTP response exception: {request.method} {request.url.path}"
+            log.exception(_msg)
             raise
 
         duration = time.time() - start_time

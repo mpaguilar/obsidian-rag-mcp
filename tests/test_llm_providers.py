@@ -631,10 +631,10 @@ class TestOpenRouterEmbeddingProvider:
         assert provider._dimension == 4096
 
     def test_init_sets_openai_api_base_env_var(self):
-        """Test that initialization sets OPENAI_API_BASE environment variable.
+        """Test that initialization sets OPENAI_BASE_URL environment variable.
 
         This verifies the workaround for litellm 1.82.1 bug where api_base
-        parameter is ignored for embedding requests. Setting OPENAI_API_BASE
+        parameter is ignored for embedding requests. Setting OPENAI_BASE_URL
         ensures requests route to OpenRouter instead of OpenAI.
         """
         from obsidian_rag.llm import providers as providers_module
@@ -650,13 +650,13 @@ class TestOpenRouterEmbeddingProvider:
 
                 # Verify env var is set to default OpenRouter URL
                 assert (
-                    providers_module.os.environ.get("OPENAI_API_BASE")
+                    providers_module.os.environ.get("OPENAI_BASE_URL")
                     == "https://openrouter.ai/api/v1"
                 )
                 assert provider.base_url == "https://openrouter.ai/api/v1"
 
     def test_init_sets_openai_api_base_with_custom_url(self):
-        """Test that custom base_url is set in OPENAI_API_BASE env var."""
+        """Test that custom base_url is set in OPENAI_BASE_URL env var."""
         from obsidian_rag.llm import providers as providers_module
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
@@ -674,14 +674,14 @@ class TestOpenRouterEmbeddingProvider:
                 )
 
                 # Verify env var is set to custom URL
-                assert providers_module.os.environ.get("OPENAI_API_BASE") == custom_url
+                assert providers_module.os.environ.get("OPENAI_BASE_URL") == custom_url
                 assert provider.base_url == custom_url
 
     def test_init_overwrites_existing_openai_api_base(self):
-        """Test that initialization overwrites existing OPENAI_API_BASE value.
+        """Test that initialization overwrites existing OPENAI_BASE_URL value.
 
         This ensures the provider always uses its configured base_url,
-        even if OPENAI_API_BASE was previously set to a different value.
+        even if OPENAI_BASE_URL was previously set to a different value.
         """
         from obsidian_rag.llm import providers as providers_module
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
@@ -690,7 +690,7 @@ class TestOpenRouterEmbeddingProvider:
             with patch.dict(
                 providers_module.os.environ,
                 {
-                    "OPENAI_API_BASE": "https://existing.url.com",
+                    "OPENAI_BASE_URL": "https://existing.url.com",
                     "OPENROUTER_API_KEY": "test-key",
                 },
             ):
@@ -698,7 +698,7 @@ class TestOpenRouterEmbeddingProvider:
 
                 # Verify env var is overwritten with OpenRouter URL
                 assert (
-                    providers_module.os.environ.get("OPENAI_API_BASE")
+                    providers_module.os.environ.get("OPENAI_BASE_URL")
                     == "https://openrouter.ai/api/v1"
                 )
 

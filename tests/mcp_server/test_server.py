@@ -279,24 +279,31 @@ class TestToolFunctionsWithRegistry:
         ) as mock_handler:
             mock_handler.return_value = {"results": []}
 
+            from obsidian_rag.mcp_server.handlers import GetTasksToolInput
+
             date_filters = TaskDateFilterStrings(
                 due_after="2026-01-01",
                 due_before="2026-12-31",
             )
 
-            result = get_tasks(
+            params = GetTasksToolInput(
                 status=["not_completed"],
                 date_filters=date_filters,
                 limit=20,
                 offset=0,
             )
 
+            result = get_tasks(params=params)
+
             assert result == {"results": []}
             mock_handler.assert_called_once()
 
     def test_get_tasks_without_date_filters(self, setup_registry):
         """Test get_tasks creates default date_filters when not provided."""
-        from obsidian_rag.mcp_server.handlers import TaskDateFilterStrings
+        from obsidian_rag.mcp_server.handlers import (
+            GetTasksToolInput,
+            TaskDateFilterStrings,
+        )
         from obsidian_rag.mcp_server.server import get_tasks
 
         mock_registry = setup_registry
@@ -308,17 +315,19 @@ class TestToolFunctionsWithRegistry:
             mock_handler.return_value = {"results": []}
 
             # Call without date_filters parameter
-            result = get_tasks(
+            params = GetTasksToolInput(
                 status=["not_completed"],
                 limit=20,
                 offset=0,
             )
+            result = get_tasks(params=params)
 
             assert result == {"results": []}
             mock_handler.assert_called_once()
             # Verify that a TaskDateFilterStrings was created with default values
             call_kwargs = mock_handler.call_args.kwargs
-            assert isinstance(call_kwargs["date_filters"], TaskDateFilterStrings)
+            request = call_kwargs["request"]
+            assert isinstance(request.date_filters, TaskDateFilterStrings)
 
 
 class TestCreateMCPServer:
@@ -358,7 +367,13 @@ class TestCreateMCPServer:
         server = create_mcp_server(settings)
 
         assert server is not None
-        mock_db_manager.assert_called_once_with(settings.database.url)
+        mock_db_manager.assert_called_once_with(
+            settings.database.url,
+            pool_size=settings.database.pool_size,
+            max_overflow=settings.database.max_overflow,
+            pool_timeout=settings.database.pool_timeout,
+            pool_recycle=settings.database.pool_recycle,
+        )
 
     @patch("obsidian_rag.mcp_server.server.DatabaseManager")
     @patch("obsidian_rag.mcp_server.tool_definitions.ProviderFactory")
@@ -820,8 +835,11 @@ class TestToolImplementations:
 
     def test_get_tasks_tool(self):
         """Test get_tasks_tool directly."""
+        from obsidian_rag.mcp_server.handlers import (
+            GetTasksRequest,
+            TaskDateFilterStrings,
+        )
         from obsidian_rag.mcp_server.tool_definitions import get_tasks_tool
-        from obsidian_rag.mcp_server.handlers import TaskDateFilterStrings
 
         mock_db_manager = MagicMock()
 
@@ -835,14 +853,18 @@ class TestToolImplementations:
                 due_before="2026-12-31",
             )
 
-            result = get_tasks_tool(
-                db_manager=mock_db_manager,
+            request = GetTasksRequest(
                 status=["not_completed"],
                 date_filters=date_filters,
                 tags=["work"],
                 priority=["high"],
                 limit=20,
                 offset=0,
+            )
+
+            result = get_tasks_tool(
+                db_manager=mock_db_manager,
+                request=request,
             )
 
             assert result == {"tasks": []}
@@ -969,3 +991,99 @@ class TestMCPServerDiagnosticLogging:
             "semantic search disabled" in str(call).lower() for call in info_calls
         )
         assert disabled_log_found, "Expected INFO log when semantic search is disabled"
+
+
+class TestGetTasksServerWrapper:
+    """Tests for get_tasks server wrapper function."""
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+    def test_server_wrapper_passes_tag_filters(self, mock_handler, mock_registry):
+        """Test that server wrapper passes tag_filters to handler."""
+        mock_registry_instance = MagicMock()
+        mock_registry.return_value = mock_registry_instance
+
+        mock_handler.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+
+        from obsidian_rag.mcp_server.server import get_tasks
+        from obsidian_rag.mcp_server.handlers import GetTasksToolInput, TagFilterStrings
+
+        tag_filters = TagFilterStrings(
+            include_tags=["work", "urgent"],
+            exclude_tags=["blocked"],
+            match_mode="all",
+        )
+
+        params = GetTasksToolInput(
+            status=["not_completed"],
+            tag_filters=tag_filters,
+        )
+        result = get_tasks(params=params)
+
+        mock_handler.assert_called_once()
+        call_args = mock_handler.call_args
+        request = call_args.kwargs["request"]
+        assert request.tag_filters is not None
+        assert request.tag_filters.include_tags == ["work", "urgent"]
+        assert request.tag_filters.exclude_tags == ["blocked"]
+        assert request.tag_filters.match_mode == "all"
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+    def test_server_wrapper_default_tag_filters(self, mock_handler, mock_registry):
+        """Test that server wrapper creates default tag_filters when not provided."""
+        mock_registry_instance = MagicMock()
+        mock_registry.return_value = mock_registry_instance
+
+        mock_handler.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+
+        from obsidian_rag.mcp_server.server import get_tasks
+        from obsidian_rag.mcp_server.handlers import GetTasksToolInput
+
+        params = GetTasksToolInput(status=["not_completed"])
+        result = get_tasks(params=params)
+
+        mock_handler.assert_called_once()
+        call_args = mock_handler.call_args
+        request = call_args.kwargs["request"]
+        assert request.tag_filters is not None
+        assert request.tag_filters.include_tags is None
+        assert request.tag_filters.exclude_tags is None
+        assert request.tag_filters.match_mode == "all"
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+    def test_server_wrapper_backward_compatibility_legacy_tags(
+        self, mock_handler, mock_registry
+    ):
+        """Test that server wrapper still supports legacy tags parameter."""
+        mock_registry_instance = MagicMock()
+        mock_registry.return_value = mock_registry_instance
+
+        mock_handler.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+
+        from obsidian_rag.mcp_server.server import get_tasks
+        from obsidian_rag.mcp_server.handlers import GetTasksToolInput
+
+        params = GetTasksToolInput(tags=["work", "urgent"])
+        result = get_tasks(params=params)
+
+        mock_handler.assert_called_once()
+        call_args = mock_handler.call_args
+        request = call_args.kwargs["request"]
+        assert request.tags == ["work", "urgent"]

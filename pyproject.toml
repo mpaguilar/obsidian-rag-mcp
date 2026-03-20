@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "obsidian-rag"
-version = "0.20.0"
+version = "0.21.2"
 description = "CLI tool for ingesting Obsidian markdown documents into PostgreSQL with vector embeddings"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -24,6 +24,8 @@ dependencies = [
     "litellm>=1.0.0",
     "langchain>=0.1.0",
     "langchain-huggingface>=0.0.1",
+    "gunicorn>=22.0.0",
+    "uvicorn[standard]>=0.27.0",
 ]
 
 [tool.setuptools]
@@ -96,6 +98,9 @@ ignore = ["COM812"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 5
+
+[tool.ruff.lint.pylint]
+max-args = 10
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -13,7 +13,7 @@ class TestDatabaseManager:
     """Test cases for DatabaseManager class."""
 
     def test_init_with_postgresql_url(self):
-        """Test DatabaseManager initialization with PostgreSQL URL."""
+        """Test DatabaseManager initialization with PostgreSQL URL and pooling config."""
         with patch("obsidian_rag.database.engine.create_engine") as mock_create_engine:
             mock_engine = MagicMock()
             mock_create_engine.return_value = mock_engine
@@ -21,7 +21,12 @@ class TestDatabaseManager:
             db_manager = DatabaseManager("postgresql+psycopg://localhost/test")
 
             mock_create_engine.assert_called_once_with(
-                "postgresql+psycopg://localhost/test"
+                "postgresql+psycopg://localhost/test",
+                pool_size=10,
+                max_overflow=20,
+                pool_timeout=30,
+                pool_recycle=3600,
+                pool_pre_ping=True,
             )
             assert db_manager.engine is mock_engine
 

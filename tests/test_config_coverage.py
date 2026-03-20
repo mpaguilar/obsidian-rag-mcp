@@ -1,6 +1,7 @@
 """Tests for config coverage gaps.
 
 This module tests uncovered branches in config.py:
+- DatabasePoolConfig validators (lines 402-403)
 - MCPConfig validators (lines 489, 497, 505)
 - Settings model validator for default vault (lines 803-810)
 """
@@ -8,6 +9,75 @@ This module tests uncovered branches in config.py:
 from unittest.mock import patch
 
 import pytest
+
+
+class TestDatabasePoolConfigValidators:
+    """Test DatabasePoolConfig field validators for edge cases."""
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_pool_size_zero(self, mock_get_config):
+        """Test pool_size validator with zero value (lines 402-403)."""
+        from obsidian_rag.config import DatabaseConfig
+
+        mock_get_config.return_value = None
+
+        # Zero value should raise ValueError
+        with pytest.raises(
+            ValueError, match="Pool configuration value must be positive"
+        ):
+            DatabaseConfig(pool_size=0)
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_pool_size_negative(self, mock_get_config):
+        """Test pool_size validator with negative value (lines 402-403)."""
+        from obsidian_rag.config import DatabaseConfig
+
+        mock_get_config.return_value = None
+
+        # Negative value should raise ValueError
+        with pytest.raises(
+            ValueError, match="Pool configuration value must be positive"
+        ):
+            DatabaseConfig(pool_size=-5)
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_max_overflow_zero(self, mock_get_config):
+        """Test max_overflow validator with zero value (lines 402-403)."""
+        from obsidian_rag.config import DatabaseConfig
+
+        mock_get_config.return_value = None
+
+        # Zero value should raise ValueError
+        with pytest.raises(
+            ValueError, match="Pool configuration value must be positive"
+        ):
+            DatabaseConfig(max_overflow=0)
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_pool_timeout_zero(self, mock_get_config):
+        """Test pool_timeout validator with zero value (lines 402-403)."""
+        from obsidian_rag.config import DatabaseConfig
+
+        mock_get_config.return_value = None
+
+        # Zero value should raise ValueError
+        with pytest.raises(
+            ValueError, match="Pool configuration value must be positive"
+        ):
+            DatabaseConfig(pool_timeout=0)
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_pool_recycle_zero(self, mock_get_config):
+        """Test pool_recycle validator with zero value (lines 402-403)."""
+        from obsidian_rag.config import DatabaseConfig
+
+        mock_get_config.return_value = None
+
+        # Zero value should raise ValueError
+        with pytest.raises(
+            ValueError, match="Pool configuration value must be positive"
+        ):
+            DatabaseConfig(pool_recycle=0)
 
 
 class TestMCPConfigValidators:

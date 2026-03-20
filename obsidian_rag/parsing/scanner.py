@@ -54,7 +54,7 @@ def calculate_checksum(content: str) -> str:
     """
     _msg = "Calculating MD5 checksum"
     log.debug(_msg)
-    return hashlib.md5(content.encode("utf-8")).hexdigest()  # noqa: S324
+    return hashlib.md5(content.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
 def _is_hidden_path(path: Path) -> bool:

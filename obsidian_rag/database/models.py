@@ -282,9 +282,9 @@ class Task(Base):
 
 @event.listens_for(Base.metadata, "before_create")
 def _create_pgvector_extension(
-    target: Base,  # noqa: ARG001
+    _target: Base,
     connection: "Connection",
-    **kwargs: object,  # noqa: ARG001
+    **_kwargs: object,
 ) -> None:
     """Create pgvector extension before creating tables (PostgreSQL only)."""
     # Only create extension on PostgreSQL

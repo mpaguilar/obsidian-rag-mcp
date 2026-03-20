@@ -155,12 +155,13 @@ class TestApplyTagFiltersPostgresql:
     def test_apply_tag_filters_postgresql_single_tag(self):
         """Test _apply_tag_filters with single tag on PostgreSQL."""
         from obsidian_rag.mcp_server.tools.tasks import _apply_tag_filters
+        from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
 
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
 
-        tags = ["work"]
-        result = _apply_tag_filters(mock_query, tags)
+        filters = GetTasksFilterParams(tags=["work"])
+        result = _apply_tag_filters(mock_query, filters)
 
         # Should call filter once for the tag
         assert mock_query.filter.call_count == 1
@@ -169,12 +170,13 @@ class TestApplyTagFiltersPostgresql:
     def test_apply_tag_filters_postgresql_multiple_tags(self):
         """Test _apply_tag_filters with multiple tags on PostgreSQL."""
         from obsidian_rag.mcp_server.tools.tasks import _apply_tag_filters
+        from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
 
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
 
-        tags = ["work", "urgent", "personal"]
-        result = _apply_tag_filters(mock_query, tags)
+        filters = GetTasksFilterParams(tags=["work", "urgent", "personal"])
+        result = _apply_tag_filters(mock_query, filters)
 
         # Should call filter once per tag
         assert mock_query.filter.call_count == 3
@@ -183,11 +185,12 @@ class TestApplyTagFiltersPostgresql:
     def test_apply_tag_filters_postgresql_empty_tags(self):
         """Test _apply_tag_filters with empty tags list on PostgreSQL."""
         from obsidian_rag.mcp_server.tools.tasks import _apply_tag_filters
+        from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
 
         mock_query = MagicMock()
 
-        tags: list[str] = []
-        result = _apply_tag_filters(mock_query, tags)
+        filters = GetTasksFilterParams(tags=[])
+        result = _apply_tag_filters(mock_query, filters)
 
         # Should not call filter
         mock_query.filter.assert_not_called()
@@ -196,11 +199,12 @@ class TestApplyTagFiltersPostgresql:
     def test_apply_tag_filters_postgresql_none_tags(self):
         """Test _apply_tag_filters with None tags on PostgreSQL."""
         from obsidian_rag.mcp_server.tools.tasks import _apply_tag_filters
+        from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
 
         mock_query = MagicMock()
 
-        tags = None
-        result = _apply_tag_filters(mock_query, tags)
+        filters = GetTasksFilterParams(tags=None)
+        result = _apply_tag_filters(mock_query, filters)
 
         # Should not call filter
         mock_query.filter.assert_not_called()

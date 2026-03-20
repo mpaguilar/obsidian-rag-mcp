@@ -7,7 +7,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from obsidian_rag.database.models import Document, Task, TaskPriority, TaskStatus, Vault
-from obsidian_rag.mcp_server.handlers import _get_tasks_handler
+from obsidian_rag.mcp_server.handlers import (
+    GetTasksRequest,
+    TagFilterStrings,
+    _get_tasks_handler,
+)
 from obsidian_rag.mcp_server.tools.tasks import get_tasks
 from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
 
@@ -321,16 +325,22 @@ class TestGetTasksIntegration:
             db_session, not_completed, doc, total_count=len(not_completed)
         )
 
+        from obsidian_rag.mcp_server.handlers import GetTasksRequest
+
         date_filters = TaskDateFilterStrings(
             due_after=today.isoformat(),
             due_before=(today + timedelta(days=30)).isoformat(),
         )
 
-        result = _get_tasks_handler(
-            db_manager=db_manager,
+        request = GetTasksRequest(
             status=["not_completed"],
             date_filters=date_filters,
             limit=10,
+        )
+
+        result = _get_tasks_handler(
+            db_manager=db_manager,
+            request=request,
         )
 
         assert "results" in result
@@ -386,3 +396,316 @@ class TestGetTasksEdgeCases:
 
         # Should return empty (no tasks can satisfy this)
         assert result.total_count == 0
+
+
+class TestGetTasksTagFiltering:
+    """Integration tests for tag filtering features."""
+
+    def test_get_tasks_integration_include_tags_all_mode(self, db_session, sample_data):
+        """Integration test for include_tags with 'all' match mode."""
+        from unittest.mock import patch
+
+        vault, doc, tasks = sample_data
+
+        # Create a mock db_manager that returns our test session
+        db_manager = MagicMock()
+        db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=db_session
+        )
+        db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("obsidian_rag.mcp_server.handlers.get_tasks_tool") as mock_get_tasks:
+            mock_get_tasks.return_value.model_dump.return_value = {
+                "results": [
+                    {
+                        "id": "task-1",
+                        "description": "Work urgent task",
+                        "tags": ["work", "urgent"],
+                        "status": "not_completed",
+                    }
+                ],
+                "total_count": 1,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            request = GetTasksRequest(
+                tag_filters=TagFilterStrings(
+                    include_tags=["work", "urgent"],
+                    match_mode="all",
+                ),
+            )
+
+            result = _get_tasks_handler(
+                db_manager=db_manager,
+                request=request,
+            )
+
+            assert result["total_count"] == 1
+            results_list = result["results"]
+            assert isinstance(results_list, list)
+            assert len(results_list) == 1
+
+            # Verify the filter params passed to get_tasks_tool
+            call_args = mock_get_tasks.call_args
+            filter_params = call_args.kwargs["filters"]
+            assert filter_params.include_tags == ["work", "urgent"]
+            assert filter_params.tag_match_mode == "all"
+
+    def test_get_tasks_integration_include_tags_any_mode(self, db_session, sample_data):
+        """Integration test for include_tags with 'any' match mode."""
+        from unittest.mock import patch
+
+        vault, doc, tasks = sample_data
+
+        # Create a mock db_manager that returns our test session
+        db_manager = MagicMock()
+        db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=db_session
+        )
+        db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("obsidian_rag.mcp_server.handlers.get_tasks_tool") as mock_get_tasks:
+            mock_get_tasks.return_value.model_dump.return_value = {
+                "results": [
+                    {
+                        "id": "task-1",
+                        "description": "Work task",
+                        "tags": ["work"],
+                        "status": "not_completed",
+                    },
+                    {
+                        "id": "task-2",
+                        "description": "Personal task",
+                        "tags": ["personal"],
+                        "status": "not_completed",
+                    },
+                ],
+                "total_count": 2,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            request = GetTasksRequest(
+                tag_filters=TagFilterStrings(
+                    include_tags=["work", "personal"],
+                    match_mode="any",
+                ),
+            )
+
+            result = _get_tasks_handler(
+                db_manager=db_manager,
+                request=request,
+            )
+
+            assert result["total_count"] == 2
+            results_list = result["results"]
+            assert isinstance(results_list, list)
+            assert len(results_list) == 2
+
+            # Verify the filter params passed to get_tasks_tool
+            call_args = mock_get_tasks.call_args
+            filter_params = call_args.kwargs["filters"]
+            assert filter_params.include_tags == ["work", "personal"]
+            assert filter_params.tag_match_mode == "any"
+
+    def test_get_tasks_integration_exclude_tags(self, db_session, sample_data):
+        """Integration test for exclude_tags filtering."""
+        from unittest.mock import patch
+
+        vault, doc, tasks = sample_data
+
+        # Create a mock db_manager that returns our test session
+        db_manager = MagicMock()
+        db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=db_session
+        )
+        db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("obsidian_rag.mcp_server.handlers.get_tasks_tool") as mock_get_tasks:
+            mock_get_tasks.return_value.model_dump.return_value = {
+                "results": [
+                    {
+                        "id": "task-1",
+                        "description": "Active task",
+                        "tags": ["work"],
+                        "status": "not_completed",
+                    }
+                ],
+                "total_count": 1,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            request = GetTasksRequest(
+                tag_filters=TagFilterStrings(
+                    exclude_tags=["blocked", "waiting"],
+                ),
+            )
+
+            result = _get_tasks_handler(
+                db_manager=db_manager,
+                request=request,
+            )
+
+            assert result["total_count"] == 1
+
+            # Verify exclude_tags is passed to get_tasks_tool
+            call_args = mock_get_tasks.call_args
+            filter_params = call_args.kwargs["filters"]
+            assert filter_params.exclude_tags == ["blocked", "waiting"]
+
+    def test_get_tasks_integration_combined_include_and_exclude(
+        self, db_session, sample_data
+    ):
+        """Integration test for combined include_tags and exclude_tags."""
+        from unittest.mock import patch
+
+        vault, doc, tasks = sample_data
+
+        # Create a mock db_manager that returns our test session
+        db_manager = MagicMock()
+        db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=db_session
+        )
+        db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("obsidian_rag.mcp_server.handlers.get_tasks_tool") as mock_get_tasks:
+            mock_get_tasks.return_value.model_dump.return_value = {
+                "results": [
+                    {
+                        "id": "task-1",
+                        "description": "Work task not blocked",
+                        "tags": ["work"],
+                        "status": "not_completed",
+                    }
+                ],
+                "total_count": 1,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            request = GetTasksRequest(
+                tag_filters=TagFilterStrings(
+                    include_tags=["work"],
+                    exclude_tags=["blocked"],
+                    match_mode="all",
+                ),
+            )
+
+            result = _get_tasks_handler(
+                db_manager=db_manager,
+                request=request,
+            )
+
+            assert result["total_count"] == 1
+
+            # Verify both tag filters are passed
+            call_args = mock_get_tasks.call_args
+            filter_params = call_args.kwargs["filters"]
+            assert filter_params.include_tags == ["work"]
+            assert filter_params.exclude_tags == ["blocked"]
+            assert filter_params.tag_match_mode == "all"
+
+    def test_get_tasks_integration_conflicting_tags_raises_error(
+        self, db_session, sample_data
+    ):
+        """Integration test that conflicting tags raise ValueError."""
+
+        vault, doc, tasks = sample_data
+
+        # Create a mock db_manager that returns our test session
+        db_manager = MagicMock()
+        db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=db_session
+        )
+        db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+        with pytest.raises(ValueError, match="Conflicting tags found"):
+            request = GetTasksRequest(
+                tag_filters=TagFilterStrings(
+                    include_tags=["work"],
+                    exclude_tags=["work"],  # Same tag in both lists
+                ),
+            )
+
+            _get_tasks_handler(
+                db_manager=db_manager,
+                request=request,
+            )
+
+    def test_get_tasks_integration_case_insensitive_conflict(
+        self, db_session, sample_data
+    ):
+        """Integration test for case-insensitive conflict detection."""
+
+        vault, doc, tasks = sample_data
+
+        # Create a mock db_manager that returns our test session
+        db_manager = MagicMock()
+        db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=db_session
+        )
+        db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+        with pytest.raises(ValueError, match="Conflicting tags found"):
+            request = GetTasksRequest(
+                tag_filters=TagFilterStrings(
+                    include_tags=["Work"],  # Capitalized
+                    exclude_tags=["work"],  # Lowercase - should still conflict
+                ),
+            )
+
+            _get_tasks_handler(
+                db_manager=db_manager,
+                request=request,
+            )
+
+    def test_get_tasks_integration_backward_compatibility_legacy_tags(
+        self, db_session, sample_data
+    ):
+        """Integration test for backward compatibility with legacy tags parameter."""
+        from unittest.mock import patch
+
+        vault, doc, tasks = sample_data
+
+        # Create a mock db_manager that returns our test session
+        db_manager = MagicMock()
+        db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=db_session
+        )
+        db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("obsidian_rag.mcp_server.handlers.get_tasks_tool") as mock_get_tasks:
+            mock_get_tasks.return_value.model_dump.return_value = {
+                "results": [
+                    {
+                        "id": "task-1",
+                        "description": "Legacy tagged task",
+                        "tags": ["work", "urgent"],
+                        "status": "not_completed",
+                    }
+                ],
+                "total_count": 1,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            # Use legacy 'tags' parameter
+            request = GetTasksRequest(
+                tags=["work", "urgent"],
+            )
+
+            result = _get_tasks_handler(
+                db_manager=db_manager,
+                request=request,
+            )
+
+            assert result["total_count"] == 1
+
+            # Verify legacy tags parameter is passed
+            call_args = mock_get_tasks.call_args
+            filter_params = call_args.kwargs["filters"]
+            assert filter_params.tags == ["work", "urgent"]
+            assert filter_params.include_tags is None
+            assert filter_params.exclude_tags is None

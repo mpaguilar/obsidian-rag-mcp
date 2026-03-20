@@ -14,14 +14,15 @@ from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.llm.base import EmbeddingProvider
 from obsidian_rag.llm.providers import ProviderFactory
 from obsidian_rag.mcp_server.handlers import (
+    GetTasksRequest,
     QueryFilterParams,
-    TaskDateFilterStrings,
     _convert_property_filters,
     _create_tag_filter,
     _get_all_tags_handler,
     _get_tasks_handler,
     _list_vaults_handler,
 )
+from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
 
 log = logging.getLogger(__name__)
 
@@ -103,13 +104,12 @@ def _set_registry(registry: MCPToolRegistry | None) -> None:
     _tool_registry = registry
 
 
-def query_documents_tool(  # noqa: PLR0913
+def query_documents_tool(
     db_manager: DatabaseManager,
     embedding_provider: EmbeddingProvider | None,
     query: str,
     filters: QueryFilterParams | None = None,
-    limit: int = 20,
-    offset: int = 0,
+    pagination: "PaginationParams | None" = None,
 ) -> dict[str, object]:
     """Tool implementation for semantic search over document content.
 
@@ -119,8 +119,7 @@ def query_documents_tool(  # noqa: PLR0913
         query: Search query text.
         filters: QueryFilterParams with include_properties, exclude_properties,
             include_tags, exclude_tags, and match_mode.
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
+        pagination: Pagination parameters (default: limit=20, offset=0).
 
     Returns:
         Document list response with pagination and similarity scores.
@@ -139,7 +138,6 @@ def query_documents_tool(  # noqa: PLR0913
         query_documents as query_documents_impl,
     )
     from obsidian_rag.mcp_server.tools.documents_params import (
-        PaginationParams,
         PropertyFilterParams,
     )
 
@@ -175,7 +173,7 @@ def query_documents_tool(  # noqa: PLR0913
         include_filters=prop_filters_include,
         exclude_filters=prop_filters_exclude,
     )
-    pagination = PaginationParams(limit=limit, offset=offset)
+    pagination_params = pagination or PaginationParams(limit=20, offset=0)
 
     with db_manager.get_session() as session:
         result = query_documents_impl(
@@ -183,7 +181,7 @@ def query_documents_tool(  # noqa: PLR0913
             query_embedding=query_embedding,
             filter_params=property_filter_params,
             tag_filter=tag_filter,
-            pagination=pagination,
+            pagination=pagination_params,
         )
         return result.model_dump()
 
@@ -366,49 +364,104 @@ def list_vaults_tool(
     return _list_vaults_handler(db_manager, limit, offset)
 
 
-def get_tasks_tool(  # noqa: PLR0913
+def get_tasks_tool(
     db_manager: DatabaseManager,
-    status: list[str] | None = None,
-    date_filters: "TaskDateFilterStrings | None" = None,
-    tags: list[str] | None = None,
-    priority: list[str] | None = None,
-    *,
-    limit: int = 20,
-    offset: int = 0,
+    request: "GetTasksRequest",
 ) -> dict[str, object]:
     """Tool implementation for querying tasks with comprehensive filtering.
 
+    This tool provides flexible task filtering by status, date ranges, tags,
+    and priority. All filters are optional and combined with AND logic by default.
+
+    Valid Status Values:
+        - "not_completed": Tasks that are not yet completed
+        - "completed": Tasks that have been completed
+        - "in_progress": Tasks currently being worked on
+        - "cancelled": Tasks that have been cancelled
+
+    Valid Priority Values:
+        - "highest": Critical priority tasks
+        - "high": High priority tasks
+        - "normal": Normal priority tasks (default)
+        - "low": Low priority tasks
+        - "lowest": Lowest priority tasks
+
+    Tag Filtering:
+        Tag filters are specified in the request.tag_filters object:
+
+        include_tags: Tasks must have these tags (controlled by match_mode).
+            - match_mode="all" (default): Task must have ALL include tags
+            - match_mode="any": Task must have ANY of the include tags
+
+        exclude_tags: Tasks must NOT have any of these tags (always OR logic).
+
+        Examples:
+            - tag_filters={"include_tags": ["work", "urgent"], "match_mode": "all"}:
+              Returns tasks with BOTH "work" AND "urgent" tags
+            - tag_filters={"include_tags": ["work", "personal"], "match_mode": "any"}:
+              Returns tasks with EITHER "work" OR "personal" tag
+            - tag_filters={"exclude_tags": ["blocked"]}: Returns tasks WITHOUT "blocked" tag
+            - tag_filters={"include_tags": ["work"], "exclude_tags": ["blocked"]}:
+              Returns tasks with "work" but NOT "blocked"
+
+        Validation:
+            - Tags cannot appear in both include_tags and exclude_tags
+            - Case-insensitive matching ("Work" matches "work")
+
+    Date Filtering:
+        Date filters are specified in the request.date_filters object:
+
+        Available date fields:
+            - due_after: Filter tasks due on or after this date
+            - due_before: Filter tasks due on or before this date
+            - scheduled_after: Filter tasks scheduled on or after this date
+            - scheduled_before: Filter tasks scheduled on or before this date
+            - completion_after: Filter tasks completed on or after this date
+            - completion_before: Filter tasks completed on or before this date
+
+        match_mode: How to combine date filters
+            - "all" (default): AND logic across all date conditions
+            - "any": OR logic across all date conditions
+
+    Legacy Support:
+        The 'tags' parameter is deprecated but maintained for backward
+        compatibility. It uses AND logic (all tags required). Use
+        'tag_filters.include_tags' with 'tag_filters.match_mode' for new code.
+
+    Filter Logic Summary:
+        - Multiple status values: OR logic (task matches ANY status)
+        - Multiple priority values: OR logic (task matches ANY priority)
+        - Legacy tags parameter: AND logic (all tags required)
+        - tag_filters.include_tags with match_mode="all": AND logic
+        - tag_filters.include_tags with match_mode="any": OR logic
+        - tag_filters.exclude_tags: OR logic (any match excludes task)
+        - Date filters: Configurable via date_filters.match_mode
+            - "all" (default): AND logic across all date conditions
+            - "any": OR logic across all date conditions
+        - Different filter types (status, tags, priority, dates): AND logic
+
     Args:
         db_manager: Database manager for session management.
-        status: List of statuses to filter by.
-            Valid values: "not_completed", "completed", "in_progress", "cancelled".
-            Multiple values use OR logic (task matches any status).
-        date_filters: Date filter parameters with ISO date strings and match mode.
-            Use date_match_mode="all" (default) for AND logic across all date filters,
-            or "any" for OR logic (task matches if ANY date condition is satisfied).
-        tags: List of tags that tasks must have (all tags required, AND logic).
-        priority: List of priorities to filter by.
-            Valid values: "highest", "high", "normal", "low", "lowest".
-            Multiple values use OR logic (task matches any priority).
-        limit: Maximum number of results.
-        offset: Number of results to skip.
+        request: GetTasksRequest containing all filter parameters.
 
     Returns:
-        Dictionary with task list response.
+        Dictionary with task list response including:
+        - results: List of matching tasks
+        - total_count: Total number of matching tasks
+        - has_more: Whether more results are available
+        - next_offset: Offset for next page (if has_more is True)
+
+    Raises:
+        ValueError: If tag filter validation fails (conflicting tags in
+            include_tags and exclude_tags).
 
     Notes:
         This is a module-level function for testability.
         The @mcp.tool() decorator is applied in the registration function.
+        Date comparisons are inclusive (>= for after, <= for before).
 
     """
     _msg = "Tool get_tasks called"
     log.info(_msg)
-    return _get_tasks_handler(
-        db_manager,
-        status=status,
-        date_filters=date_filters,
-        tags=tags,
-        priority=priority,
-        limit=limit,
-        offset=offset,
-    )
+
+    return _get_tasks_handler(db_manager, request)

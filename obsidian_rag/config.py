@@ -61,6 +61,10 @@ DEFAULT_CONFIG = {
     "database": {
         "url": "postgresql+psycopg://localhost/obsidian_rag",
         "vector_dimension": 1536,
+        "pool_size": 10,
+        "max_overflow": 20,
+        "pool_timeout": 30,
+        "pool_recycle": 3600,
     },
     "ingestion": {
         "batch_size": 100,
@@ -281,25 +285,23 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
 
     def get_field_value(
         self,
-        field: FieldInfo | None,
-        field_name: str,
-    ) -> tuple[Any, str, bool]:  # noqa: ARG002
+        _field: FieldInfo | None,
+        _field_name: str,
+    ) -> tuple[Any, str, bool]:
         """Get field value from YAML config.
 
         Note: This method is required by the base class but we implement
         __call__ instead for the full dictionary approach.
 
         Args:
-            field: The field being requested (unused).
-            field_name: The name of the field (unused).
+            _field: The field being requested (unused, required by base class).
+            _field_name: The name of the field (unused, required by base class).
 
         Returns:
             A tuple of (None, "", False) indicating no value.
 
         """
         # We don't use per-field loading; full dictionary is loaded below
-        _ = field  # Explicitly mark as used for ruff
-        _ = field_name  # Explicitly mark as used for ruff
         return None, "", False
 
     def __call__(self) -> dict[str, Any]:
@@ -332,11 +334,20 @@ class DatabaseConfig(BaseModel):
         url: PostgreSQL connection URL.
         vector_dimension: Dimension for vector embeddings (must be positive).
             Common values: 1536 (OpenAI), 768 (HuggingFace), 1024, 384.
+        pool_size: Number of persistent connections in the pool (default: 10).
+            Increase for high-concurrency deployments with many Gunicorn workers.
+        max_overflow: Maximum overflow connections beyond pool_size (default: 20).
+        pool_timeout: Seconds to wait for a connection from pool (default: 30).
+        pool_recycle: Seconds after which to recycle connections (default: 3600).
 
     """
 
     url: str = "postgresql+psycopg://localhost/obsidian_rag"
     vector_dimension: int = 1536
+    pool_size: int = 10
+    max_overflow: int = 20
+    pool_timeout: int = 30
+    pool_recycle: int = 3600
 
     @field_validator("vector_dimension")
     @classmethod
@@ -372,6 +383,23 @@ class DatabaseConfig(BaseModel):
                 "paraphrase-multilingual-MiniLM-L12-v2 (384). "
                 f"Got: {v}"
             )
+            raise ValueError(_msg)
+        return v
+
+    @field_validator("pool_size", "max_overflow", "pool_timeout", "pool_recycle")
+    @classmethod
+    def validate_positive_int(cls, v: int) -> int:
+        """Validate pool configuration values are positive.
+
+        Args:
+            v: The integer value to validate.
+
+        Returns:
+            The validated value, or raises ValueError if invalid.
+
+        """
+        if v <= 0:
+            _msg = f"Pool configuration value must be positive, got: {v}"
             raise ValueError(_msg)
         return v
 

@@ -452,3 +452,194 @@ class TestGetTasks:
 
         assert result.total_count == 1
         assert result.results[0].description == "Match all"
+
+    def test_include_tags_all_mode_integration(self):
+        """Test include_tags with 'all' mode in full get_tasks flow."""
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Work task"
+        task.tags = ["work", "urgent"]
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
+
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] Work task",
+                status="not_completed",
+                description="Work task",
+                due=None,
+                priority="normal",
+                tags=["work", "urgent"],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(
+                include_tags=["work", "urgent"],
+                tag_match_mode="all",
+            )
+            result = get_tasks(mock_session, filters)
+
+        assert result.total_count == 1
+
+    def test_include_tags_any_mode_integration(self):
+        """Test include_tags with 'any' mode in full get_tasks flow."""
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Personal task"
+        task.tags = ["personal"]
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
+
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] Personal task",
+                status="not_completed",
+                description="Personal task",
+                due=None,
+                priority="normal",
+                tags=["personal"],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(
+                include_tags=["work", "personal"],
+                tag_match_mode="any",
+            )
+            result = get_tasks(mock_session, filters)
+
+        assert result.total_count == 1
+
+    def test_exclude_tags_integration(self):
+        """Test exclude_tags in full get_tasks flow."""
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Active task"
+        task.tags = ["work"]
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
+
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] Active task",
+                status="not_completed",
+                description="Active task",
+                due=None,
+                priority="normal",
+                tags=["work"],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(exclude_tags=["blocked"])
+            result = get_tasks(mock_session, filters)
+
+        assert result.total_count == 1
+
+    def test_conflicting_tags_raises_error(self):
+        """Test that conflicting tags raise ValueError."""
+        mock_session = MagicMock()
+
+        filters = GetTasksFilterParams(
+            include_tags=["work"],
+            exclude_tags=["work"],  # Same tag in both lists
+        )
+
+        with pytest.raises(ValueError, match="Conflicting tags found"):
+            get_tasks(mock_session, filters)
+
+    def test_backward_compatibility_legacy_tags(self):
+        """Test that legacy 'tags' parameter still works."""
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Legacy tagged task"
+        task.tags = ["work", "urgent"]
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
+
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] Legacy tagged task",
+                status="not_completed",
+                description="Legacy tagged task",
+                due=None,
+                priority="normal",
+                tags=["work", "urgent"],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            # Use legacy 'tags' parameter
+            filters = GetTasksFilterParams(tags=["work", "urgent"])
+            result = get_tasks(mock_session, filters)
+
+        assert result.total_count == 1

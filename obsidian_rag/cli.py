@@ -206,7 +206,8 @@ def _report_ingest_results(
     stats: dict[str, int],
     elapsed_time: float,
     deleted: int,
-    no_delete: bool,  # noqa: FBT001
+    *,
+    no_delete: bool,
 ) -> None:
     """Report ingestion results.
 
@@ -294,7 +295,13 @@ def _run_ingestion(
         options: Ingestion options.
 
     """
-    db_manager = DatabaseManager(settings.database.url)
+    db_manager = DatabaseManager(
+        settings.database.url,
+        pool_size=settings.database.pool_size,
+        max_overflow=settings.database.max_overflow,
+        pool_timeout=settings.database.pool_timeout,
+        pool_recycle=settings.database.pool_recycle,
+    )
 
     if options.dry_run:
         click.echo("DRY RUN: No changes will be written to the database")
@@ -341,7 +348,7 @@ def _run_ingestion(
         "errors": result.errors,
     }
     _report_ingest_results(
-        result.total, stats, elapsed_time, result.deleted, options.no_delete
+        result.total, stats, elapsed_time, result.deleted, no_delete=options.no_delete
     )
 
 
@@ -490,7 +497,13 @@ def query(ctx: click.Context, query_text: str, limit: int, output_format: str) -
     log.info(_msg)
 
     settings = ctx.obj["settings"]
-    db_manager = DatabaseManager(settings.database.url)
+    db_manager = DatabaseManager(
+        settings.database.url,
+        pool_size=settings.database.pool_size,
+        max_overflow=settings.database.max_overflow,
+        pool_timeout=settings.database.pool_timeout,
+        pool_recycle=settings.database.pool_recycle,
+    )
     embedding_provider = _get_embedding_provider(settings)
 
     # Generate query embedding
@@ -538,6 +551,27 @@ class TaskDateFilters:
     completion_after: date | None = None
 
 
+@dataclass
+class TaskFilterOptions:
+    """Combined filter options for tasks command.
+
+    This dataclass bundles all filter options to comply with
+    the 5 argument limit per function (PLR0913).
+
+    Attributes:
+        status: Filter by task status.
+        tag: Filter by tag.
+        limit: Maximum number of results.
+        date_filters: Date filter parameters.
+
+    """
+
+    status: str | None = None
+    tag: str | None = None
+    limit: int = 20
+    date_filters: TaskDateFilters | None = None
+
+
 @cli.command()
 @click.option(
     "--status",
@@ -576,7 +610,7 @@ class TaskDateFilters:
 @click.option("--tag", help="Filter by tag.")
 @click.option("--limit", default=20, help="Maximum number of results.")
 @click.pass_context
-def tasks(  # noqa: PLR0913
+def tasks(
     ctx: click.Context,
     status: str | None,
     due_before: str | None,
@@ -592,9 +626,6 @@ def tasks(  # noqa: PLR0913
     _msg = "Querying tasks"
     log.info(_msg)
 
-    settings = ctx.obj["settings"]
-    db_manager = DatabaseManager(settings.database.url)
-
     # Parse all date options into a filters object
     date_filters = TaskDateFilters(
         due_before=parse_cli_date(due_before),
@@ -605,13 +636,40 @@ def tasks(  # noqa: PLR0913
         completion_after=parse_cli_date(completion_after),
     )
 
+    options = TaskFilterOptions(
+        status=status,
+        tag=tag,
+        limit=limit,
+        date_filters=date_filters,
+    )
+
+    _execute_tasks_query(ctx, options)
+
+
+def _execute_tasks_query(ctx: click.Context, options: TaskFilterOptions) -> None:
+    """Execute the tasks query with the given filter options.
+
+    Args:
+        ctx: Click context.
+        options: Filter options for the query.
+
+    """
+    settings = ctx.obj["settings"]
+    db_manager = DatabaseManager(
+        settings.database.url,
+        pool_size=settings.database.pool_size,
+        max_overflow=settings.database.max_overflow,
+        pool_timeout=settings.database.pool_timeout,
+        pool_recycle=settings.database.pool_recycle,
+    )
+
     with db_manager.get_session() as session:
         query = _build_tasks_query(
             session=session,
-            status=status,
-            date_filters=date_filters,
-            tag=tag,
-            limit=limit,
+            status=options.status,
+            date_filters=options.date_filters or TaskDateFilters(),
+            tag=options.tag,
+            limit=options.limit,
         )
         results = query.all()
 

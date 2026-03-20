@@ -17,7 +17,10 @@ from obsidian_rag.mcp_server.tools.documents import (
 )
 from obsidian_rag.mcp_server.tools.tasks import get_tasks as get_tasks_tool
 from obsidian_rag.mcp_server.tools.tasks_dates import parse_iso_date
-from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
+from obsidian_rag.mcp_server.tools.tasks_params import (
+    GetTasksFilterParams,
+    GetTasksRequest,
+)
 from obsidian_rag.mcp_server.tools.vaults import list_vaults as list_vaults_tool
 from obsidian_rag.services.ingestion import IngestionService, IngestVaultOptions
 
@@ -291,6 +294,33 @@ def _ingest_handler(params: IngestHandlerParams) -> dict[str, object]:
 
 
 @dataclass
+class GetTasksToolInput:
+    """Input parameters for the get_tasks MCP tool.
+
+    This dataclass bundles all input parameters for the get_tasks tool
+    to comply with the 5 argument limit per function (PLR0913).
+
+    Attributes:
+        status: List of statuses to filter by.
+        tag_filters: Tag filter parameters with include/exclude lists and match mode.
+        date_filters: Date filter parameters with ISO date strings and match mode.
+        tags: Legacy parameter - list of tags that tasks must have (all required).
+        priority: List of priorities to filter by.
+        limit: Maximum number of results.
+        offset: Number of results to skip.
+
+    """
+
+    status: list[str] | None = None
+    tag_filters: "TagFilterStrings | None" = None
+    date_filters: "TaskDateFilterStrings | None" = None
+    tags: list[str] | None = None
+    priority: list[str] | None = None
+    limit: int = 20
+    offset: int = 0
+
+
+@dataclass
 class TaskDateFilterStrings:
     """Date filter string parameters for get_tasks handler.
 
@@ -301,7 +331,7 @@ class TaskDateFilterStrings:
         scheduled_before: ISO date string for scheduled date upper bound.
         completion_after: ISO date string for completion date lower bound.
         completion_before: ISO date string for completion date upper bound.
-        date_match_mode: How to combine date filters - "all" for AND logic (default),
+        match_mode: How to combine date filters - "all" for AND logic (default),
             "any" for OR logic across all date conditions.
 
     """
@@ -312,45 +342,56 @@ class TaskDateFilterStrings:
     scheduled_before: str | None = None
     completion_after: str | None = None
     completion_before: str | None = None
-    date_match_mode: Literal["all", "any"] = "all"
+    match_mode: Literal["all", "any"] = "all"
 
 
-def _get_tasks_handler(  # noqa: PLR0913
+@dataclass
+class TagFilterStrings:
+    """Tag filter string parameters for get_tasks handler.
+
+    Attributes:
+        include_tags: List of tags that tasks must have.
+            Use match_mode to control AND vs OR logic.
+        exclude_tags: List of tags that tasks must NOT have.
+            Always uses OR logic (any excluded tag disqualifies).
+        match_mode: How to combine include_tags - "all" for AND logic (default),
+            "any" for OR logic (task matches if it has ANY of the include_tags).
+
+    """
+
+    include_tags: list[str] | None = None
+    exclude_tags: list[str] | None = None
+    match_mode: Literal["all", "any"] = "all"
+
+
+def _get_tasks_handler(
     db_manager: DatabaseManager,
-    status: list[str] | None = None,
-    date_filters: TaskDateFilterStrings | None = None,
-    tags: list[str] | None = None,
-    priority: list[str] | None = None,
-    *,
-    limit: int = 20,
-    offset: int = 0,
+    request: "GetTasksRequest",
 ) -> dict[str, object]:
     """Handle get_tasks tool call with comprehensive filtering.
 
     Args:
         db_manager: Database manager for session management.
-        status: List of statuses to filter by.
-            Valid values: "not_completed", "completed", "in_progress", "cancelled".
-        date_filters: Date filter parameters with ISO date strings.
-        tags: List of tags to filter by.
-        priority: List of priorities to filter by.
-            Valid values: "highest", "high", "normal", "low", "lowest".
-        limit: Maximum number of results.
-        offset: Number of results to skip.
+        request: GetTasksRequest containing all filter parameters.
 
     Returns:
         Dictionary with task list response.
 
+    Raises:
+        ValueError: If tag filter validation fails (conflicting tags).
+
     Notes:
         Parses ISO date strings and builds GetTasksFilterParams.
         Invalid date strings are logged and treated as None.
+        Tag validation prevents conflicting tags in include/exclude lists.
 
     """
     _msg = "_get_tasks_handler starting"
     log.debug(_msg)
 
-    # Use default date filters if none provided
-    date_filters = date_filters or TaskDateFilterStrings()
+    # Use default filters if none provided
+    date_filters = request.date_filters or TaskDateFilterStrings()
+    tag_filters = request.tag_filters or TagFilterStrings()
 
     # Parse all date parameters
     due_after_date = parse_iso_date(date_filters.due_after)
@@ -360,20 +401,23 @@ def _get_tasks_handler(  # noqa: PLR0913
     completion_after_date = parse_iso_date(date_filters.completion_after)
     completion_before_date = parse_iso_date(date_filters.completion_before)
 
-    # Build filter parameters with date_match_mode
+    # Build filter parameters with all tag filtering options
     filters = GetTasksFilterParams(
-        status=status,
+        status=request.status,
         due_after=due_after_date,
         due_before=due_before_date,
         scheduled_after=scheduled_after_date,
         scheduled_before=scheduled_before_date,
         completion_after=completion_after_date,
         completion_before=completion_before_date,
-        tags=tags,
-        priority=priority,
-        date_match_mode=date_filters.date_match_mode,
-        limit=limit,
-        offset=offset,
+        tags=request.tags,
+        include_tags=tag_filters.include_tags,
+        exclude_tags=tag_filters.exclude_tags,
+        tag_match_mode=tag_filters.match_mode,
+        priority=request.priority,
+        date_match_mode=date_filters.match_mode,
+        limit=request.limit,
+        offset=request.offset,
     )
 
     with db_manager.get_session() as session:

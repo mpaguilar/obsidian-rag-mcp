@@ -48,10 +48,15 @@ class DatabaseManager:
     """Manages database connections and sessions.
 
     This class provides a centralized way to manage database connections,
-    create sessions, and handle schema creation.
+    create sessions, and handle schema creation. Configures connection
+    pooling for production multi-worker deployments.
 
     Args:
         database_url: The PostgreSQL connection URL.
+        pool_size: Number of persistent connections in the pool (default: 10).
+        max_overflow: Maximum overflow connections beyond pool_size (default: 20).
+        pool_timeout: Seconds to wait for a connection from pool (default: 30).
+        pool_recycle: Seconds after which to recycle connections (default: 3600).
 
     Attributes:
         engine: The SQLAlchemy engine instance.
@@ -59,12 +64,33 @@ class DatabaseManager:
 
     """
 
-    def __init__(self, database_url: str) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        pool_size: int = 10,
+        max_overflow: int = 20,
+        pool_timeout: int = 30,
+        pool_recycle: int = 3600,
+    ) -> None:
         """Initialize the database manager with a connection URL."""
         normalized_url = _normalize_postgres_url(database_url)
         _msg = f"Initializing DatabaseManager with URL: {normalized_url}"
         log.debug(_msg)
-        self.engine = create_engine(normalized_url)
+
+        # Configure connection pooling for multi-worker deployments
+        # pool_size: Base connections maintained in pool
+        # max_overflow: Extra connections allowed during high load
+        # pool_timeout: How long to wait for available connection
+        # pool_recycle: Prevent stale connections by recycling
+        self.engine = create_engine(
+            normalized_url,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=pool_timeout,
+            pool_recycle=pool_recycle,
+            pool_pre_ping=True,  # Verify connections before use
+        )
         self.SessionLocal = sessionmaker(
             autocommit=False,
             autoflush=False,

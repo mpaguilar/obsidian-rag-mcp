@@ -78,11 +78,10 @@ class TestSessionLoggingMiddleware:
                 await middleware.dispatch(mock_request, mock_call_next)
 
             # Verify exception was logged
-            debug_calls = [call for call in mock_log.debug.call_args_list]
-            assert len(debug_calls) >= 2
-            exception_log = str(debug_calls[1])
+            exception_calls = [call for call in mock_log.exception.call_args_list]
+            assert len(exception_calls) >= 1
+            exception_log = str(exception_calls[0])
             assert "GET /error" in exception_log
-            assert "Test error" in exception_log
 
     @pytest.mark.asyncio
     async def test_dispatch_different_methods(self):

@@ -620,9 +620,9 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
         self.litellm = litellm
 
         # Workaround for litellm 1.82.1 bug: api_base parameter is ignored for embeddings
-        # Set OPENAI_API_BASE env var so litellm routes to OpenRouter instead of OpenAI
+        # Set OPENAI_BASE_URL env var so litellm routes to OpenRouter instead of OpenAI
         # See: https://github.com/BerriAI/litellm/issues/16045
-        os.environ["OPENAI_API_BASE"] = self.base_url
+        os.environ["OPENAI_BASE_URL"] = self.base_url
 
         _msg = f"OpenRouter embedding provider initialized with model: {self.model}"
         log.debug(_msg)
@@ -663,7 +663,7 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
             Uses litellm.embedding() for provider-agnostic LLM connectivity.
             Uses model name without openrouter/ prefix as workaround for
             litellm 1.82.1 bug where openrouter/ prefix causes api_base to be
-            ignored. OPENAI_API_BASE env var is set in __init__ to ensure
+            ignored. OPENAI_BASE_URL env var is set in __init__ to ensure
             requests route to OpenRouter's API endpoint.
 
         """
@@ -674,7 +674,7 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
             # Workaround for litellm 1.82.1 bug: use model name without
             # openrouter/ prefix. The openrouter/ prefix causes litellm to
             # ignore api_base and route to OpenAI's API instead of OpenRouter's.
-            # OPENAI_API_BASE env var (set in __init__) ensures correct routing.
+            # OPENAI_BASE_URL env var (set in __init__) ensures correct routing.
             model_name = self.model
             response = self.litellm.embedding(
                 model=model_name,

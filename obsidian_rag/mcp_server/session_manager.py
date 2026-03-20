@@ -115,7 +115,7 @@ class SessionManager:
 
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         max_concurrent_sessions: int = 100,
         session_timeout_seconds: int = 300,

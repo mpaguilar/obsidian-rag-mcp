@@ -79,3 +79,137 @@ class TestGetTasksFilterParams:
         assert params.due_before == date(2026, 3, 31)
         assert params.scheduled_after == date(2026, 3, 15)
         assert params.date_match_mode == "any"
+
+    def test_default_tag_filter_values(self):
+        """Test default values for new tag filter fields."""
+        params = GetTasksFilterParams()
+        assert params.include_tags is None
+        assert params.exclude_tags is None
+        assert params.tag_match_mode == "all"
+
+    def test_include_tags_all_mode(self):
+        """Test include_tags with 'all' match mode."""
+        params = GetTasksFilterParams(
+            include_tags=["work", "urgent"],
+            tag_match_mode="all",
+        )
+        assert params.include_tags == ["work", "urgent"]
+        assert params.tag_match_mode == "all"
+
+    def test_include_tags_any_mode(self):
+        """Test include_tags with 'any' match mode."""
+        params = GetTasksFilterParams(
+            include_tags=["work", "personal"],
+            tag_match_mode="any",
+        )
+        assert params.include_tags == ["work", "personal"]
+        assert params.tag_match_mode == "any"
+
+    def test_exclude_tags(self):
+        """Test exclude_tags field."""
+        params = GetTasksFilterParams(exclude_tags=["blocked", "waiting"])
+        assert params.exclude_tags == ["blocked", "waiting"]
+
+    def test_combined_tag_filters(self):
+        """Test combining include_tags, exclude_tags, and tag_match_mode."""
+        params = GetTasksFilterParams(
+            include_tags=["work"],
+            exclude_tags=["blocked"],
+            tag_match_mode="all",
+        )
+        assert params.include_tags == ["work"]
+        assert params.exclude_tags == ["blocked"]
+        assert params.tag_match_mode == "all"
+
+    def test_legacy_tags_backward_compatibility(self):
+        """Test that legacy tags parameter still works."""
+        params = GetTasksFilterParams(tags=["work", "urgent"])
+        assert params.tags == ["work", "urgent"]
+        assert params.include_tags is None
+        assert params.exclude_tags is None
+
+
+class TestGetTasksRequest:
+    """Tests for GetTasksRequest dataclass."""
+
+    def test_default_values(self):
+        """Test default parameter values."""
+        from obsidian_rag.mcp_server.tools.tasks_params import GetTasksRequest
+
+        request = GetTasksRequest()
+
+        assert request.status is None
+        assert request.tag_filters is None
+        assert request.date_filters is None
+        assert request.tags is None
+        assert request.priority is None
+        assert request.limit == 20
+        assert request.offset == 0
+
+    def test_with_tag_filters(self):
+        """Test with tag_filters parameter."""
+        from obsidian_rag.mcp_server.handlers import TagFilterStrings
+        from obsidian_rag.mcp_server.tools.tasks_params import GetTasksRequest
+
+        tag_filters = TagFilterStrings(
+            include_tags=["work", "urgent"],
+            exclude_tags=["blocked"],
+            match_mode="all",
+        )
+
+        request = GetTasksRequest(
+            status=["not_completed"],
+            tag_filters=tag_filters,
+        )
+
+        assert request.status == ["not_completed"]
+        assert request.tag_filters is not None
+        assert request.tag_filters.include_tags == ["work", "urgent"]
+        assert request.tag_filters.exclude_tags == ["blocked"]
+        assert request.tag_filters.match_mode == "all"
+
+    def test_with_date_filters(self):
+        """Test with date_filters parameter."""
+        from obsidian_rag.mcp_server.handlers import TaskDateFilterStrings
+        from obsidian_rag.mcp_server.tools.tasks_params import GetTasksRequest
+
+        date_filters = TaskDateFilterStrings(
+            due_after="2026-01-01",
+            due_before="2026-12-31",
+            match_mode="any",
+        )
+
+        request = GetTasksRequest(
+            date_filters=date_filters,
+        )
+
+        assert request.date_filters is not None
+        assert request.date_filters.due_after == "2026-01-01"
+        assert request.date_filters.match_mode == "any"
+
+    def test_with_both_filter_types(self):
+        """Test with both tag and date filters."""
+        from obsidian_rag.mcp_server.handlers import (
+            TagFilterStrings,
+            TaskDateFilterStrings,
+        )
+        from obsidian_rag.mcp_server.tools.tasks_params import GetTasksRequest
+
+        tag_filters = TagFilterStrings(
+            include_tags=["work"],
+            match_mode="all",
+        )
+        date_filters = TaskDateFilterStrings(
+            due_before="2026-03-31",
+            match_mode="all",
+        )
+
+        request = GetTasksRequest(
+            tag_filters=tag_filters,
+            date_filters=date_filters,
+        )
+
+        assert request.tag_filters is not None
+        assert request.tag_filters.include_tags == ["work"]
+        assert request.date_filters is not None
+        assert request.date_filters.due_before == "2026-03-31"

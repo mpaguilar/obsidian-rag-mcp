@@ -280,21 +280,30 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 - `date_match_mode`: How to combine date filters - "all" (AND logic, default) or "any" (OR logic)
   - "all": Task must satisfy ALL date conditions to match (backward compatible)
   - "any": Task matches if ANY date condition is satisfied
-- `tags`: List of tags that tasks must have (all tags required, AND logic)
+- `include_tags`: List of tags tasks must have (controlled by `tag_match_mode`)
+  - `tag_match_mode="all"` (default): Task must have ALL include tags
+  - `tag_match_mode="any"`: Task must have ANY of the include tags
+- `exclude_tags`: List of tags tasks must NOT have (always OR logic - any excluded tag disqualifies)
+- `tag_match_mode`: How to combine include_tags - "all" (AND logic, default) or "any" (OR logic)
+- `tags`: Legacy parameter - list of tags tasks must have (all tags required, AND logic)
 - `priority`: List of priorities to filter by (e.g., ['high', 'highest'])
-- `include_completed`: Whether to include completed tasks (default: True)
-- `include_cancelled`: Whether to include cancelled tasks (default: False)
 - All filters are optional and combined with AND logic
 - Date comparisons are inclusive (>= for after, <= for before)
 - Tasks without dates are excluded from date filter comparisons
+- Conflicting tags (same tag in both include_tags and exclude_tags) are rejected with validation error
 
 **Migration from removed tools:**
 | Old Tool | New `get_tasks` Equivalent |
 |----------|---------------------------|
 | `get_incomplete_tasks(include_cancelled=True)` | `get_tasks(status=["not_completed", "in_progress", "cancelled"])` |
-| `get_tasks_due_this_week(include_completed=False)` | `get_tasks(due_after="2026-03-11", due_before="2026-03-18", include_completed=False)` |
-| `get_tasks_by_tag(tag="work")` | `get_tasks(tags=["work"])` |
+| `get_tasks_due_this_week(include_completed=False)` | `get_tasks(due_after="2026-03-11", due_before="2026-03-18")` |
+| `get_tasks_by_tag(tag="work")` | `get_tasks(include_tags=["work"])` or `get_tasks(tags=["work"])` |
 | `get_completed_tasks(completed_since="2026-01-01")` | `get_tasks(status=["completed"], completion_after="2026-01-01")` |
+
+**Tag Filtering Examples:**
+- Find tasks with tag 'work' OR 'personal': `include_tags=["work", "personal"], tag_match_mode="any"`
+- Find tasks with both 'urgent' AND 'work' tags: `include_tags=["urgent", "work"], tag_match_mode="all"`
+- Find tasks with 'work' but NOT 'blocked': `include_tags=["work"], exclude_tags=["blocked"]`
 
 **Document Tools:**
 - `query_documents`: Semantic search using vector similarity (cosine distance) with optional property and tag filters

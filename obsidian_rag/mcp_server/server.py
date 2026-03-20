@@ -12,12 +12,14 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from obsidian_rag.config import Settings
+from obsidian_rag.config import Settings, get_settings
 from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.mcp_server.handlers import (
     DocumentTagParams,
+    GetTasksToolInput,
     IngestHandlerParams,
     QueryFilterParams,
+    TagFilterStrings,
     TaskDateFilterStrings,
     _convert_property_filters,
     _create_tag_filter,
@@ -67,14 +69,16 @@ def query_documents(
         Document list response with pagination and similarity scores.
 
     """
+    from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
+
     registry = _get_registry()
+    pagination = PaginationParams(limit=limit, offset=offset)
     return query_documents_tool(
         db_manager=registry.db_manager,
         embedding_provider=registry.embedding_provider,
         query=query,
         filters=filters,
-        limit=limit,
-        offset=offset,
+        pagination=pagination,
     )
 
 
@@ -272,21 +276,14 @@ def ingest(
     return _ingest_handler(params)
 
 
-def get_tasks(  # noqa: PLR0913
-    status: list[str] | None = None,
-    date_filters: "TaskDateFilterStrings | None" = None,
-    tags: list[str] | None = None,
-    priority: list[str] | None = None,
-    *,
-    limit: int = 20,
-    offset: int = 0,
+def get_tasks(
+    params: "GetTasksToolInput",
 ) -> dict[str, object]:
     """Query tasks with flexible filtering by status, dates, priority, and tags.
 
     This tool provides comprehensive task filtering with support for date ranges,
-    status lists, tag filtering, and priority filtering. All filters are optional
-    and combined with AND logic by default. Use date_match_mode="any" for OR logic
-    across date conditions.
+    status lists, tag filtering with include/exclude semantics, and priority
+    filtering. All filters are optional and combined with AND logic by default.
 
     Valid Status Values:
         - "not_completed": Tasks that are not yet completed
@@ -301,53 +298,102 @@ def get_tasks(  # noqa: PLR0913
         - "low": Low priority tasks
         - "lowest": Lowest priority tasks
 
+    Tag Filtering:
+        Tag filters are specified in the tag_filters object:
+
+        include_tags: Tasks must have these tags (controlled by match_mode).
+            - match_mode="all" (default): Task must have ALL include tags
+            - match_mode="any": Task must have ANY of the include tags
+
+        exclude_tags: Tasks must NOT have any of these tags (always OR logic).
+
+        Examples:
+            - Find tasks with BOTH "work" AND "urgent" tags:
+              tag_filters={"include_tags": ["work", "urgent"], "match_mode": "all"}
+            - Find tasks with EITHER "work" OR "personal" tag:
+              tag_filters={"include_tags": ["work", "personal"], "match_mode": "any"}
+            - Find tasks WITHOUT "blocked" tag:
+              tag_filters={"exclude_tags": ["blocked"]}
+            - Find tasks with "work" but NOT "blocked":
+              tag_filters={"include_tags": ["work"], "exclude_tags": ["blocked"]}
+
+        Validation:
+            - Same tag cannot appear in both include_tags and exclude_tags
+            - Matching is case-insensitive ("Work" matches "work")
+
+    Date Filtering:
+        Date filters are specified in the date_filters object:
+
+        Available date fields:
+            - due_after: Filter tasks due on or after this date
+            - due_before: Filter tasks due on or before this date
+            - scheduled_after: Filter tasks scheduled on or after this date
+            - scheduled_before: Filter tasks scheduled on or before this date
+            - completion_after: Filter tasks completed on or after this date
+            - completion_before: Filter tasks completed on or before this date
+
+        match_mode: How to combine date filters
+            - "all" (default): AND logic across all date conditions
+            - "any": OR logic across all date conditions
+
+    Legacy Support:
+        The 'tags' parameter is maintained for backward compatibility and uses
+        AND logic (all specified tags required). New code should use
+        'tag_filters.include_tags' with 'tag_filters.match_mode' for more flexibility.
+
     Filter Logic:
         - Multiple status values: OR logic (task matches ANY status)
         - Multiple priority values: OR logic (task matches ANY priority)
-        - Multiple tags: AND logic (task must have ALL tags)
-        - Date filters: Configurable via date_match_mode
+        - Legacy tags parameter: AND logic (task must have ALL tags)
+        - tag_filters.include_tags with match_mode="all" (default): AND logic
+        - tag_filters.include_tags with match_mode="any": OR logic
+        - tag_filters.exclude_tags: OR logic (task excluded if it has ANY excluded tag)
+        - Date filters: Configurable via date_filters.match_mode
             - "all" (default): AND logic across all date conditions
             - "any": OR logic across all date conditions
         - Different filter types (status, tags, priority, dates): AND logic
 
     Args:
-        status: List of statuses to filter by.
-            Valid values: "not_completed", "completed", "in_progress", "cancelled".
-            Multiple values use OR logic (task matches any).
-        date_filters: Date filter parameters with ISO date strings and match mode.
-            Use date_match_mode="all" (default) for AND logic across all date filters,
-            or "any" for OR logic (task matches if ANY date condition is satisfied).
-        tags: List of tags that tasks must have (all tags required, AND logic).
-        priority: List of priorities to filter by.
-            Valid values: "highest", "high", "normal", "low", "lowest".
-            Multiple values use OR logic (task matches any).
-        limit: Maximum number of results (default: 20, max: 100).
-        offset: Number of results to skip (default: 0).
+        params: GetTasksToolInput containing all filter parameters.
 
     Returns:
-        Dictionary with paginated task list response.
+        Dictionary with paginated task list response including:
+        - results: List of matching tasks with full details
+        - total_count: Total number of tasks matching the filters
+        - has_more: True if more results are available beyond this page
+        - next_offset: The offset value to use for the next page (if has_more)
+
+    Raises:
+        ValueError: If tag filter validation fails, such as when the same tag
+            appears in both include_tags and exclude_tags lists.
 
     Notes:
         Date comparisons are inclusive (>= for after, <= for before).
-        Returns empty results if no tasks match the criteria.
+        Returns empty results (total_count=0) if no tasks match the criteria.
+        Tag matching is case-insensitive.
 
     """
-    from obsidian_rag.mcp_server.handlers import _get_tasks_handler
+    from obsidian_rag.mcp_server.handlers import GetTasksRequest, _get_tasks_handler
 
     registry = _get_registry()
 
-    # Create date filters if individual date params provided
-    if date_filters is None:
-        date_filters = TaskDateFilterStrings()
+    # Create default filters if not provided
+    tag_filters = params.tag_filters or TagFilterStrings()
+    date_filters = params.date_filters or TaskDateFilterStrings()
+
+    request = GetTasksRequest(
+        status=params.status,
+        tag_filters=tag_filters,
+        date_filters=date_filters,
+        tags=params.tags,
+        priority=params.priority,
+        limit=params.limit,
+        offset=params.offset,
+    )
 
     return _get_tasks_handler(
         db_manager=registry.db_manager,
-        status=status,
-        date_filters=date_filters,
-        tags=tags,
-        priority=priority,
-        limit=limit,
-        offset=offset,
+        request=request,
     )
 
 
@@ -499,8 +545,14 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     # Create FastMCP instance
     mcp = FastMCP("Obsidian RAG Server", auth=token_verifier)
 
-    # Create dependencies
-    db_manager = DatabaseManager(settings.database.url)
+    # Create dependencies with connection pooling configuration
+    db_manager = DatabaseManager(
+        settings.database.url,
+        pool_size=settings.database.pool_size,
+        max_overflow=settings.database.max_overflow,
+        pool_timeout=settings.database.pool_timeout,
+        pool_recycle=settings.database.pool_recycle,
+    )
     embedding_provider = _create_embedding_provider(settings)
 
     # Log embedding provider configuration for diagnostics
@@ -597,3 +649,42 @@ def create_http_app(settings: Settings) -> Starlette:
     log.info(_msg)
 
     return app
+
+
+def create_http_app_factory() -> Starlette:
+    """Create HTTP ASGI app factory for Gunicorn.
+
+    This factory function loads settings from configuration and creates
+    the HTTP ASGI app. It's designed to be used with Gunicorn's app factory
+    pattern without requiring command-line arguments.
+
+    Returns:
+        Starlette ASGI application configured with settings.
+
+    Raises:
+        SystemExit: If settings cannot be loaded or MCP token is not configured.
+
+    """
+    _msg = "create_http_app_factory starting"
+    log.info(_msg)
+
+    try:
+        settings = get_settings()
+    except Exception as e:
+        _msg = f"Failed to load settings: {e}"
+        log.exception(_msg)
+        raise SystemExit(1) from e
+
+    # Validate token is set
+    if not settings.mcp.token:
+        _msg = (
+            "MCP token not configured. Set OBSIDIAN_RAG_MCP_TOKEN "
+            "environment variable or mcp.token in config file."
+        )
+        log.error(_msg)
+        raise SystemExit(1)
+
+    _msg = "create_http_app_factory returning"
+    log.info(_msg)
+
+    return create_http_app(settings)
