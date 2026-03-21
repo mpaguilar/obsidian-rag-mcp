@@ -40,7 +40,7 @@ DEFAULT_CONFIG = {
             "provider": "openai",
             "model": "text-embedding-3-small",
             "api_key": None,
-            "base_url": "https://api.openai.com/v1",
+            "base_url": None,
         },
         "analysis": {
             "provider": "openai",
@@ -70,6 +70,8 @@ DEFAULT_CONFIG = {
         "batch_size": 100,
         "max_file_size_mb": 10,
         "progress_interval": 10,
+        "max_chunk_chars": 24000,
+        "chunk_overlap_chars": 800,
     },
     "logging": {
         "level": "INFO",
@@ -410,6 +412,8 @@ class IngestionConfig(BaseModel):
     batch_size: int = 100
     max_file_size_mb: int = 10
     progress_interval: int = 10
+    max_chunk_chars: int = 24000
+    chunk_overlap_chars: int = 800
 
     @field_validator("batch_size")
     @classmethod
@@ -417,6 +421,38 @@ class IngestionConfig(BaseModel):
         """Validate batch size is positive."""
         if v <= 0:
             return 100
+        return v
+
+    @field_validator("max_chunk_chars")
+    @classmethod
+    def validate_max_chunk_chars(cls, v: int) -> int:
+        """Validate max chunk characters is positive.
+
+        Args:
+            v: The max chunk characters value to validate.
+
+        Returns:
+            The validated value, or default (24000) if invalid.
+
+        """
+        if v <= 0:
+            return 24000
+        return v
+
+    @field_validator("chunk_overlap_chars")
+    @classmethod
+    def validate_chunk_overlap_chars(cls, v: int) -> int:
+        """Validate chunk overlap characters is non-negative.
+
+        Args:
+            v: The chunk overlap characters value to validate.
+
+        Returns:
+            The validated value, or default (800) if invalid.
+
+        """
+        if v < 0:
+            return 800
         return v
 
 

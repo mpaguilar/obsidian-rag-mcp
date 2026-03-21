@@ -239,9 +239,12 @@ class TestSettings:
         assert settings.database.url == "postgresql://custom/db"
 
     @patch("obsidian_rag.config._get_config_file_path")
-    def test_get_endpoint_config_existing(self, mock_get_config):
+    def test_get_endpoint_config_existing(self, mock_get_config, monkeypatch):
         """Test getting existing endpoint configuration."""
         mock_get_config.return_value = None
+        # Clear environment variables that might override defaults
+        monkeypatch.delenv("OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER", raising=False)
+        monkeypatch.delenv("OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MODEL", raising=False)
         settings = Settings()
         config = settings.get_endpoint_config("embedding")
 

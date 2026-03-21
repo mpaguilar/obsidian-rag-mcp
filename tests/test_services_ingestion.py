@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import Any, TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +16,7 @@ from obsidian_rag.services.ingestion import (
     IngestionService,
     IngestVaultOptions,
 )
+from obsidian_rag.services.ingestion_cleanup import _delete_batch
 
 if TYPE_CHECKING:
     from obsidian_rag.config import Settings
@@ -28,6 +29,8 @@ def mock_settings() -> "Settings":
     settings = MagicMock()
     settings.ingestion.batch_size = 100
     settings.ingestion.progress_interval = 10
+    settings.ingestion.max_chunk_chars = 24000
+    settings.ingestion.chunk_overlap_chars = 800
     settings.vaults = {
         "test-vault": VaultConfig(
             container_path="/test/vault",
@@ -98,6 +101,8 @@ class TestIngestionResult:
             unchanged=4,
             errors=1,
             deleted=2,
+            chunks_created=5,
+            empty_documents=1,
             processing_time_seconds=5.5,
             message="Test message",
         )
@@ -108,6 +113,8 @@ class TestIngestionResult:
         assert result.unchanged == 4
         assert result.errors == 1
         assert result.deleted == 2
+        assert result.chunks_created == 5
+        assert result.empty_documents == 1
         assert result.processing_time_seconds == 5.5
         assert result.message == "Test message"
 
@@ -120,6 +127,8 @@ class TestIngestionResult:
             unchanged=4,
             errors=1,
             deleted=2,
+            chunks_created=5,
+            empty_documents=1,
             processing_time_seconds=5.5,
             message="Test message",
         )
@@ -132,6 +141,8 @@ class TestIngestionResult:
         assert data["unchanged"] == 4
         assert data["errors"] == 1
         assert data["deleted"] == 2
+        assert data["chunks_created"] == 5
+        assert data["empty_documents"] == 1
         assert data["processing_time_seconds"] == 5.5
         assert data["message"] == "Test message"
 
@@ -792,13 +803,17 @@ class TestIngestSingleFile:
             ) as mock_parse_tasks:
                 mock_parse_tasks.return_value = []
 
-                result = ingestion_service._ingest_single_file(
-                    mock_file_info,
-                    vault_id=mock_vault_record.id,
-                    vault_config=vault_config,
+                result, chunks_created, is_empty = (
+                    ingestion_service._ingest_single_file(
+                        mock_file_info,
+                        vault_id=mock_vault_record.id,
+                        vault_config=vault_config,
+                    )
                 )
 
                 assert result == "new"
+                assert chunks_created == 0
+                assert is_empty is False
                 ingestion_service.embedding_provider.generate_embedding.assert_called_once_with(  # type: ignore[union-attr]
                     "Test content"
                 )
@@ -849,13 +864,15 @@ class TestIngestSingleFile:
             ) as mock_parse_tasks:
                 mock_parse_tasks.return_value = []
 
-                result = service._ingest_single_file(
+                result, chunks_created, is_empty = service._ingest_single_file(
                     mock_file_info,
                     vault_id=mock_vault_record.id,
                     vault_config=vault_config,
                 )
 
                 assert result == "new"
+                assert chunks_created == 0
+                assert is_empty is False
 
     def test_embedding_generation_failure(
         self,
@@ -900,13 +917,17 @@ class TestIngestSingleFile:
             ) as mock_parse_tasks:
                 mock_parse_tasks.return_value = []
 
-                result = ingestion_service._ingest_single_file(
-                    mock_file_info,
-                    vault_id=mock_vault_record.id,
-                    vault_config=vault_config,
+                result, chunks_created, is_empty = (
+                    ingestion_service._ingest_single_file(
+                        mock_file_info,
+                        vault_id=mock_vault_record.id,
+                        vault_config=vault_config,
+                    )
                 )
 
                 assert result == "new"
+                assert chunks_created == 0  # Small document, no chunking
+                assert is_empty is False
 
 
 class TestTaskOperations:
@@ -1284,7 +1305,7 @@ class TestDeleteOrphanedDocuments:
         # Simulate commit failure
         mock_session.commit.side_effect = RuntimeError("Database error")
 
-        deleted_count, error_count = ingestion_service._delete_batch(
+        deleted_count, error_count = _delete_batch(
             mock_session,
             batch,
         )
@@ -1518,7 +1539,7 @@ class TestDeleteBatchExceptions:
         # First delete succeeds, second fails
         mock_session.delete.side_effect = [None, RuntimeError("Delete failed")]
 
-        deleted_count, error_count = ingestion_service._delete_batch(
+        deleted_count, error_count = _delete_batch(
             mock_session,
             batch,
         )
@@ -1542,7 +1563,7 @@ class TestDeleteBatchExceptions:
         # Mock session.get() to return None (document not found)
         mock_session.get.return_value = None
 
-        deleted_count, error_count = ingestion_service._delete_batch(
+        deleted_count, error_count = _delete_batch(
             mock_session,
             batch,
         )
@@ -1552,3 +1573,264 @@ class TestDeleteBatchExceptions:
         assert error_count == 1
         mock_session.get.assert_called_once_with(Document, doc_id)
         mock_session.delete.assert_not_called()
+
+
+class TestChunkingOperations:
+    """Test document chunking operations (lines 687-706, 720, 770-779, 802, 857-867)."""
+
+    def test_create_chunks_with_embeddings(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test _create_chunks_with_embeddings method (lines 687-706)."""
+        # Create content large enough to trigger chunking
+        content = "Word " * 5000  # Large content that will be chunked
+
+        chunk_objects, chunks_created = (
+            ingestion_service._create_chunks_with_embeddings(
+                content,
+                max_chunk_chars=1000,
+                chunk_overlap_chars=100,
+            )
+        )
+
+        # Should create multiple chunks
+        assert chunks_created > 0
+        assert len(chunk_objects) == chunks_created
+        # Verify each chunk has embedding
+        for chunk in chunk_objects:
+            assert chunk.chunk_vector is not None
+            assert chunk.chunk_text is not None
+            assert chunk.chunk_index >= 0
+
+    def test_delete_existing_chunks_with_chunks(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test _delete_existing_chunks when document has chunks (line 720)."""
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.id = uuid.uuid4()
+        # Document has existing chunks
+        mock_document.chunks = [MagicMock(), MagicMock()]
+
+        ingestion_service._delete_existing_chunks(mock_session, mock_document)
+
+        # Should query and delete chunks
+        mock_session.query.return_value.filter_by.return_value.delete.assert_called_once()
+        # Should clear document.chunks
+        assert mock_document.chunks == []
+
+    def test_delete_existing_chunks_no_chunks(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test _delete_existing_chunks when document has no chunks (line 720->exit)."""
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.id = uuid.uuid4()
+        # Document has no chunks
+        mock_document.chunks = []
+
+        ingestion_service._delete_existing_chunks(mock_session, mock_document)
+
+        # Should not attempt to delete anything
+        mock_session.query.assert_not_called()
+
+    def test_create_document_empty_content(
+        self,
+        mock_db_manager: MagicMock,
+        mock_embedding_provider: MagicMock,
+        mock_settings: "Settings",
+        tmp_path: Path,
+    ) -> None:
+        """Test _create_document with empty content (lines 770-772)."""
+        service = IngestionService(
+            db_manager=mock_db_manager,
+            embedding_provider=mock_embedding_provider,
+            settings=mock_settings,
+        )
+
+        file_info = MagicMock()
+        file_info.path = tmp_path / "empty.md"
+        file_info.checksum = "abc123"
+        file_info.created_at = datetime.now(timezone.utc)
+        file_info.modified_at = datetime.now(timezone.utc)
+
+        # Empty content (only whitespace)
+        parsed_data: tuple[list[str] | None, dict[str, Any], str] = (
+            None,
+            {},
+            "   \n\n   ",
+        )
+        vault_id = uuid.uuid4()
+        relative_path = "empty.md"
+
+        document, chunks_created = service._create_document(
+            MagicMock(),  # _session unused
+            file_info,
+            parsed_data,
+            vault_id=vault_id,
+            relative_path=relative_path,
+        )
+
+        # Should have no embedding for empty document
+        assert document.content_vector is None
+        assert chunks_created == 0
+        assert document.chunks == []
+
+    def test_create_document_large_content_chunking(
+        self,
+        mock_db_manager: MagicMock,
+        mock_embedding_provider: MagicMock,
+        mock_settings: "Settings",
+        tmp_path: Path,
+    ) -> None:
+        """Test _create_document with large content triggers chunking (lines 774-779, 802)."""
+        service = IngestionService(
+            db_manager=mock_db_manager,
+            embedding_provider=mock_embedding_provider,
+            settings=mock_settings,
+        )
+
+        file_info = MagicMock()
+        file_info.path = tmp_path / "large.md"
+        file_info.checksum = "abc123"
+        file_info.created_at = datetime.now(timezone.utc)
+        file_info.modified_at = datetime.now(timezone.utc)
+
+        # Large content that triggers chunking
+        content = "Word " * 5000
+        parsed_data: tuple[list[str] | None, dict[str, Any], str] = (None, {}, content)
+        vault_id = uuid.uuid4()
+        relative_path = "large.md"
+
+        document, chunks_created = service._create_document(
+            MagicMock(),  # _session unused
+            file_info,
+            parsed_data,
+            vault_id=vault_id,
+            relative_path=relative_path,
+        )
+
+        # Should create chunks, no document-level embedding
+        assert chunks_created > 0
+        assert document.content_vector is None
+        assert len(document.chunks) == chunks_created
+
+    def test_update_document_empty_content(
+        self,
+        mock_db_manager: MagicMock,
+        mock_embedding_provider: MagicMock,
+        mock_settings: "Settings",
+    ) -> None:
+        """Test _update_document with empty content (lines 857-859)."""
+        service = IngestionService(
+            db_manager=mock_db_manager,
+            embedding_provider=mock_embedding_provider,
+            settings=mock_settings,
+        )
+
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.chunks = []  # No existing chunks
+
+        file_info = MagicMock()
+        file_info.checksum = "new_checksum"
+        file_info.modified_at = datetime.now(timezone.utc)
+
+        # Empty content
+        parsed_data: tuple[list[str] | None, dict[str, Any], str] = (
+            None,
+            {},
+            "   \n\n   ",
+        )
+
+        chunks_created = service._update_document(
+            mock_session,
+            mock_document,
+            file_info,
+            parsed_data,
+        )
+
+        # Should clear embedding for empty document
+        assert mock_document.content_vector is None
+        assert chunks_created == 0
+
+    def test_update_document_large_content_chunking(
+        self,
+        mock_db_manager: MagicMock,
+        mock_embedding_provider: MagicMock,
+        mock_settings: "Settings",
+    ) -> None:
+        """Test _update_document with large content triggers chunking (lines 861-867)."""
+        service = IngestionService(
+            db_manager=mock_db_manager,
+            embedding_provider=mock_embedding_provider,
+            settings=mock_settings,
+        )
+
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.chunks = []  # No existing chunks initially
+
+        file_info = MagicMock()
+        file_info.checksum = "new_checksum"
+        file_info.modified_at = datetime.now(timezone.utc)
+
+        # Large content that triggers chunking
+        content = "Word " * 5000
+        parsed_data: tuple[list[str] | None, dict[str, Any], str] = (None, {}, content)
+
+        chunks_created = service._update_document(
+            mock_session,
+            mock_document,
+            file_info,
+            parsed_data,
+        )
+
+        # Should create chunks and attach to document
+        assert chunks_created > 0
+        assert mock_document.content_vector is None
+        assert len(mock_document.chunks) == chunks_created
+
+
+class TestEmptyDocumentTracking:
+    """Test empty document tracking in _process_files_with_stats (line 391)."""
+
+    def test_process_files_with_stats_tracks_empty_documents(
+        self,
+        ingestion_service: IngestionService,
+        tmp_path: Path,
+        mock_vault_record: MagicMock,
+    ) -> None:
+        """Test that empty documents are tracked in stats (line 391)."""
+        # Create vault config
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
+
+        # Create file info for empty document
+        mock_file_info = MagicMock()
+        mock_file_info.path = tmp_path / "empty.md"
+        mock_file_info.name = "empty.md"
+
+        # Mock _ingest_single_file to return is_empty=True
+        with patch.object(
+            ingestion_service,
+            "_ingest_single_file",
+            return_value=("new", 0, True),  # result, chunks_created, is_empty=True
+        ):
+            file_info_list = [mock_file_info]
+            stats = ingestion_service._process_files_with_stats(
+                file_info_list,  # type: ignore[arg-type]
+                vault_id=mock_vault_record.id,
+                vault_config=vault_config,
+                dry_run=False,
+                progress_callback=None,
+            )
+
+            # Should track empty document
+            assert stats["empty_documents"] == 1
+            assert stats["new"] == 1

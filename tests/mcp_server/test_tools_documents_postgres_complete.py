@@ -268,11 +268,12 @@ class TestQueryDocumentsPostgresqlComplete:
 
         result = query_documents_postgresql(params)
 
-        # After filtering, total_count is recalculated to len(results)
-        # which is 5, so has_more would be False
-        # This is the expected behavior based on the implementation
-        assert result.total_count == 5
+        # total_count reflects total matching documents (10), not paginated count
+        # has_more is True because offset(0) + limit(5) < total_count(10)
+        assert result.total_count == 10
         assert len(result.results) == 5
+        assert result.has_more is True
+        assert result.next_offset == 5
 
 
 class TestGetDocumentsByPropertyPostgresqlComplete:

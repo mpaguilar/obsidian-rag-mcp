@@ -1,7 +1,16 @@
 """Test fixtures and configuration."""
 
+import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock
+
+# Mock litellm before it's imported (Python 3.14 compatibility)
+# This must happen before any obsidian_rag imports
+_LITELL_MOCK = MagicMock()
+_LITELL_MOCK.embedding.return_value = {"data": [{"embedding": [0.1] * 1536}]}
+_LITELL_MOCK.completion.return_value = {"choices": [{"message": {"content": "test"}}]}
+sys.modules["litellm"] = _LITELL_MOCK
 
 
 @pytest.fixture

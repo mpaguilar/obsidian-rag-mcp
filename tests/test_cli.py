@@ -602,7 +602,9 @@ class TestCliConfigFileLogging:
         with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
             with runner.isolated_filesystem() as fs:
                 config_path = Path(fs) / "config.yaml"
-                config_path.write_text("database:\n  url: postgresql+psycopg://localhost/test")
+                config_path.write_text(
+                    "database:\n  url: postgresql+psycopg://localhost/test"
+                )
                 result = runner.invoke(
                     cli, ["--config-file", str(config_path), "tasks"]
                 )
@@ -796,6 +798,8 @@ class TestIngestCommand:
             unchanged=1,
             errors=0,
             deleted=0,
+            chunks_created=0,
+            empty_documents=0,
             processing_time_seconds=1.0,
             message="Dry run completed",
         )
@@ -877,6 +881,8 @@ class TestIngestCommand:
             unchanged=0,
             errors=0,
             deleted=0,
+            chunks_created=0,
+            empty_documents=0,
             processing_time_seconds=2.5,
             message="Ingestion completed successfully",
         )

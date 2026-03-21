@@ -886,7 +886,9 @@ class TestToolImplementations:
             return_value=False
         )
 
-        with patch("obsidian_rag.mcp_server.server.query_documents") as mock_query:
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.query_documents"
+        ) as mock_query:
             mock_result = MagicMock()
             mock_result.model_dump.return_value = {
                 "results": [],

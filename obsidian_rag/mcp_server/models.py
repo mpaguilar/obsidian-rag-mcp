@@ -157,6 +157,7 @@ class DocumentResponse(BaseModel):
         kind: Document kind from FrontMatter (or None).
         tags: List of tags from FrontMatter.
         similarity_score: Cosine distance score (lower is better).
+        matching_chunk: Text of the best matching chunk when found via chunk search.
         created_at_fs: Filesystem creation timestamp.
         modified_at_fs: Filesystem modification timestamp.
         obsidian_uri: Obsidian URI for opening the document.
@@ -172,6 +173,7 @@ class DocumentResponse(BaseModel):
     kind: str | None
     tags: list[str]
     similarity_score: float
+    matching_chunk: str | None = None
     created_at_fs: datetime
     modified_at_fs: datetime
     obsidian_uri: str
@@ -385,12 +387,14 @@ def create_task_response(
 def create_document_response(
     document: "DocumentModel",
     similarity_score: float,
+    matching_chunk: str | None = None,
 ) -> DocumentResponse:
     """Create a DocumentResponse from database model.
 
     Args:
         document: Document model instance.
         similarity_score: Cosine distance score from vector search.
+        matching_chunk: Text of the best matching chunk (optional).
 
     Returns:
         DocumentResponse populated from the model.
@@ -424,6 +428,7 @@ def create_document_response(
         kind=kind,
         tags=document.tags or [],
         similarity_score=similarity_score,
+        matching_chunk=matching_chunk,
         created_at_fs=document.created_at_fs,
         modified_at_fs=document.modified_at_fs,
         obsidian_uri=obsidian_uri,

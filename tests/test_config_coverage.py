@@ -217,3 +217,73 @@ class TestSettingsDefaultVault:
         # Positive value should be returned as-is (line 505)
         config = MCPConfig(rate_limit_per_second=20.0)
         assert config.rate_limit_per_second == 20.0
+
+
+class TestIngestionConfigValidators:
+    """Test IngestionConfig field validators for edge cases."""
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_max_chunk_chars_zero(self, mock_get_config):
+        """Test max_chunk_chars validator with zero value (line 439)."""
+        from obsidian_rag.config import IngestionConfig
+
+        mock_get_config.return_value = None
+
+        # Zero value should return default (24000)
+        config = IngestionConfig(max_chunk_chars=0)
+        assert config.max_chunk_chars == 24000
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_max_chunk_chars_negative(self, mock_get_config):
+        """Test max_chunk_chars validator with negative value (line 439)."""
+        from obsidian_rag.config import IngestionConfig
+
+        mock_get_config.return_value = None
+
+        # Negative value should return default (24000)
+        config = IngestionConfig(max_chunk_chars=-100)
+        assert config.max_chunk_chars == 24000
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_chunk_overlap_chars_negative(self, mock_get_config):
+        """Test chunk_overlap_chars validator with negative value (line 455)."""
+        from obsidian_rag.config import IngestionConfig
+
+        mock_get_config.return_value = None
+
+        # Negative value should return default (800)
+        config = IngestionConfig(chunk_overlap_chars=-50)
+        assert config.chunk_overlap_chars == 800
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_max_chunk_chars_positive(self, mock_get_config):
+        """Test max_chunk_chars validator with positive value."""
+        from obsidian_rag.config import IngestionConfig
+
+        mock_get_config.return_value = None
+
+        # Positive value should be returned as-is
+        config = IngestionConfig(max_chunk_chars=10000)
+        assert config.max_chunk_chars == 10000
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_chunk_overlap_chars_positive(self, mock_get_config):
+        """Test chunk_overlap_chars validator with positive value."""
+        from obsidian_rag.config import IngestionConfig
+
+        mock_get_config.return_value = None
+
+        # Positive value should be returned as-is
+        config = IngestionConfig(chunk_overlap_chars=500)
+        assert config.chunk_overlap_chars == 500
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_validate_chunk_overlap_chars_zero(self, mock_get_config):
+        """Test chunk_overlap_chars validator with zero value."""
+        from obsidian_rag.config import IngestionConfig
+
+        mock_get_config.return_value = None
+
+        # Zero is valid (no overlap)
+        config = IngestionConfig(chunk_overlap_chars=0)
+        assert config.chunk_overlap_chars == 0

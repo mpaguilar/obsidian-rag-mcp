@@ -16,6 +16,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -205,6 +206,11 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
     )
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        "DocumentChunk",
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         UniqueConstraint("vault_id", "file_path", name="uq_document_vault_path"),
@@ -278,6 +284,87 @@ class Task(Base):
     def __repr__(self) -> str:
         """Return string representation of the task."""
         return f"<Task(id={self.id}, status={self.status}, description={self.description[:50]})>"
+
+
+class DocumentChunk(Base):
+    """Represents a chunk of a document for large document handling.
+
+    Documents exceeding the embedding token limit are split into overlapping
+    chunks stored in this table. Each chunk has its own vector embedding
+    for semantic search.
+
+    Attributes:
+        id: Unique identifier (UUID).
+        document_id: Foreign key to the parent document.
+        chunk_index: Index of this chunk within the document (0-based).
+        chunk_text: Text content of this chunk.
+        chunk_vector: Vector embedding of the chunk text.
+        start_char: Starting character position in the original document.
+        end_char: Ending character position in the original document.
+        created_at: When the chunk was created.
+        document: Parent document relationship.
+
+    """
+
+    __tablename__ = "document_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
+    chunk_vector: Mapped[list[float]] = mapped_column(
+        Vector(VECTOR_DIMENSION),
+        nullable=False,
+    )
+    start_char: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_char: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+    )
+
+    # Relationships
+    document: Mapped["Document"] = relationship(
+        "Document",
+        back_populates="chunks",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "chunk_index",
+            name="uq_chunk_document_index",
+        ),
+        Index(
+            "ix_document_chunks_chunk_vector_hnsw",
+            "chunk_vector",
+            postgresql_using="hnsw",
+            postgresql_with={
+                "M": 16,
+                "ef_construction": 64,
+            },
+            postgresql_ops={
+                "chunk_vector": "vector_cosine_ops",
+            },
+        ),
+    )
+
+    def __repr__(self) -> str:
+        """Return string representation of the chunk."""
+        return (
+            f"<DocumentChunk(id={self.id}, document_id={self.document_id}, "
+            f"chunk_index={self.chunk_index}, start_char={self.start_char}, "
+            f"end_char={self.end_char})>"
+        )
 
 
 @event.listens_for(Base.metadata, "before_create")

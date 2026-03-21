@@ -111,7 +111,11 @@ def query_documents_tool(
     filters: QueryFilterParams | None = None,
     pagination: "PaginationParams | None" = None,
 ) -> dict[str, object]:
-    """Tool implementation for semantic search over document content.
+    """Tool implementation for semantic search over document content using chunk-based search.
+
+    Large documents are split into chunks for better embedding quality. The search
+    queries all chunks and returns the best matching chunk per document, with
+    document relevance determined by the highest chunk similarity score.
 
     Args:
         db_manager: Database manager for session management.

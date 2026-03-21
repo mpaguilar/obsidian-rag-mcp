@@ -620,8 +620,12 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
         self.litellm = litellm
 
         # Workaround for litellm 1.82.1 bug: api_base parameter is ignored for embeddings
-        # Set OPENAI_BASE_URL env var so litellm routes to OpenRouter instead of OpenAI
+        # Set OPENAI_API_BASE env var so litellm routes to OpenRouter instead of OpenAI
         # See: https://github.com/BerriAI/litellm/issues/16045
+        os.environ["OPENAI_API_BASE"] = self.base_url
+
+        # Also set OPENAI_BASE_URL for litellm 1.82.4+ compatibility
+        # OPENAI_BASE_URL is the newer canonical variable name
         os.environ["OPENAI_BASE_URL"] = self.base_url
 
         _msg = f"OpenRouter embedding provider initialized with model: {self.model}"
@@ -661,28 +665,39 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
 
         Notes:
             Uses litellm.embedding() for provider-agnostic LLM connectivity.
-            Uses model name without openrouter/ prefix as workaround for
-            litellm 1.82.1 bug where openrouter/ prefix causes api_base to be
-            ignored. OPENAI_BASE_URL env var is set in __init__ to ensure
-            requests route to OpenRouter's API endpoint.
+            Strips 'openai/' prefix from model names to work around litellm
+            1.82.4 bug where the prefix causes requests to be routed to OpenAI's
+            API instead of respecting OPENAI_API_BASE/OPENAI_BASE_URL env vars.
+            Both env vars are set in __init__ to ensure correct routing.
 
         """
         _msg = f"Generating embedding with OpenRouter model: {self.model}"
         log.debug(_msg)
 
         try:
-            # Workaround for litellm 1.82.1 bug: use model name without
-            # openrouter/ prefix. The openrouter/ prefix causes litellm to
-            # ignore api_base and route to OpenAI's API instead of OpenRouter's.
-            # OPENAI_BASE_URL env var (set in __init__) ensures correct routing.
+            # Workaround for litellm 1.82.4 bug: strip 'openai/' prefix from model
+            # names. When litellm sees 'openai/text-embedding-3-small', it routes
+            # to OpenAI's API (platform.openai.com) instead of using the configured
+            # base_url or OPENAI_API_BASE/OPENAI_BASE_URL env vars.
+            # Stripping the prefix ensures requests route to OpenRouter's API.
             model_name = self.model
+            if model_name.startswith("openai/"):
+                model_name = model_name[7:]  # Strip 'openai/' prefix
+
+            # Debug logging to help diagnose routing issues
+            _msg = f"Calling litellm.embedding with model={model_name}, api_base={self.base_url}"
+            log.debug(_msg)
+
             response = self.litellm.embedding(
                 model=model_name,
                 input=[text],
                 api_key=self.api_key,
-                # api_base parameter is IGNORED by litellm for embeddings
-                # We set OPENAI_API_BASE env var in __init__ instead
+                # Note: api_base parameter is still passed for forward compatibility,
+                # but litellm 1.82.x ignores it for embeddings. OPENAI_API_BASE and
+                # OPENAI_BASE_URL env vars set in __init__ ensure correct routing.
                 api_base=self.base_url,
+                # OpenRouter requires explicit encoding_format, unlike OpenAI
+                encoding_format="float",
             )
         except Exception as e:
             _msg = f"OpenRouter embedding generation failed: {e}"

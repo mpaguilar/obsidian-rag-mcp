@@ -138,33 +138,40 @@ def query_documents_postgresql(params: DocumentQueryParams) -> DocumentListRespo
     filter_params = params.filter_params
     pagination = params.pagination
 
+    # Query documents with vector similarity
     distance_expr = Document.content_vector.cosine_distance(query_embedding)
 
     query = session.query(Document, distance_expr.label("distance")).filter(
         Document.content_vector.isnot(None),
     )
 
+    # Apply property and tag filters
     query = _apply_postgresql_filters(
         query,
         filter_params.property_filters.include_filters,
         filter_params.tag_params,
     )
+
     query = query.order_by(distance_expr.asc())
 
+    # Get total count
     total_count = query.count()
+
+    # Get paginated results
     results = query.offset(pagination.offset).limit(pagination.limit).all()
 
-    results = _filter_results_by_exclude(
-        results,
-        filter_params.property_filters.exclude_filters,
-    )
-    total_count = len(results)
+    # Apply exclude filters
+    if filter_params.property_filters.exclude_filters:
+        results = _filter_results_by_exclude(
+            results, filter_params.property_filters.exclude_filters
+        )
+        total_count = len(results)
 
     document_responses = []
     for row in results:
         doc = _extract_document_from_row(row)
-        dist = _extract_distance_from_row(row)
-        document_responses.append(create_document_response(doc, dist))
+        distance = _extract_distance_from_row(row)
+        document_responses.append(create_document_response(doc, distance))
 
     has_more = (pagination.offset + pagination.limit) < total_count
     next_offset = pagination.offset + pagination.limit if has_more else None

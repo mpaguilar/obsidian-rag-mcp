@@ -602,6 +602,10 @@ OpenRouter provides access to models from multiple providers through a single AP
 
 **Important:** When using `qwen/qwen3-embedding-8b`, you must set `database.vector_dimension: 4096` in your config.
 
+**Note on OpenAI models via OpenRouter:** Due to a litellm 1.82.4 bug, model names with `openai/` prefix (e.g., `openai/text-embedding-3-small`) are automatically handled. The prefix is stripped internally to ensure requests route to OpenRouter's API instead of OpenAI's API. You can use either format:
+- `openai/text-embedding-3-small` (OpenRouter format - prefix stripped automatically)
+- `text-embedding-3-small` (stripped format - works directly)
+
 Configuration:
 
 ```yaml
@@ -625,7 +629,7 @@ endpoints:
     temperature: 0.7
 ```
 
-**Model Format:** OpenRouter uses `provider/model` format (e.g., `qwen/qwen3-embedding-8b`, `anthropic/claude-3-opus`).
+**Model Format:** OpenRouter uses `provider/model` format (e.g., `qwen/qwen3-embedding-8b`, `anthropic/claude-3-opus`). For OpenAI models, the `openai/` prefix is automatically stripped to work around a litellm routing bug.
 
 ## Vector Dimension Limits
 

@@ -50,7 +50,8 @@ obsidian_rag/                    # Main package
 │   └── tasks.py                 # Task parsing
 └── services/                    # Service layer
     ├── __init__.py
-    └── ingestion.py             # Document ingestion service
+    ├── ingestion.py             # Document ingestion service
+    └── ingestion_cleanup.py     # Document deletion operations
 ```
 
 ## Requirements
@@ -146,6 +147,29 @@ ruff check obsidian_rag/ tests/
 > **Technical Implementation Details**: For architecture patterns, component details, and data flow, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
 
 ## Checkpoint History
+
+### 022.embedding-issues (Completed 2026-03-21)
+
+**Objective:** Fix OpenRouter embedding provider routing and encoding format issues. Remove hardcoded default `base_url` that was causing requests to route to OpenAI instead of OpenRouter. Add explicit `encoding_format` parameter to fix Zod validation errors. Refactor `ingestion.py` to comply with 1000 line limit by extracting deletion operations to separate module.
+
+**Changes Made:**
+- **Updated `obsidian_rag/config.py` line 43**: Changed `DEFAULT_CONFIG["endpoints"]["embedding"]["base_url"]` from `"https://api.openai.com/v1"` to `None`. This allows provider-specific defaults to take effect instead of overriding them.
+- **Updated `obsidian_rag/llm/providers.py` line 700**: Added `encoding_format="float"` to the `litellm.embedding()` call in `OpenRouterEmbeddingProvider.generate_embedding()`. OpenRouter requires explicit encoding_format unlike OpenAI.
+- **Created `obsidian_rag/services/ingestion_cleanup.py`**: New module containing deletion-related operations extracted from `ingestion.py` to comply with 1000 line limit. Contains `delete_orphaned_documents()`, `_process_deletion_batches()`, and `_delete_batch()` functions.
+- **Updated `obsidian_rag/services/ingestion.py`**: Added import for `delete_orphaned_documents` from new cleanup module. Refactored `_delete_orphaned_documents()` method to delegate to the cleanup module. Reduced file from 1076 lines to 972 lines.
+- **Updated `tests/test_services_ingestion.py`**: Added import for `_delete_batch` from cleanup module. Updated three test methods to use the imported function instead of calling as method on service: `test_delete_batch_with_commit_failure`, `test_delete_batch_document_delete_failure`, `test_delete_batch_document_not_found`.
+
+**Root Cause Analysis:**
+- **Issue #1 - Routing**: The hardcoded `base_url` in `DEFAULT_CONFIG` was overriding the `OpenRouterEmbeddingProvider`'s correct default (`https://openrouter.ai/api/v1`), causing requests to route to OpenAI's API instead of OpenRouter.
+- **Issue #2 - Encoding**: After fixing routing, OpenRouter's API rejected requests without explicit `encoding_format` parameter. OpenRouter validates strictly and expects `"float"` or `"base64"`.
+- **Issue #3 - File Size**: `ingestion.py` had grown to 1076 lines, exceeding the 1000 line limit. Deletion operations (lines 943-1075, ~133 lines) were extracted to a separate module.
+
+**Verification:**
+- All 1053 tests pass (1 skipped)
+- 100% code coverage (3305 statements, 616 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All source files under 1000 lines (ingestion.py now 972 lines, ingestion_cleanup.py 67 lines)
 
 ### 021.task-tag-filtering (Completed 2026-03-20)
 
