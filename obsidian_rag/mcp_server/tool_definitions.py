@@ -14,7 +14,6 @@ from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.llm.base import EmbeddingProvider
 from obsidian_rag.llm.providers import ProviderFactory
 from obsidian_rag.mcp_server.handlers import (
-    GetTasksRequest,
     QueryFilterParams,
     _convert_property_filters,
     _create_tag_filter,
@@ -23,6 +22,7 @@ from obsidian_rag.mcp_server.handlers import (
     _list_vaults_handler,
 )
 from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
+from obsidian_rag.mcp_server.tools.tasks_params import GetTasksRequest
 
 log = logging.getLogger(__name__)
 
@@ -198,6 +198,7 @@ def query_documents_tool(
             pagination=pagination_params,
             use_chunks=use_chunks,
             rerank=rerank,
+            query_text=query,
         )
         return result.model_dump()
 

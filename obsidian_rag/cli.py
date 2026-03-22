@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import click
 from sqlalchemy.orm import Session
@@ -554,7 +554,7 @@ def _search_documents(
     )
     _msg = "_search_documents returning"
     log.debug(_msg)
-    return result
+    return cast("list", result)
 
 
 def _execute_chunk_search(
@@ -983,7 +983,7 @@ def _build_tasks_query(
     date_filters: TaskDateFilters,
     tag: str | None,
     limit: int,
-):
+) -> "Query":
     """Build the tasks query with filters.
 
     Args:

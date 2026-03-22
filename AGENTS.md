@@ -190,6 +190,34 @@ ruff check obsidian_rag/ tests/
 - All mypy type checks pass on source code
 - All source files under 1000 lines (except pre-existing cli.py at 1076 lines)
 
+### 024.rag-bugfixes (Completed 2026-03-22)
+
+**Objective:** Fix RAG query text parameter passing and flashrank API integration bugs. Add `query_text` parameter to enable proper re-ranking with cross-encoder, and fix flashrank API call to use `RerankRequest` object instead of keyword arguments.
+
+**Changes Made:**
+- **Updated `obsidian_rag/mcp_server/tools/documents.py`**: Added `query_text: str = ""` parameter to `query_documents()` function (line 120). Updated rerank call at lines 165-171 to pass `query_text` instead of empty string to `rerank_chunk_results()`.
+- **Updated `obsidian_rag/mcp_server/tool_definitions.py`**: Updated `query_documents_tool()` to pass `query_text=query` parameter to `query_documents_impl()` at line 201.
+- **Updated `obsidian_rag/reranking.py`**: Fixed flashrank API integration:
+  - Changed imports from `Reranker` to `Ranker` (lines 23, 27)
+  - Added `RerankRequest` import from flashrank (lines 24, 27)
+  - Updated `rerank_chunks()` to create `RerankRequest` object and pass it to `reranker.rerank()` (lines 174-175)
+  - Updated type annotations to use `Ranker` instead of `Reranker`
+- **Updated `tests/test_reranking.py`**: Added `# type: ignore[attr-defined]` comments for dynamically added mock module attributes to fix mypy errors.
+
+**Bug Fixes:**
+- **REQ-001/002**: `query_documents()` now accepts and uses `query_text` parameter for proper re-ranking
+- **REQ-003**: `query_documents_tool()` passes original query text through to `query_documents_impl()`
+- **REQ-007**: Fixed flashrank import - changed `Reranker` to `Ranker` (correct class name)
+- **REQ-008**: Fixed flashrank API call - now wraps query and passages in `RerankRequest` object before calling `ranker.rerank()`
+
+**Verification:**
+- All 1193 tests pass (1 skipped)
+- 99% code coverage (3764 statements, 710 branches)
+- Only 3 lines uncovered in chunking.py (647-650) - defensive edge case with existing pragma
+- All ruff checks pass
+- All mypy type checks pass
+- All source files under 1000 lines (except pre-existing cli.py at 1076 lines)
+
 ### 022.embedding-issues (Completed 2026-03-21)
 
 **Objective:** Fix OpenRouter embedding provider routing and encoding format issues. Remove hardcoded default `base_url` that was causing requests to route to OpenAI instead of OpenRouter. Add explicit `encoding_format` parameter to fix Zod validation errors. Refactor `ingestion.py` to comply with 1000 line limit by extracting deletion operations to separate module.

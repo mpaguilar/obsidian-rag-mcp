@@ -15,10 +15,12 @@ class TestFlashrankIntegration:
         """Test creating a real reranker."""
         mock_reranker = Mock()
         mock_reranker_class = Mock(return_value=mock_reranker)
+        mock_rerank_request_class = Mock()
 
-        # Create a proper mock module with Reranker class using types.ModuleType
+        # Create a proper mock module with Ranker and RerankRequest classes
         mock_flashrank = types.ModuleType("flashrank")
-        mock_flashrank.Reranker = mock_reranker_class  # type: ignore[attr-defined]
+        mock_flashrank.Ranker = mock_reranker_class  # type: ignore[attr-defined]
+        mock_flashrank.RerankRequest = mock_rerank_request_class  # type: ignore[attr-defined]
 
         # Custom import function that returns our mock for flashrank
         original_import = builtins.__import__

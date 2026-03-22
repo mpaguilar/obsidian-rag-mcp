@@ -71,7 +71,7 @@ def _validate_tag_filters(
     log.debug(_msg)
 
 
-def _apply_status_filter(query: "Query[Any]", status: list[str] | None):
+def _apply_status_filter(query: "Query[Any]", status: list[str] | None) -> "Query[Any]":
     """Apply status filter to query.
 
     Args:
@@ -239,7 +239,7 @@ def _apply_date_filters(
     )
 
 
-def _build_tag_condition(tag: str):
+def _build_tag_condition(tag: str) -> "ColumnElement[bool]":
     """Build SQL condition for a single tag match.
 
     Args:
@@ -373,7 +373,9 @@ def _apply_tag_filters(
     return query
 
 
-def _apply_priority_filter(query: "Query[Any]", priority: list[str] | None):
+def _apply_priority_filter(
+    query: "Query[Any]", priority: list[str] | None
+) -> "Query[Any]":
     """Apply priority filter to query.
 
     Args:
@@ -467,10 +469,10 @@ def get_tasks(
     )
 
     # Apply all filters
-    query = _apply_status_filter(query, filters.status)
+    query = _apply_status_filter(query, filters.status)  # type: ignore[assignment]
     query = _apply_date_filters(query, filters)  # type: ignore[assignment]
     query = _apply_tag_filters(query, filters)  # type: ignore[assignment]
-    query = _apply_priority_filter(query, filters.priority)
+    query = _apply_priority_filter(query, filters.priority)  # type: ignore[assignment]
 
     # Order by priority and due date
     query = query.order_by(Task.priority, Task.due)

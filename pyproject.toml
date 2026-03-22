@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "obsidian-rag"
-version = "0.23.1"
+version = "0.24.0"
 description = "CLI tool for ingesting Obsidian markdown documents into PostgreSQL with vector embeddings"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -26,6 +26,7 @@ dependencies = [
     "langchain-huggingface>=0.0.1",
     "gunicorn>=22.0.0",
     "uvicorn[standard]>=0.27.0",
+    "flashrank>=0.2.10",
 ]
 
 [tool.setuptools]
@@ -132,7 +133,9 @@ exclude_lines = [
 [tool.mypy]
 check_untyped_defs = true
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pgvector.sqlalchemy"
-ignore_missing_imports = true
+mypy_path = "stubs"
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true

@@ -1112,3 +1112,136 @@ class TestQueryDocumentsChunkParameters:
         # Should return empty results when no documents in database
         assert result.results == []
         assert result.total_count == 0
+
+
+class TestQueryDocumentsQueryText:
+    """Tests for query_text parameter passing to reranker."""
+
+    @patch("obsidian_rag.mcp_server.tools.documents.query_chunks")
+    @patch("obsidian_rag.mcp_server.tools.documents.rerank_chunk_results")
+    def test_query_text_passed_to_reranker(
+        self,
+        mock_rerank,
+        mock_query_chunks,
+        db_session,
+    ):
+        """Test that query_text is correctly passed to rerank_chunk_results."""
+        from obsidian_rag.mcp_server.tools.documents_chunks import ChunkQueryResult
+
+        # Setup mock chunk result
+        mock_result = ChunkQueryResult(
+            chunk_id="12345678-1234-1234-1234-123456789abc",
+            content="Chunk content text",
+            document_name="doc.md",
+            document_path="path/doc.md",
+            vault_name="Vault",
+            chunk_index=0,
+            total_chunks=2,
+            token_count=512,
+            chunk_type="content",
+            similarity_score=0.8,
+            rerank_score=None,
+        )
+        mock_query_chunks.return_value = [mock_result]
+        mock_rerank.return_value = [mock_result]
+
+        # Call query_documents with query_text
+        query_embedding = [0.1] * 1536
+        test_query = "machine learning algorithms"
+        result = query_documents(
+            db_session,
+            query_embedding,
+            use_chunks=True,
+            rerank=True,
+            query_text=test_query,
+        )
+
+        # Verify rerank_chunk_results was called with correct query_text
+        mock_rerank.assert_called_once()
+        call_args = mock_rerank.call_args
+        assert call_args[0][0] == test_query, (
+            f"Expected query_text '{test_query}', got '{call_args[0][0]}'"
+        )
+        assert len(result.results) == 1
+
+    @patch("obsidian_rag.mcp_server.tools.documents.query_chunks")
+    @patch("obsidian_rag.mcp_server.tools.documents.rerank_chunk_results")
+    def test_empty_query_text_default(
+        self,
+        mock_rerank,
+        mock_query_chunks,
+        db_session,
+    ):
+        """Test that empty string is default for query_text."""
+        from obsidian_rag.mcp_server.tools.documents_chunks import ChunkQueryResult
+
+        mock_result = ChunkQueryResult(
+            chunk_id="12345678-1234-1234-1234-123456789abc",
+            content="Chunk content text",
+            document_name="doc.md",
+            document_path="path/doc.md",
+            vault_name="Vault",
+            chunk_index=0,
+            total_chunks=2,
+            token_count=512,
+            chunk_type="content",
+            similarity_score=0.8,
+            rerank_score=None,
+        )
+        mock_query_chunks.return_value = [mock_result]
+        mock_rerank.return_value = [mock_result]
+
+        # Call query_documents WITHOUT query_text (backward compatibility)
+        query_embedding = [0.1] * 1536
+        _ = query_documents(
+            db_session,
+            query_embedding,
+            use_chunks=True,
+            rerank=True,
+        )
+
+        # Verify rerank_chunk_results was called with empty string (default)
+        mock_rerank.assert_called_once()
+        call_args = mock_rerank.call_args
+        assert call_args[0][0] == "", (
+            f"Expected empty query_text, got '{call_args[0][0]}'"
+        )
+
+    @patch("obsidian_rag.mcp_server.tools.documents.query_chunks")
+    def test_query_text_not_used_without_rerank(
+        self,
+        mock_query_chunks,
+        db_session,
+    ):
+        """Test that query_text is ignored when rerank=False."""
+        from obsidian_rag.mcp_server.tools.documents_chunks import ChunkQueryResult
+
+        mock_result = ChunkQueryResult(
+            chunk_id="12345678-1234-1234-1234-123456789abc",
+            content="Chunk content text",
+            document_name="doc.md",
+            document_path="path/doc.md",
+            vault_name="Vault",
+            chunk_index=0,
+            total_chunks=2,
+            token_count=512,
+            chunk_type="content",
+            similarity_score=0.8,
+            rerank_score=None,
+        )
+        mock_query_chunks.return_value = [mock_result]
+
+        # Call with query_text but rerank=False
+        query_embedding = [0.1] * 1536
+        test_query = "test query"
+        result = query_documents(
+            db_session,
+            query_embedding,
+            use_chunks=True,
+            rerank=False,
+            query_text=test_query,
+        )
+
+        # Verify query_chunks was called but rerank was not
+        mock_query_chunks.assert_called_once()
+        assert len(result.results) == 1

@@ -5,7 +5,7 @@ Uses native JSONB operators and vector similarity functions.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from obsidian_rag.database.models import Document, Vault
 from obsidian_rag.mcp_server.models import (
@@ -44,10 +44,10 @@ def _extract_document_from_row(row: object) -> Document:
 
     """
     if hasattr(row, "Document"):
-        return getattr(row, "Document")
+        return cast("Document", getattr(row, "Document"))
     if isinstance(row, tuple):
-        return row[0]  # type: ignore[return-value]
-    return row  # type: ignore[return-value]
+        return cast("Document", row[0])
+    return cast("Document", row)
 
 
 def _extract_distance_from_row(row: object) -> float:

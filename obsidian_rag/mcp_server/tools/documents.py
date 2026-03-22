@@ -117,6 +117,7 @@ def query_documents(
     use_chunks: bool = False,
     rerank: bool = False,
     rerank_model: str = "ms-marco-MiniLM-L-12-v2",
+    query_text: str = "",
 ) -> DocumentListResponse:
     """Semantic search over document content with optional property and tag filters.
 
@@ -129,6 +130,9 @@ def query_documents(
         use_chunks: If True, search at chunk level instead of document level.
         rerank: If True, apply flashrank re-ranking to chunk results.
         rerank_model: Flashrank model to use for re-ranking.
+        query_text: Original search query text for re-ranking.
+            Required when rerank=True for effective cross-encoding.
+            Defaults to empty string for backward compatibility.
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -159,7 +163,7 @@ def query_documents(
 
         if rerank and chunk_results:
             chunk_results = rerank_chunk_results(
-                "",  # Query text would need to be passed through
+                query_text,
                 chunk_results,
                 rerank_model,
                 128,

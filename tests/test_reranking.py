@@ -77,9 +77,10 @@ class TestCreateReranker:
         mock_reranker = Mock()
         mock_reranker_class = Mock(return_value=mock_reranker)
 
-        # Create a proper mock module with Reranker class using types.ModuleType
+        # Create a proper mock module with Ranker class using types.ModuleType
         mock_flashrank = types.ModuleType("flashrank")
-        mock_flashrank.Reranker = mock_reranker_class  # type: ignore[attr-defined]
+        mock_flashrank.Ranker = mock_reranker_class  # type: ignore[attr-defined]
+        mock_flashrank.RerankRequest = Mock  # type: ignore[attr-defined]
 
         # Custom import function that returns our mock for flashrank
         original_import = builtins.__import__
@@ -118,13 +119,14 @@ class TestCreateReranker:
 
         assert result is None
 
-    def test_create_reranker_other_error(self):
-        """Test handling of other errors."""
-        mock_reranker_class = Mock(side_effect=RuntimeError("Model download failed"))
+    def test_create_reranker_oserror(self):
+        """Test handling of OSError during reranker creation."""
+        mock_reranker_class = Mock(side_effect=OSError("Model file not found"))
 
-        # Create a proper mock module with Reranker class using types.ModuleType
+        # Create a proper mock module with Ranker class using types.ModuleType
         mock_flashrank = types.ModuleType("flashrank")
-        mock_flashrank.Reranker = mock_reranker_class  # type: ignore[attr-defined]
+        mock_flashrank.Ranker = mock_reranker_class  # type: ignore[attr-defined]
+        mock_flashrank.RerankRequest = Mock  # type: ignore[attr-defined]
 
         # Custom import function that returns our mock for flashrank
         original_import = builtins.__import__
@@ -150,27 +152,66 @@ class TestRerankChunks:
     """Test cases for rerank_chunks function."""
 
     def test_rerank_chunks_success(self):
-        """Test successful chunk re-ranking."""
-        mock_reranker = Mock()
-        mock_reranker.rerank.return_value = [
-            {"id": "chunk-2", "text": "Content 2", "score": 0.95},
-            {"id": "chunk-1", "text": "Content 1", "score": 0.85},
-        ]
+        """Test successful chunk re-ranking with RerankRequest."""
+        import types
 
-        chunks = [
-            {"chunk_id": "chunk-1", "content": "Content 1"},
-            {"chunk_id": "chunk-2", "content": "Content 2"},
-        ]
+        # Create a mock flashrank module with RerankRequest
+        mock_flashrank = types.ModuleType("flashrank")
+        mock_flashrank.Ranker = Mock()  # type: ignore[attr-defined]
 
-        result = rerank_chunks("query", chunks, mock_reranker, top_k=2)
+        # Create a simple RerankRequest class for testing
+        class RerankRequest:
+            def __init__(self, query, passages):
+                self.query = query
+                self.passages = passages
 
-        assert len(result) == 2
-        assert result[0].chunk_id == "chunk-2"
-        assert result[0].score == 0.95
-        assert result[0].new_rank == 1
-        assert result[1].chunk_id == "chunk-1"
-        assert result[1].score == 0.85
-        assert result[1].new_rank == 2
+        mock_flashrank.RerankRequest = RerankRequest  # type: ignore[attr-defined]
+
+        # Custom import function
+        import builtins
+
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "flashrank":
+                return mock_flashrank
+            return original_import(name, *args, **kwargs)
+
+        # Clear module cache and reload with mock
+        if "obsidian_rag.reranking" in sys.modules:
+            del sys.modules["obsidian_rag.reranking"]
+
+        with patch.object(builtins, "__import__", mock_import):
+            from obsidian_rag.reranking import rerank_chunks
+
+            mock_reranker = Mock()
+            mock_reranker.rerank.return_value = [
+                {"id": "chunk-2", "text": "Content 2", "score": 0.95},
+                {"id": "chunk-1", "text": "Content 1", "score": 0.85},
+            ]
+
+            chunks = [
+                {"chunk_id": "chunk-1", "content": "Content 1"},
+                {"chunk_id": "chunk-2", "content": "Content 2"},
+            ]
+
+            result = rerank_chunks("test query", chunks, mock_reranker, top_k=2)
+
+            # Verify RerankRequest was passed to rerank
+            call_args = mock_reranker.rerank.call_args
+            assert call_args is not None
+            rerank_request = call_args[0][0]  # First positional argument
+            assert isinstance(rerank_request, RerankRequest)
+            assert rerank_request.query == "test query"
+            assert len(rerank_request.passages) == 2
+
+            assert len(result) == 2
+            assert result[0].chunk_id == "chunk-2"
+            assert result[0].score == 0.95
+            assert result[0].new_rank == 1
+            assert result[1].chunk_id == "chunk-1"
+            assert result[1].score == 0.85
+            assert result[1].new_rank == 2
 
     def test_rerank_chunks_empty(self):
         """Test re-ranking with empty chunks."""
@@ -182,18 +223,46 @@ class TestRerankChunks:
         mock_reranker.rerank.assert_not_called()
 
     def test_rerank_chunks_error(self):
-        """Test handling of reranking error."""
-        mock_reranker = Mock()
-        mock_reranker.rerank.side_effect = RuntimeError("Inference failed")
+        """Test handling of reranking error with RerankRequest."""
+        import types
 
-        chunks = [
-            {"chunk_id": "chunk-1", "content": "Content 1"},
-        ]
+        # Create a mock flashrank module with RerankRequest
+        mock_flashrank = types.ModuleType("flashrank")
+        mock_flashrank.Ranker = Mock()  # type: ignore[attr-defined]
 
-        result = rerank_chunks("query", chunks, mock_reranker, top_k=10)
+        class RerankRequest:
+            def __init__(self, query, passages):
+                self.query = query
+                self.passages = passages
 
-        # Should return empty list on error
-        assert result == []
+        mock_flashrank.RerankRequest = RerankRequest  # type: ignore[attr-defined]
+
+        import builtins
+
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "flashrank":
+                return mock_flashrank
+            return original_import(name, *args, **kwargs)
+
+        if "obsidian_rag.reranking" in sys.modules:
+            del sys.modules["obsidian_rag.reranking"]
+
+        with patch.object(builtins, "__import__", mock_import):
+            from obsidian_rag.reranking import rerank_chunks
+
+            mock_reranker = Mock()
+            mock_reranker.rerank.side_effect = RuntimeError("Inference failed")
+
+            chunks = [
+                {"chunk_id": "chunk-1", "content": "Content 1"},
+            ]
+
+            result = rerank_chunks("query", chunks, mock_reranker, top_k=10)
+
+            # Should return empty list on error
+            assert result == []
 
     def test_rerank_chunks_none_reranker(self):
         """Test re-ranking with None reranker."""
@@ -205,6 +274,40 @@ class TestRerankChunks:
 
         # Should return empty list when reranker is None
         assert result == []
+
+    def test_rerank_chunks_no_rerankrequest(self):
+        """Test re-ranking when RerankRequest is not available."""
+        import types
+
+        # Create a mock flashrank module without RerankRequest
+        mock_flashrank = types.ModuleType("flashrank")
+        mock_flashrank.Ranker = Mock()  # type: ignore[attr-defined]
+        # No RerankRequest attribute
+
+        import builtins
+
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "flashrank":
+                return mock_flashrank
+            return original_import(name, *args, **kwargs)
+
+        if "obsidian_rag.reranking" in sys.modules:
+            del sys.modules["obsidian_rag.reranking"]
+
+        with patch.object(builtins, "__import__", mock_import):
+            from obsidian_rag.reranking import rerank_chunks
+
+            mock_reranker = Mock()
+            chunks = [
+                {"chunk_id": "chunk-1", "content": "Content 1"},
+            ]
+
+            result = rerank_chunks("query", chunks, mock_reranker, top_k=10)
+
+            # Should return empty list when RerankRequest is not available
+            assert result == []
 
 
 class TestRerankError:

@@ -7,7 +7,7 @@ and rate limiting for the MCP server.
 import logging
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -61,4 +61,4 @@ class SessionLoggingMiddleware(BaseHTTPMiddleware):
         )
         log.debug(_msg)
 
-        return response
+        return cast("Response", response)

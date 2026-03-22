@@ -2,7 +2,21 @@
 
 import logging
 import os
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, TypedDict, cast
+
+if TYPE_CHECKING:
+    import litellm
+    from langchain_huggingface import HuggingFaceEmbeddings
+else:
+    try:
+        import litellm
+    except ImportError:
+        litellm = None  # type: ignore[misc,assignment]
+
+    try:
+        from langchain_huggingface import HuggingFaceEmbeddings
+    except ImportError:
+        HuggingFaceEmbeddings = None  # type: ignore[misc,assignment]
 
 from obsidian_rag.llm.base import (
     ChatError,
@@ -10,23 +24,6 @@ from obsidian_rag.llm.base import (
     EmbeddingError,
     EmbeddingProvider,
 )
-
-# Optional dependencies - will be None if not installed
-litellm: Any = None
-try:
-    import litellm as _litellm
-
-    litellm = _litellm
-except ImportError:
-    pass
-
-HuggingFaceEmbeddings: Any = None
-try:
-    from langchain_huggingface import HuggingFaceEmbeddings as _HuggingFaceEmbeddings
-
-    HuggingFaceEmbeddings = _HuggingFaceEmbeddings
-except ImportError:
-    pass
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +45,27 @@ class OpenAIProviderConfig(TypedDict, total=False):
     base_url: str | None
     temperature: float
     max_tokens: int | None
+
+
+class CompletionRequestParams(TypedDict, total=False):
+    """Parameters for litellm completion request.
+
+    Attributes:
+        model: Model identifier.
+        messages: List of message dictionaries.
+        temperature: Sampling temperature.
+        api_key: API key for authentication.
+        api_base: Custom base URL for API.
+        max_tokens: Maximum tokens to generate.
+
+    """
+
+    model: str
+    messages: list[dict[str, str]]
+    temperature: float
+    api_key: str | None
+    api_base: str
+    max_tokens: int
 
 
 class HuggingFaceProviderConfig(TypedDict, total=False):
@@ -531,19 +549,23 @@ class OpenAIChatProvider(ChatProvider):
         _msg = f"Sending chat request to OpenAI model: {self.model}"
         log.debug(_msg)
 
-        request_params = {
+        temperature = kwargs.get("temperature", self.temperature)
+        max_tokens = kwargs.get("max_tokens", self.max_tokens)
+
+        request_params: "CompletionRequestParams" = {
             "model": f"openai/{self.model}",
             "messages": messages,
-            "temperature": kwargs.get("temperature", self.temperature),
+            "temperature": cast("float", temperature)
+            if temperature is not None
+            else self.temperature,
             "api_key": self.api_key,
         }
 
         if self.base_url:
             request_params["api_base"] = self.base_url
 
-        max_tokens = kwargs.get("max_tokens", self.max_tokens)
         if max_tokens is not None:
-            request_params["max_tokens"] = max_tokens
+            request_params["max_tokens"] = cast("int", max_tokens)
 
         try:
             response = self.litellm.completion(**request_params)
@@ -811,19 +833,23 @@ class OpenRouterChatProvider(ChatProvider):
         _msg = f"Sending chat request to OpenRouter model: {self.model}"
         log.debug(_msg)
 
-        request_params = {
+        temperature = kwargs.get("temperature", self.temperature)
+        max_tokens = kwargs.get("max_tokens", self.max_tokens)
+
+        request_params: CompletionRequestParams = {
             "model": f"openrouter/{self.model}",
             "messages": messages,
-            "temperature": kwargs.get("temperature", self.temperature),
+            "temperature": cast("float", temperature)
+            if temperature is not None
+            else self.temperature,
             "api_key": self.api_key,
         }
 
         if self.base_url:
             request_params["api_base"] = self.base_url
 
-        max_tokens = kwargs.get("max_tokens", self.max_tokens)
         if max_tokens is not None:
-            request_params["max_tokens"] = max_tokens
+            request_params["max_tokens"] = cast("int", max_tokens)
 
         try:
             response = self.litellm.completion(**request_params)
