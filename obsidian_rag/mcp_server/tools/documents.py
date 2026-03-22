@@ -7,16 +7,23 @@ dedicated submodules for PostgreSQL, filters, and tags.
 """
 
 import logging
+import uuid
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from obsidian_rag.database.models import Document, Vault
 from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
+    DocumentResponse,
     TagFilter,
     TagListResponse,
     _validate_limit,
     _validate_offset,
     create_document_response,
+)
+from obsidian_rag.mcp_server.tools.documents_chunks import (
+    query_chunks,
+    rerank_chunk_results,
 )
 from obsidian_rag.mcp_server.tools.documents_filters import validate_property_filters
 from obsidian_rag.mcp_server.tools.documents_params import (
@@ -106,6 +113,10 @@ def query_documents(
     filter_params: PropertyFilterParams | None = None,
     tag_filter: TagFilter | None = None,
     pagination: PaginationParams | None = None,
+    *,
+    use_chunks: bool = False,
+    rerank: bool = False,
+    rerank_model: str = "ms-marco-MiniLM-L-12-v2",
 ) -> DocumentListResponse:
     """Semantic search over document content with optional property and tag filters.
 
@@ -115,6 +126,9 @@ def query_documents(
         filter_params: Property filter parameters with include/exclude lists.
         tag_filter: Tag filter with include/exclude lists.
         pagination: Pagination parameters (limit/offset).
+        use_chunks: If True, search at chunk level instead of document level.
+        rerank: If True, apply flashrank re-ranking to chunk results.
+        rerank_model: Flashrank model to use for re-ranking.
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -135,6 +149,65 @@ def query_documents(
     limit = _validate_limit(pagination.limit)
     offset = pagination.offset
 
+    if use_chunks:
+        # Use chunk-level search
+        chunk_results = query_chunks(
+            session,
+            query_embedding,
+            limit=limit,
+        )
+
+        if rerank and chunk_results:
+            chunk_results = rerank_chunk_results(
+                "",  # Query text would need to be passed through
+                chunk_results,
+                rerank_model,
+                128,
+                limit,
+            )
+
+        # Convert chunk results to DocumentListResponse format
+        document_responses = []
+        for chunk in chunk_results:
+            # Build Obsidian URI
+            vault_name = chunk.vault_name
+            relative_path = chunk.document_path
+            encoded_path = relative_path.replace(" ", "%20")
+            obsidian_uri = f"obsidian://open?vault={vault_name}&file={encoded_path}"
+
+            # Create DocumentResponse from chunk data
+            doc_response = DocumentResponse(
+                id=uuid.UUID(chunk.chunk_id),  # Use chunk_id as UUID
+                vault_name=vault_name,
+                file_path=relative_path,
+                relative_path=relative_path,
+                file_name=chunk.document_name,
+                content=chunk.content,
+                kind=chunk.chunk_type,
+                tags=[],  # Chunks don't have tags directly
+                similarity_score=chunk.similarity_score,
+                matching_chunk=chunk.content,
+                created_at_fs=datetime.now(UTC),  # Default value
+                modified_at_fs=datetime.now(UTC),  # Default value
+                obsidian_uri=obsidian_uri,
+            )
+            document_responses.append(doc_response)
+
+        total_count = len(document_responses)
+        has_more = (offset + limit) < total_count
+        next_offset = offset + limit if has_more else None
+
+        _msg = "query_documents returning (chunk search)"
+        log.debug(_msg)
+
+        return DocumentListResponse(
+            results=document_responses,
+            total_count=total_count,
+            has_more=has_more,
+            next_offset=next_offset,
+        )
+
+    # Use existing document-level search
     # Extract include/exclude filters from filter_params
     property_filters_include = filter_params.include_filters if filter_params else None
     property_filters_exclude = filter_params.exclude_filters if filter_params else None

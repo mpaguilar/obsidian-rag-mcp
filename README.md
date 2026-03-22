@@ -9,6 +9,7 @@ A production-ready **Retrieval-Augmented Generation (RAG)** pipeline with **Mode
 ### Key Capabilities
 
 - **Vector Embedding Pipeline**: Ingests Obsidian markdown documents into PostgreSQL with pg_vector, generating semantic embeddings via configurable LLM providers (OpenAI, OpenRouter, HuggingFace)
+- **Token-Based Document Chunking**: Splits large documents into semantically coherent chunks for improved search precision, with optional cross-encoder re-ranking via FlashRank
 - **MCP Server Architecture**: Full Model Context Protocol implementation with streamable HTTP transport, enabling seamless integration with MCP-compatible clients (Claude Desktop, LibreChat, etc.)
 - **Semantic Search**: Cosine similarity search over document embeddings with sub-second query latency
 - **Task Extraction Engine**: Parses markdown task syntax with metadata extraction (due dates, priorities, recurrence patterns, custom fields)
@@ -138,6 +139,25 @@ obsidian-rag query "architecture decisions" --format json
 - `table` (default): Human-readable format with file names, paths, and similarity scores
 - `json`: Machine-readable JSON array with document metadata
 
+### Chunk-Level Search (Optional)
+
+For improved search precision on large documents, enable token-based chunking with optional cross-encoder re-ranking:
+
+```bash
+# Search at chunk level
+obsidian-rag query "project planning" --chunks --limit 20
+
+# Search with re-ranking for better result quality
+obsidian-rag query "architecture patterns" --chunks --rerank
+```
+
+**Benefits:**
+- More precise matching on specific document sections
+- Better context relevance for multi-topic documents
+- Cross-encoder re-ranking improves result ordering
+
+See [docs/chunking.md](./docs/chunking.md) for detailed configuration options, including chunk size, overlap settings, and FlashRank re-ranking parameters.
+
 ### Task Queries
 
 Filter and display tasks extracted from your documents:
@@ -249,7 +269,7 @@ The MCP server provides read-only tools for querying tasks, documents, and vault
 - `get_tasks`: Query tasks with comprehensive filtering by status, date ranges, tags, and priority
 
 **Document Tools:**
-- `query_documents`: Semantic search using vector similarity with optional `vault_name` filter
+- `query_documents`: Semantic search using vector similarity with optional chunk-level search and re-ranking
 - `get_documents_by_tag`: Query documents by tags with optional `vault_name` filter
 - `get_documents_by_property`: Query documents by frontmatter properties with optional `vault_name` filter
 - `get_all_tags`: Query all unique document tags
@@ -291,6 +311,58 @@ async with client:
         {"query": "project planning", "limit": 5}
     )
 ```
+
+### Chunk Search with `query_documents`
+
+The `query_documents` tool supports chunk-level semantic search for more precise retrieval from large documents. When chunk search is enabled, documents are split into smaller segments (chunks) and the search returns the best matching chunk per document.
+
+**Chunk Search Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `use_chunks` | boolean | `false` | Enable chunk-level search instead of document-level search |
+| `rerank` | boolean | `false` | Apply flashrank re-ranking to chunk results (only when `use_chunks` is true) |
+
+**When to use chunk search:**
+
+- **Large documents**: When documents exceed 512 tokens, chunk search provides more granular matching
+- **Specific queries**: When searching for specific concepts that may appear in small sections of long documents
+- **Better precision**: Chunk embeddings often yield more accurate semantic matches than full-document embeddings
+
+**Example with chunk search:**
+
+```python
+# Search with chunk-level matching
+chunk_results = await client.call_tool(
+    "query_documents",
+    {
+        "query": "authentication middleware configuration",
+        "use_chunks": True,
+        "limit": 10
+    }
+)
+
+# Search with chunk search and re-ranking
+reranked_results = await client.call_tool(
+    "query_documents",
+    {
+        "query": "database connection pooling",
+        "use_chunks": True,
+        "rerank": True,
+        "limit": 5
+    }
+)
+```
+
+**Response format with chunk search:**
+
+When `use_chunks` is enabled, the response includes:
+- `content`: The matching chunk text (not the full document)
+- `matching_chunk`: The chunk content (same as `content` for chunk search)
+- `similarity_score`: The similarity score for the matching chunk
+- All other document metadata (file_path, vault_name, obsidian_uri, etc.)
+
+**Note:** Chunk search requires documents to have been ingested with chunking enabled (default behavior). Documents ingested before chunking was implemented will not have chunks available.
 
 ### MCP Server Data Access
 

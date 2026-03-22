@@ -1,5 +1,6 @@
 """Tests for session_manager module."""
 
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -260,9 +261,9 @@ class TestSessionManager:
         manager = SessionManager(session_timeout_seconds=1)
         manager.create_session("session-1", "192.168.1.1")
 
-        import time
-
-        time.sleep(1.1)
+        # Manually set last_activity to be in the past (expired)
+        session = manager._sessions["session-1"]
+        session.last_activity = time.time() - 2  # 2 seconds ago
 
         cleaned = manager.cleanup_expired_sessions()
 

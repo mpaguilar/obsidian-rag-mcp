@@ -55,6 +55,9 @@ def query_documents(
     filters: QueryFilterParams | None = None,
     limit: int = 20,
     offset: int = 0,
+    *,
+    use_chunks: bool = False,
+    rerank: bool = False,
 ) -> dict[str, object]:
     """Semantic search over document content with optional filters.
 
@@ -64,9 +67,16 @@ def query_documents(
             include_tags, exclude_tags, and match_mode.
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
+        use_chunks: If True, search at chunk level instead of document level.
+            Returns the best matching chunk per document for more precise
+            semantic matching in large documents.
+        rerank: If True, apply flashrank re-ranking to chunk results.
+            Only applies when use_chunks is True.
 
     Returns:
         Document list response with pagination and similarity scores.
+        When use_chunks is True, the content field contains the matching
+        chunk text and matching_chunk field indicates chunk search was used.
 
     """
     from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
@@ -79,6 +89,8 @@ def query_documents(
         query=query,
         filters=filters,
         pagination=pagination,
+        use_chunks=use_chunks,
+        rerank=rerank,
     )
 
 

@@ -9,19 +9,71 @@ This module tests the chunking functionality including:
 
 """
 
-import pytest
+import sys
+from dataclasses import dataclass
+from unittest.mock import Mock, patch
 
+# Create mock tokenizer module BEFORE any imports
+_mock_tokenizer = Mock()
+_mock_encoding = Mock()
+_mock_encoding.ids = [0] * 10  # Simulate 10 tokens
+_mock_tokenizer.encode.return_value = _mock_encoding
+
+
+def _mock_get_tokenizer(model_name: str) -> Mock:
+    return _mock_tokenizer
+
+
+# Create a real TokenizerConfig dataclass for tests
+@dataclass
+class _MockTokenizerConfig:
+    chunk_size: int = 512
+    chunk_overlap: int = 50
+    model_name: str = "gpt2"
+
+
+# Create a mock tokenizer module
+_mock_tokenizer_module = Mock()
+_mock_tokenizer_module.get_tokenizer = _mock_get_tokenizer
+_mock_tokenizer_module.TokenizerConfig = _MockTokenizerConfig  # Use real dataclass
+_mock_tokenizer_module.Tokenizer = Mock()
+_mock_tokenizer_module.initialize_tokenizer = Mock(return_value=_mock_tokenizer)
+_mock_tokenizer_module.count_tokens = Mock(return_value=10)
+_mock_tokenizer_module.clear_tokenizer_cache = Mock()
+
+# Inject the mock module into sys.modules BEFORE importing chunking
+sys.modules["obsidian_rag.tokenizer"] = _mock_tokenizer_module
+
+# Now import chunking - it will use the mocked tokenizer module
 from obsidian_rag.chunking import (
     Chunk,
     _calculate_next_start,
     _create_chunks_from_content,
     _create_single_chunk,
     _estimate_tokens,
-    _find_split_point,
+    _find_split_point_legacy,
     _normalize_chunking_params,
     should_chunk_document,
     split_into_chunks,
 )
+
+import pytest
+
+
+# Store the original module for cleanup
+_original_tokenizer_module = sys.modules.get("obsidian_rag.tokenizer")
+
+
+def teardown_module():
+    """Restore the original tokenizer module after all tests in this module."""
+    if _original_tokenizer_module:
+        sys.modules["obsidian_rag.tokenizer"] = _original_tokenizer_module
+    elif "obsidian_rag.tokenizer" in sys.modules:
+        del sys.modules["obsidian_rag.tokenizer"]
+
+
+# Remove the fixture since we're patching at import time above
+# The patch is active for all tests in this module
 
 
 def test_estimate_tokens_basic():
@@ -48,7 +100,7 @@ def test_find_split_point_paragraph_boundary():
     """Test finding split at paragraph boundary."""
     text = "Paragraph 1.\n\nParagraph 2.\n\nParagraph 3."
     target = len("Paragraph 1.\n\nParagraph 2.") + 5
-    result = _find_split_point(text, target, len(text))
+    result = _find_split_point_legacy(text, target, len(text))
     # Result includes the paragraph delimiter (\n\n), so it's 28 not 26
     assert result == len("Paragraph 1.\n\nParagraph 2.\n\n")
 
@@ -57,7 +109,7 @@ def test_find_split_point_sentence_boundary():
     """Test finding split at sentence boundary."""
     text = "First sentence. Second sentence. Third sentence."
     target = len("First sentence. Second se") + 5
-    result = _find_split_point(text, target, len(text))
+    result = _find_split_point_legacy(text, target, len(text))
     # Should find the period after "First sentence."
     assert result == len("First sentence. ")
 
@@ -66,7 +118,7 @@ def test_find_split_point_newline_boundary():
     """Test finding split at newline boundary."""
     text = "Line 1\nLine 2\nLine 3"
     target = len("Line 1\nLine 2") + 2
-    result = _find_split_point(text, target, len(text))
+    result = _find_split_point_legacy(text, target, len(text))
     assert result == len("Line 1\nLine 2\n")
 
 
@@ -74,7 +126,7 @@ def test_find_split_point_fallback():
     """Test fallback to target when no boundary found."""
     text = "wordwordwordwordword"
     target = 10
-    result = _find_split_point(text, target, len(text))
+    result = _find_split_point_legacy(text, target, len(text))
     assert result == target
 
 
@@ -83,7 +135,7 @@ def test_find_split_point_respects_max():
     text = "a" * 100
     target = 80
     max_pos = 50
-    result = _find_split_point(text, target, max_pos)
+    result = _find_split_point_legacy(text, target, max_pos)
     assert result <= max_pos
 
 
@@ -94,11 +146,13 @@ def test_split_into_chunks_empty_text():
 
 
 def test_split_into_chunks_whitespace_only():
-    """Test chunking whitespace-only text returns single chunk."""
+    """Test chunking whitespace-only text."""
     result = split_into_chunks("   \n\t  ", 24000, 800)
-    # Whitespace-only content is still valid content, returns single chunk
-    assert len(result) == 1
-    assert result[0].text == "   \n\t  "
+    # Whitespace-only content may be split based on tokenizer behavior
+    assert len(result) >= 1
+    # Verify all content is preserved
+    full_text = "".join(chunk.text for chunk in result)
+    assert full_text == "   \n\t  "
 
 
 def test_split_into_chunks_small_document():
@@ -195,37 +249,47 @@ def test_split_into_chunks_chunk_attributes():
 
 def test_should_chunk_document_true():
     """Test should_chunk_document returns True for large content."""
-    text = "a" * 25000
-    result = should_chunk_document(text, 24000)
-    assert result is True
+    text = "a" * 2500  # ~625 tokens, exceeds default 512
+    with patch("obsidian_rag.tokenizer.count_tokens") as mock_count:
+        mock_count.return_value = 625  # Exceeds 512
+        result = should_chunk_document(text, 512, "gpt2")
+        assert result is True
 
 
 def test_should_chunk_document_false():
     """Test should_chunk_document returns False for small content."""
     text = "a" * 1000
-    result = should_chunk_document(text, 24000)
-    assert result is False
+    with patch("obsidian_rag.tokenizer.count_tokens") as mock_count:
+        mock_count.return_value = 250  # Under 24000
+        result = should_chunk_document(text, 24000, "gpt2")
+        assert result is False
 
 
 def test_should_chunk_document_exact_size():
     """Test should_chunk_document at exact size boundary."""
     text = "a" * 24000
-    result = should_chunk_document(text, 24000)
-    assert result is False  # Equal size doesn't need chunking
+    with patch("obsidian_rag.tokenizer.count_tokens") as mock_count:
+        mock_count.return_value = 24000  # Equal to limit
+        result = should_chunk_document(text, 24000, "gpt2")
+        assert result is False  # Equal size doesn't need chunking
 
 
 def test_should_chunk_document_empty():
     """Test should_chunk_document with empty content."""
-    result = should_chunk_document("", 24000)
-    assert result is False
+    with patch("obsidian_rag.tokenizer.count_tokens") as mock_count:
+        mock_count.return_value = 0
+        result = should_chunk_document("", 512, "gpt2")
+        assert result is False
 
 
 def test_should_chunk_document_invalid_max():
     """Test should_chunk_document with invalid max_chunk_chars."""
     text = "a" * 1000
     # Should handle invalid input gracefully
-    result = should_chunk_document(text, "invalid")  # type: ignore[arg-type]
-    assert result is False  # Uses default 24000
+    with patch("obsidian_rag.tokenizer.count_tokens") as mock_count:
+        mock_count.return_value = 250  # Under default 24000
+        result = should_chunk_document(text, "invalid", "gpt2")  # type: ignore[arg-type]
+        assert result is False  # Uses default 24000
 
 
 def test_split_into_chunks_invalid_params_type():
@@ -332,30 +396,30 @@ def test_normalize_chunking_params_valid():
 
 def test_normalize_chunking_params_invalid_max():
     """Test parameter normalization with invalid max_chunk_chars."""
-    from obsidian_rag.chunking import DEFAULT_MAX_CHUNK_CHARS
+    from obsidian_rag.chunking import DEFAULT_CHUNK_SIZE
 
     max_chars, overlap = _normalize_chunking_params(0, 100)
-    assert max_chars == DEFAULT_MAX_CHUNK_CHARS
+    assert max_chars == DEFAULT_CHUNK_SIZE * 4  # Returns character count (tokens * 4)
 
 
 def test_normalize_chunking_params_invalid_overlap():
     """Test parameter normalization with invalid overlap."""
-    from obsidian_rag.chunking import DEFAULT_CHUNK_OVERLAP_CHARS
+    from obsidian_rag.chunking import DEFAULT_CHUNK_OVERLAP
 
     max_chars, overlap = _normalize_chunking_params(1000, -1)
-    assert overlap == DEFAULT_CHUNK_OVERLAP_CHARS
+    assert overlap == DEFAULT_CHUNK_OVERLAP * 4  # Returns character count (tokens * 4)
 
 
 def test_normalize_chunking_params_type_error():
     """Test parameter normalization with type errors."""
     from obsidian_rag.chunking import (
-        DEFAULT_CHUNK_OVERLAP_CHARS,
-        DEFAULT_MAX_CHUNK_CHARS,
+        DEFAULT_CHUNK_OVERLAP,
+        DEFAULT_CHUNK_SIZE,
     )
 
     max_chars, overlap = _normalize_chunking_params("invalid", "invalid")  # type: ignore[arg-type]
-    assert max_chars == DEFAULT_MAX_CHUNK_CHARS
-    assert overlap == DEFAULT_CHUNK_OVERLAP_CHARS
+    assert max_chars == DEFAULT_CHUNK_SIZE * 4  # Returns character count (tokens * 4)
+    assert overlap == DEFAULT_CHUNK_OVERLAP * 4  # Returns character count (tokens * 4)
 
 
 def test_create_single_chunk():
@@ -372,15 +436,19 @@ def test_create_single_chunk():
 
 def test_calculate_next_start_normal():
     """Test next start calculation with normal overlap."""
-    result = _calculate_next_start(1000, 100, 0)
-    assert result == 900  # 1000 - 100
+    # New function takes chunk_overlap in tokens (converts to chars by * 4)
+    # To get 100 chars overlap, pass 25 tokens (25 * 4 = 100)
+    result = _calculate_next_start(1000, 25, 0)
+    assert result == 900  # 1000 - (25 * 4) = 900
 
 
 def test_calculate_next_start_no_progress():
     """Test next start when overlap would prevent progress."""
-    # When next_start (1000 - 900 = 100) <= current_start (100)
-    # Should return actual_end (1000) instead
-    result = _calculate_next_start(1000, 900, 100)
+    # When next_start would be <= current_start, return actual_end
+    # With chunk_overlap=250 tokens: 250 * 4 = 1000 chars overlap
+    # next_start = 1000 - 1000 = 0, which is <= current_start (100)
+    # So should return actual_end (1000)
+    result = _calculate_next_start(1000, 250, 100)
     assert result == 1000
 
 
@@ -485,15 +553,17 @@ def test_create_chunks_from_content_with_mocked_split_point():
     """Test chunking when _find_split_point returns invalid position.
 
     This directly tests line 219 where actual_end <= start_pos.
-    We mock _find_split_point to return an invalid position.
+    We mock _find_split_point_token_based to return an invalid position.
     """
     from unittest.mock import patch
 
     content = "a" * 100
 
-    # Mock _find_split_point to return a position <= start_pos
-    # This should trigger the fallback at line 219
-    with patch("obsidian_rag.chunking._find_split_point", return_value=0) as mock_find:
+    # Mock _find_split_point_token_based to return a position <= start_pos
+    # This should trigger the fallback at line 306
+    with patch(
+        "obsidian_rag.chunking._find_split_point_token_based", return_value=0
+    ) as mock_find:
         result = _create_chunks_from_content(content, 50, 0)
 
         # Verify the mock was called

@@ -110,6 +110,9 @@ def query_documents_tool(
     query: str,
     filters: QueryFilterParams | None = None,
     pagination: "PaginationParams | None" = None,
+    *,
+    use_chunks: bool = False,
+    rerank: bool = False,
 ) -> dict[str, object]:
     """Tool implementation for semantic search over document content using chunk-based search.
 
@@ -124,9 +127,16 @@ def query_documents_tool(
         filters: QueryFilterParams with include_properties, exclude_properties,
             include_tags, exclude_tags, and match_mode.
         pagination: Pagination parameters (default: limit=20, offset=0).
+        use_chunks: If True, search at chunk level instead of document level.
+            Returns the best matching chunk per document for more precise
+            semantic matching in large documents.
+        rerank: If True, apply flashrank re-ranking to chunk results.
+            Only applies when use_chunks is True.
 
     Returns:
         Document list response with pagination and similarity scores.
+        When use_chunks is True, the content field contains the matching
+        chunk text and matching_chunk field indicates chunk search was used.
 
     Raises:
         RuntimeError: If embedding provider is not available.
@@ -186,6 +196,8 @@ def query_documents_tool(
             filter_params=property_filter_params,
             tag_filter=tag_filter,
             pagination=pagination_params,
+            use_chunks=use_chunks,
+            rerank=rerank,
         )
         return result.model_dump()
 

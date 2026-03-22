@@ -64,6 +64,18 @@ The `content_vector` column uses HNSW (Hierarchical Navigable Small World) index
 - `priority` (ENUM: 'highest', 'high', 'normal', 'low', 'lowest', default 'normal')
 - `custom_metadata` (JSONB) - other [key:: value] pairs
 
+**document_chunks table:**
+- `id` (UUID, PK)
+- `document_id` (UUID, FK → documents.id, ON DELETE CASCADE)
+- `chunk_index` (INTEGER) - position within document chunks (0-based)
+- `content` (TEXT) - chunk text content
+- `chunk_vector` (VECTOR(N) - configurable dimension, default 1536)
+- `token_count` (INTEGER) - number of tokens in chunk
+- `chunk_type` (ENUM: 'content', 'task') - type of chunk for analytics
+- `created_at` (TIMESTAMP)
+
+The `document_chunks` table stores token-based chunks of document content for semantic search. Each chunk has its own vector embedding and can be searched independently. The HNSW index on `chunk_vector` enables fast similarity search across chunks.
+
 #### Engine (`engine.py`)
 
 Database connection management using SQLAlchemy with:
@@ -94,7 +106,53 @@ Database connection management using SQLAlchemy with:
 - Skips files > 10MB
 - Handles permission errors gracefully
 
-### 3. LLM Provider Layer (`llm/`)
+### 3. Chunking Layer (`chunking/`, `tokenizer.py`, `reranking.py`)
+
+#### Token-based Chunking (`chunking.py`)
+
+The chunking system splits large documents into smaller, semantically coherent segments for more precise vector search:
+
+- **Target size**: 512 tokens per chunk (configurable, range 64-2048)
+- **Overlap**: 50 tokens between chunks (configurable, preserves context)
+- **Boundary strategy**: Paragraph boundaries preferred, fallback to sentence boundaries, then arbitrary token boundaries
+- **Task preservation**: Individual task lines become separate chunks when possible for better task discoverability
+
+**Key Functions:**
+- `create_chunks()`: Main entry point for chunk creation from document content
+- `should_chunk_document()`: Determines if document exceeds chunk size threshold
+- `_find_split_point()`: Locates optimal boundary for chunk splitting
+- `_calculate_next_start()`: Calculates start position for next chunk with overlap
+
+#### Tokenization (`tokenizer.py`)
+
+Token counting for accurate chunk sizing:
+
+- **Primary**: HuggingFace Tokenizers (fast, Rust-based)
+- **Fallback**: Character-based estimation (~4 characters per token) when tokenizer unavailable
+- **Caching**: Tokenizer models cached in configurable directory (default: `~/.cache/obsidian-rag/tokenizers`)
+- **Model mapping**: Auto-detects tokenizer based on embedding provider configuration
+
+**Key Functions:**
+- `count_tokens()`: Returns token count for text using configured tokenizer
+- `get_tokenizer()`: Returns cached tokenizer instance or initializes new one
+- `clear_tokenizer_cache()`: Clears tokenizer cache (primarily for testing)
+
+#### Re-ranking (`reranking.py`)
+
+Optional flashrank integration for improving chunk relevance:
+
+- **Model**: `ms-marco-MiniLM-L-12-v2` (default, ~100-200MB RAM)
+- **Input**: Top 20 chunks from vector similarity search
+- **Output**: Top 5-10 re-ranked chunks with cross-encoder scores
+- **Truncation**: Flashrank truncates 512-token chunks to 128 tokens internally
+- **Fallback**: Returns unranked chunks if flashrank unavailable or errors
+
+**Key Functions:**
+- `rerank_chunks()`: Re-ranks chunks using flashrank cross-encoder
+- `get_reranker()`: Returns cached reranker instance or initializes new one
+- `clear_reranker_cache()`: Clears reranker cache (primarily for testing)
+
+### 4. LLM Provider Layer (`llm/`)
 
 #### Base Classes (`base.py`)
 
@@ -138,7 +196,7 @@ This approach eliminates `@overload` decorators while maintaining precise return
 - `temperature`: Generation temperature
 - `max_tokens`: Maximum response tokens
 
-### 4. Configuration (`config.py`)
+### 5. Configuration (`config.py`)
 
 Layered configuration system:
 
@@ -160,7 +218,7 @@ Layered configuration system:
 - **Vector dimension validation**: Enforces maximum of 2000 dimensions (pgvector limit)
 - **Cross-validation**: Validates embedding provider dimension matches `database.vector_dimension`
 
-### 5. CLI Layer (`cli.py`)
+### 6. CLI Layer (`cli.py`)
 
 Entry point for all user interactions:
 
@@ -179,7 +237,7 @@ Entry point for all user interactions:
   - Options: `--status`, `--due-before DATE`, `--tag TAG`, `--limit N`
   - Flexible filtering
 
-### 6. Service Layer (`services/`)
+### 7. Service Layer (`services/`)
 
 #### IngestionService (`services/ingestion.py`)
 
@@ -225,7 +283,7 @@ class IngestionService:
 - **CLI**: Uses service with progress callbacks and verbose output
 - **MCP**: Uses service with path override support, returns structured results
 
-### 7. MCP Server Layer (`mcp_server/`)
+### 8. MCP Server Layer (`mcp_server/`)
 
 The MCP (Model Context Protocol) server provides remote access to Obsidian RAG functionality via HTTP transport.
 

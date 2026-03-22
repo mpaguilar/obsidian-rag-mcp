@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, TypedDict, TypeVar, Unpack
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -27,6 +27,8 @@ T = TypeVar("T", str, int, float, None, dict, list)
 # Constants for validation
 PGVECTOR_MAX_DIMENSION = 2000
 PORT_MAX = 65535
+CHUNK_SIZE_MIN = 64
+CHUNK_SIZE_MAX = 2048
 
 # Vault name validation pattern: alphanumeric, spaces, hyphens, underscores
 # Must start with alphanumeric character
@@ -456,6 +458,84 @@ class IngestionConfig(BaseModel):
         return v
 
 
+class ChunkingConfig(BaseModel):
+    """Configuration for token-based document chunking.
+
+    Attributes:
+        chunk_size: Target number of tokens per chunk (default: 512, range: 64-2048).
+        chunk_overlap: Number of tokens to overlap between chunks (default: 50).
+        tokenizer_cache_dir: Directory for caching tokenizer models.
+        tokenizer_model: Name of the tokenizer model to use.
+        flashrank_enabled: Whether to enable flashrank re-ranking.
+        flashrank_model: Name of the flashrank model to use.
+        flashrank_top_k: Number of top results to return after re-ranking.
+
+    """
+
+    chunk_size: int = 512
+    chunk_overlap: int = 50
+    tokenizer_cache_dir: str = "~/.cache/obsidian-rag/tokenizers"
+    tokenizer_model: str = "gpt2"
+    flashrank_enabled: bool = True
+    flashrank_model: str = "ms-marco-MiniLM-L-12-v2"
+    flashrank_top_k: int = 10
+
+    @field_validator("chunk_size")
+    @classmethod
+    def validate_chunk_size(cls, v: int) -> int:
+        """Validate chunk size is within acceptable range.
+
+        Args:
+            v: The chunk size value to validate.
+
+        Returns:
+            Validated chunk size (clamped to 64-2048 range).
+
+        """
+        if v < CHUNK_SIZE_MIN:
+            return CHUNK_SIZE_MIN
+        if v > CHUNK_SIZE_MAX:
+            return CHUNK_SIZE_MAX
+        return v
+
+    @field_validator("chunk_overlap")
+    @classmethod
+    def validate_chunk_overlap(cls, v: int, info: ValidationInfo) -> int:
+        """Validate chunk overlap is less than chunk size.
+
+        Args:
+            v: The chunk overlap value to validate.
+            info: Field validation info.
+
+        Returns:
+            Validated chunk overlap (ensured less than chunk_size).
+
+        """
+        # Get chunk_size from other fields if available
+        chunk_size = 512
+        if hasattr(info, "data") and "chunk_size" in info.data:  # pragma: no branch
+            chunk_size = info.data["chunk_size"]
+
+        if v >= chunk_size:
+            return chunk_size - 1
+        return v
+
+    @field_validator("tokenizer_cache_dir")
+    @classmethod
+    def validate_cache_dir(cls, v: str) -> str:
+        """Validate and expand tokenizer cache directory.
+
+        Args:
+            v: The cache directory path.
+
+        Returns:
+            Expanded absolute path.
+
+        """
+        expanded = Path(v).expanduser()
+        return str(expanded)
+
+
 class LoggingConfig(BaseModel):
     """Configuration for logging."""
 
@@ -576,6 +656,7 @@ class SettingsKwargs(TypedDict, total=False):
     endpoints: dict[str, dict[str, Any]]
     database: dict[str, Any]
     ingestion: dict[str, Any]
+    chunking: dict[str, Any]
     logging: dict[str, Any]
     mcp: dict[str, Any]
     vaults: dict[str, VaultConfig]
@@ -603,6 +684,7 @@ class GetSettingsKwargs(TypedDict, total=False):
     endpoints: dict[str, dict[str, Any]]
     database: dict[str, Any]
     ingestion: dict[str, Any]
+    chunking: dict[str, Any]
     logging: dict[str, Any]
     mcp: dict[str, Any]
     vaults: dict[str, VaultConfig]
@@ -628,6 +710,7 @@ class Settings(BaseSettings):
     endpoints: dict[str, EndpointConfig] = Field(default_factory=dict)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     ingestion: IngestionConfig = Field(default_factory=IngestionConfig)
+    chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     vaults: dict[str, VaultConfig] = Field(default_factory=dict)

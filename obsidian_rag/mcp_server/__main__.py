@@ -25,6 +25,12 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
+    # Set library logging to INFO for better log analysis
+    logging.getLogger("httpx").setLevel(logging.INFO)
+    logging.getLogger("httpcore").setLevel(logging.INFO)
+    logging.getLogger("asyncio").setLevel(logging.INFO)
+    logging.getLogger("openai").setLevel(logging.INFO)
+
     log = logging.getLogger(__name__)
     _msg = "Starting Obsidian RAG MCP server"
     log.info(_msg)

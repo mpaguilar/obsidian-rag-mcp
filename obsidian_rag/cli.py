@@ -22,6 +22,10 @@ from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.database.models import Document, Task
 from obsidian_rag.llm.base import EmbeddingProvider
 from obsidian_rag.llm.providers import ProviderFactory
+from obsidian_rag.mcp_server.tools.documents_chunks import (
+    query_chunks,
+    rerank_chunk_results,
+)
 from obsidian_rag.parsing.scanner import (
     process_files_in_batches,
     scan_markdown_files,
@@ -76,6 +80,12 @@ def _setup_logging(level: str, format_type: str) -> None:
     root_logger.setLevel(numeric_level)
     root_logger.handlers = []
     root_logger.addHandler(handler)
+
+    # Set library logging to INFO for better log analysis
+    logging.getLogger("httpx").setLevel(logging.INFO)
+    logging.getLogger("httpcore").setLevel(logging.INFO)
+    logging.getLogger("asyncio").setLevel(logging.INFO)
+    logging.getLogger("openai").setLevel(logging.INFO)
 
 
 @click.group()
@@ -444,6 +454,72 @@ def _format_query_results_table(results: list) -> str:
     return result
 
 
+def _format_chunk_results_json(results: list) -> str:
+    """Format chunk query results as JSON.
+
+    Args:
+        results: List of ChunkQueryResult objects.
+
+    Returns:
+        JSON string with chunk results.
+
+    """
+    _msg = "_format_chunk_results_json starting"
+    log.debug(_msg)
+    output = [
+        {
+            "chunk_id": r.chunk_id,
+            "content": r.content,
+            "document_name": r.document_name,
+            "document_path": r.document_path,
+            "vault_name": r.vault_name,
+            "chunk_index": r.chunk_index,
+            "total_chunks": r.total_chunks,
+            "token_count": r.token_count,
+            "chunk_type": r.chunk_type,
+            "similarity_score": r.similarity_score,
+            "rerank_score": r.rerank_score,
+        }
+        for r in results
+    ]
+    result = json.dumps(output, indent=2)
+    _msg = "_format_chunk_results_json returning"
+    log.debug(_msg)
+    return result
+
+
+def _format_chunk_results_table(results: list) -> str:
+    """Format chunk query results as table/text.
+
+    Args:
+        results: List of ChunkQueryResult objects.
+
+    Returns:
+        Formatted string with chunk results.
+
+    """
+    _msg = "_format_chunk_results_table starting"
+    log.debug(_msg)
+    lines = [f"Found {len(results)} results:\n"]
+    for r in results:
+        lines.append(
+            f"\n{r.document_name} (chunk {r.chunk_index + 1}/{r.total_chunks})"
+        )
+        lines.append(f"Path: {r.document_path}")
+        lines.append(f"Vault: {r.vault_name}")
+        if r.token_count:
+            lines.append(f"Tokens: {r.token_count}")
+        lines.append(f"Similarity: {r.similarity_score:.3f}")
+        if r.rerank_score:
+            lines.append(f"Rerank: {r.rerank_score:.3f}")
+        lines.append(f"Content: {r.content[:200]}...")
+        lines.append("")
+    result = "\n".join(lines)
+    _msg = "_format_chunk_results_table returning"
+    log.debug(_msg)
+    return result
+
+
 def _search_documents(
     session: Session,
     query_embedding: list[float],
@@ -481,21 +557,138 @@ def _search_documents(
     return result
 
 
+def _execute_chunk_search(
+    session: "Session",
+    query_embedding: list[float],
+    query_text: str,
+    vault: str | None,
+    limit: int,
+    *,
+    rerank: bool,
+    flashrank_model: str,
+    flashrank_top_k: int,
+) -> list:
+    """Execute chunk-level search with optional reranking.
+
+    Args:
+        session: Database session.
+        query_embedding: Query embedding vector.
+        query_text: Original query text for reranking.
+        vault: Optional vault filter.
+        limit: Maximum results.
+        rerank: Whether to apply reranking.
+        flashrank_model: Model for reranking.
+        flashrank_top_k: Top-k for reranking.
+
+    Returns:
+        List of chunk results.
+
+    """
+    chunk_results = query_chunks(
+        session,
+        query_embedding,
+        vault_name=vault,
+        limit=limit,
+    )
+
+    if rerank and chunk_results:
+        chunk_results = rerank_chunk_results(
+            query_text,
+            chunk_results,
+            flashrank_model,
+            128,
+            flashrank_top_k,
+        )
+
+    return chunk_results
+
+
+def _execute_document_search(
+    session: "Session",
+    query_embedding: list[float],
+    limit: int,
+) -> list:
+    """Execute document-level search.
+
+    Args:
+        session: Database session.
+        query_embedding: Query embedding vector.
+        limit: Maximum results.
+
+    Returns:
+        List of document results.
+
+    """
+    return _search_documents(session, query_embedding, limit)
+
+
+def _display_chunk_results(
+    chunk_results: list,
+    output_format: str,
+) -> None:
+    """Display chunk search results.
+
+    Args:
+        chunk_results: List of chunk results.
+        output_format: Output format (json or table).
+
+    """
+    if not chunk_results:
+        click.echo("No matching chunks found.")
+        return
+
+    if output_format == "json":
+        click.echo(_format_chunk_results_json(chunk_results))
+    else:
+        click.echo(_format_chunk_results_table(chunk_results))
+
+
+def _display_document_results(
+    results: list,
+    output_format: str,
+) -> None:
+    """Display document search results.
+
+    Args:
+        results: List of document results.
+        output_format: Output format (json or table).
+
+    """
+    if not results:
+        click.echo("No matching documents found.")
+        return
+
+    if output_format == "json":
+        click.echo(_format_query_results_json(results))
+    else:
+        click.echo(_format_query_results_table(results))
+
+
 @cli.command()
 @click.argument("query_text")
 @click.option("--limit", default=10, help="Maximum number of results.")
 @click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["table", "json"]),
-    default="table",
+    "--format", "output_format", default="table", help="Output format (table or json)."
 )
-@click.pass_context
-def query(ctx: click.Context, query_text: str, limit: int, output_format: str) -> None:
+@click.option("--vault", help="Vault name to search within.")
+@click.option(
+    "--chunks", is_flag=True, help="Search document chunks instead of full documents."
+)
+@click.option("--rerank", is_flag=True, help="Rerank chunk results using FlashRank.")
+def query(
+    query_text: str,
+    *,
+    limit: int,
+    output_format: str,
+    vault: str | None,
+    chunks: bool,
+    rerank: bool,
+) -> None:
     """Search documents using semantic similarity."""
     _msg = f"Searching for: {query_text}"
     log.info(_msg)
 
+    ctx = click.get_current_context()
     settings = ctx.obj["settings"]
     db_manager = DatabaseManager(
         settings.database.url,
@@ -506,7 +699,6 @@ def query(ctx: click.Context, query_text: str, limit: int, output_format: str) -
     )
     embedding_provider = _get_embedding_provider(settings)
 
-    # Generate query embedding
     try:
         query_embedding = embedding_provider.generate_embedding(query_text)
     except Exception as e:
@@ -515,18 +707,22 @@ def query(ctx: click.Context, query_text: str, limit: int, output_format: str) -
         click.echo(f"Error: {_msg}", err=True)
         sys.exit(1)
 
-    # Search documents
     with db_manager.get_session() as session:
-        results = _search_documents(session, query_embedding, limit)
-
-        if not results:
-            click.echo("No matching documents found.")
-            return
-
-        if output_format == "json":
-            click.echo(_format_query_results_json(results))
+        if chunks:
+            chunk_results = _execute_chunk_search(
+                session,
+                query_embedding,
+                query_text,
+                vault,
+                limit,
+                rerank=rerank,
+                flashrank_model=settings.chunking.flashrank_model,
+                flashrank_top_k=settings.chunking.flashrank_top_k,
+            )
+            _display_chunk_results(chunk_results, output_format)
         else:
-            click.echo(_format_query_results_table(results))
+            results = _execute_document_search(session, query_embedding, limit)
+            _display_document_results(results, output_format)
 
 
 @dataclass

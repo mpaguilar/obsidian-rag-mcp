@@ -10,10 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
-from obsidian_rag.chunking import (
-    should_chunk_document,
-    split_into_chunks,
-)
+from obsidian_rag.chunking import should_chunk_document
 from obsidian_rag.config import VaultConfig
 from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.database.models import Document, DocumentChunk, Task, Vault
@@ -25,6 +22,7 @@ from obsidian_rag.parsing.scanner import (
     scan_markdown_files,
 )
 from obsidian_rag.parsing.tasks import parse_tasks_from_content
+from obsidian_rag.services.ingestion_chunks import create_chunks_with_embeddings
 from obsidian_rag.services.ingestion_cleanup import delete_orphaned_documents
 
 if TYPE_CHECKING:
@@ -67,6 +65,10 @@ class IngestionResult:
         deleted: Number of orphaned documents deleted from database.
         chunks_created: Number of document chunks created for large documents.
         empty_documents: Number of empty documents (no content, skipped for embeddings).
+        total_chunks: Total number of chunks across all documents.
+        avg_chunk_tokens: Average token count per chunk.
+        task_chunk_count: Number of chunks containing tasks.
+        content_chunk_count: Number of regular content chunks.
         processing_time_seconds: Time taken to process all files.
         message: Human-readable summary message.
 
@@ -82,6 +84,11 @@ class IngestionResult:
     empty_documents: int
     processing_time_seconds: float
     message: str
+    # New chunk statistics fields
+    total_chunks: int = 0
+    avg_chunk_tokens: int = 0
+    task_chunk_count: int = 0
+    content_chunk_count: int = 0
 
     def to_dict(self) -> dict[str, object]:
         """Convert result to dictionary."""
@@ -94,6 +101,10 @@ class IngestionResult:
             "deleted": self.deleted,
             "chunks_created": self.chunks_created,
             "empty_documents": self.empty_documents,
+            "total_chunks": self.total_chunks,
+            "avg_chunk_tokens": self.avg_chunk_tokens,
+            "task_chunk_count": self.task_chunk_count,
+            "content_chunk_count": self.content_chunk_count,
             "processing_time_seconds": self.processing_time_seconds,
             "message": self.message,
         }
@@ -613,7 +624,13 @@ class IngestionService:
                 _msg = "Creating new document"
                 log.debug(_msg)
                 parsed_data = (tags, metadata, content)
-                document, chunks_created = self._create_document(
+
+                # Determine chunking requirements BEFORE creating document
+                chunk_size = self.settings.chunking.chunk_size
+                model_name = self.settings.chunking.tokenizer_model
+                should_chunk = should_chunk_document(content, chunk_size, model_name)
+
+                document, _ = self._create_document(
                     _session=session,
                     file_info=file_info,
                     parsed_data=parsed_data,
@@ -623,12 +640,62 @@ class IngestionService:
                 session.add(document)
                 session.flush()  # Get document ID
                 self._create_tasks(session, document, parsed_tasks)
+
+                # BUG-001 FIX: Create chunks for new documents that need chunking
+                chunks_created = self._create_chunks_for_new_document(
+                    session=session,
+                    document=document,
+                    content=content,
+                    should_chunk=should_chunk,
+                    is_empty=is_empty,
+                )
                 result = "new"
 
         _msg = f"_ingest_single_file returning: {result}, chunks={chunks_created}"
         log.debug(_msg)
-
         return (result, chunks_created, is_empty)
+
+    def _create_chunks_for_new_document(
+        self,
+        session: Session,
+        document: Document,
+        content: str,
+        *,
+        should_chunk: bool,
+        is_empty: bool,
+    ) -> int:
+        """Create chunks for a new document if needed.
+
+        Args:
+            session: Database session.
+            document: The newly created document.
+            content: Document content.
+            should_chunk: Whether the document should be chunked.
+            is_empty: Whether the document is empty.
+
+        Returns:
+            Number of chunks created (0 if not chunked).
+
+        """
+        if not should_chunk or is_empty:
+            return 0
+
+        _msg = "Creating chunks for new document"
+        log.info(_msg)
+
+        chunk_size = self.settings.chunking.chunk_size
+        chunk_overlap = self.settings.chunking.chunk_overlap
+        model_name = self.settings.chunking.tokenizer_model
+
+        return create_chunks_with_embeddings(
+            session,
+            document.id,
+            content,
+            self.embedding_provider,
+            chunk_size,
+            chunk_overlap,
+            model_name,
+        )
 
     def _is_document_empty(self, content: str) -> bool:
         """Check if document content is empty.
@@ -664,47 +731,6 @@ class IngestionService:
             _msg = f"Failed to generate embedding: {e}"
             log.warning(_msg)
             return None
-
-    def _create_chunks_with_embeddings(
-        self,
-        content: str,
-        max_chunk_chars: int,
-        chunk_overlap_chars: int,
-    ) -> tuple[list[DocumentChunk], int]:
-        """Create document chunks with embeddings.
-
-        Args:
-            content: The document content to chunk.
-            max_chunk_chars: Maximum characters per chunk.
-            chunk_overlap_chars: Overlap between chunks.
-
-        Returns:
-            Tuple of (list of DocumentChunk objects, number of chunks created).
-
-        Notes:
-            Network access may occur when calling external embedding APIs.
-
-        """
-        chunks = split_into_chunks(
-            content,
-            max_chunk_chars=max_chunk_chars,
-            chunk_overlap_chars=chunk_overlap_chars,
-        )
-
-        chunk_objects = []
-        for chunk in chunks:
-            chunk_embedding = self._generate_embedding(chunk.text)
-
-            chunk_obj = DocumentChunk(
-                chunk_index=chunk.index,
-                chunk_text=chunk.text,
-                chunk_vector=chunk_embedding,
-                start_char=chunk.start_char,
-                end_char=chunk.end_char,
-            )
-            chunk_objects.append(chunk_obj)
-
-        return chunk_objects, len(chunk_objects)
 
     def _delete_existing_chunks(
         self,
@@ -757,15 +783,16 @@ class IngestionService:
 
         tags, metadata, content = parsed_data
         chunks_created = 0
-        chunk_objects: list[DocumentChunk] = []
 
         # Get chunking settings
-        max_chunk_chars = self.settings.ingestion.max_chunk_chars
-        chunk_overlap_chars = self.settings.ingestion.chunk_overlap_chars
+        chunk_size = self.settings.chunking.chunk_size
+        model_name = self.settings.chunking.tokenizer_model
 
         # Determine document handling based on content
         is_empty = self._is_document_empty(content)
-        should_chunk = should_chunk_document(content, max_chunk_chars)
+        model_name = self.settings.chunking.tokenizer_model
+        chunk_size = self.settings.chunking.chunk_size
+        should_chunk = should_chunk_document(content, chunk_size, model_name)
 
         if is_empty:
             _msg = "Empty document - skipping embedding generation"
@@ -774,9 +801,8 @@ class IngestionService:
         elif should_chunk:
             _msg = "Large document detected - creating chunks"
             log.info(_msg)
-            chunk_objects, chunks_created = self._create_chunks_with_embeddings(
-                content, max_chunk_chars, chunk_overlap_chars
-            )
+            # Create chunks after document is flushed and has an ID
+            chunks_created = 0  # Will be created after flush
             embedding = None
         else:
             _msg = "Generating embedding for document"
@@ -797,10 +823,6 @@ class IngestionService:
             tags=tags,
             frontmatter_json=metadata,
         )
-
-        # Attach chunks if created
-        if chunk_objects:
-            document.chunks = chunk_objects
 
         _msg = f"_create_document returning with {chunks_created} chunks"
         log.debug(_msg)
@@ -844,12 +866,13 @@ class IngestionService:
         document.frontmatter_json = metadata
 
         # Get chunking settings
-        max_chunk_chars = self.settings.ingestion.max_chunk_chars
-        chunk_overlap_chars = self.settings.ingestion.chunk_overlap_chars
+        chunk_size = self.settings.chunking.chunk_size
+        chunk_overlap = self.settings.chunking.chunk_overlap
+        model_name = self.settings.chunking.tokenizer_model
 
         # Determine document handling
         is_empty = self._is_document_empty(content)
-        should_chunk = should_chunk_document(content, max_chunk_chars)
+        should_chunk = should_chunk_document(content, chunk_size, model_name)
 
         # Delete old chunks
         self._delete_existing_chunks(session, document)
@@ -861,10 +884,15 @@ class IngestionService:
         elif should_chunk:
             _msg = "Large document detected - recreating chunks"
             log.info(_msg)
-            chunk_objects, chunks_created = self._create_chunks_with_embeddings(
-                content, max_chunk_chars, chunk_overlap_chars
+            chunks_created = create_chunks_with_embeddings(
+                session,
+                document.id,
+                content,
+                self.embedding_provider,
+                chunk_size,
+                chunk_overlap,
+                model_name,
             )
-            document.chunks = chunk_objects
             document.content_vector = None
         else:
             _msg = "Regenerating embedding for updated document"
@@ -962,7 +990,6 @@ class IngestionService:
             Delegates to ingestion_cleanup module to keep file size under limit.
             Performs database operations for document deletion.
             Tasks are automatically deleted via ON DELETE CASCADE.
-
         """
         return delete_orphaned_documents(
             self,

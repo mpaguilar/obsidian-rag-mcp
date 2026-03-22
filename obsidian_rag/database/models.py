@@ -301,6 +301,8 @@ class DocumentChunk(Base):
         chunk_vector: Vector embedding of the chunk text.
         start_char: Starting character position in the original document.
         end_char: Ending character position in the original document.
+        token_count: Number of tokens in this chunk (for statistics).
+        chunk_type: Type of chunk ('content' or 'task').
         created_at: When the chunk was created.
         document: Parent document relationship.
 
@@ -326,6 +328,8 @@ class DocumentChunk(Base):
     )
     start_char: Mapped[int] = mapped_column(Integer, nullable=False)
     end_char: Mapped[int] = mapped_column(Integer, nullable=False)
+    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chunk_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -349,8 +353,8 @@ class DocumentChunk(Base):
             "chunk_vector",
             postgresql_using="hnsw",
             postgresql_with={
-                "M": 16,
-                "ef_construction": 64,
+                "M": 32,
+                "ef_construction": 128,
             },
             postgresql_ops={
                 "chunk_vector": "vector_cosine_ops",

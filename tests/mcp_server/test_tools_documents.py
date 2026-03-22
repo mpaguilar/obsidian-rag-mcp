@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -1028,3 +1028,87 @@ class TestGetAllTagsAdditional:
         assert sorted(result.tags) == ["ideas", "personal", "urgent", "work"]
         assert result.has_more is False
         assert result.next_offset is None
+
+
+class TestQueryDocumentsChunkParameters:
+    """Tests for query_documents with use_chunks and rerank parameters."""
+
+    @patch("obsidian_rag.mcp_server.tools.documents.query_chunks")
+    def test_query_documents_with_use_chunks(self, mock_query_chunks, db_session):
+        """Test query_documents with use_chunks=True parameter."""
+        from obsidian_rag.mcp_server.tools.documents_chunks import ChunkQueryResult
+
+        mock_result = ChunkQueryResult(
+            chunk_id="12345678-1234-1234-1234-123456789abc",
+            content="Chunk content text",
+            document_name="doc.md",
+            document_path="path/doc.md",
+            vault_name="Vault",
+            chunk_index=0,
+            total_chunks=2,
+            token_count=512,
+            chunk_type="content",
+            similarity_score=0.8,
+            rerank_score=None,
+        )
+        mock_query_chunks.return_value = [mock_result]
+
+        query_embedding = [0.1] * 1536
+        result = query_documents(
+            db_session,
+            query_embedding,
+            use_chunks=True,
+        )
+
+        mock_query_chunks.assert_called_once()
+        assert len(result.results) == 1
+        assert result.results[0].file_name == "doc.md"
+        assert result.results[0].content == "Chunk content text"
+
+    @patch("obsidian_rag.mcp_server.tools.documents.query_chunks")
+    @patch("obsidian_rag.mcp_server.tools.documents.rerank_chunk_results")
+    def test_query_documents_with_rerank(
+        self,
+        mock_rerank,
+        mock_query_chunks,
+        db_session,
+    ):
+        """Test query_documents with rerank=True parameter."""
+        from obsidian_rag.mcp_server.tools.documents_chunks import ChunkQueryResult
+
+        mock_result = ChunkQueryResult(
+            chunk_id="12345678-1234-1234-1234-123456789abc",
+            content="Chunk content text",
+            document_name="doc.md",
+            document_path="path/doc.md",
+            vault_name="Vault",
+            chunk_index=0,
+            total_chunks=2,
+            token_count=512,
+            chunk_type="content",
+            similarity_score=0.8,
+            rerank_score=0.95,
+        )
+        mock_query_chunks.return_value = [mock_result]
+        mock_rerank.return_value = [mock_result]
+
+        query_embedding = [0.1] * 1536
+        result = query_documents(
+            db_session,
+            query_embedding,
+            use_chunks=True,
+            rerank=True,
+        )
+
+        mock_query_chunks.assert_called_once()
+        mock_rerank.assert_called_once()
+        assert len(result.results) == 1
+
+    def test_query_documents_without_chunks(self, db_session):
+        """Test query_documents without use_chunks parameter (default behavior)."""
+        query_embedding = [0.1] * 1536
+        result = query_documents(db_session, query_embedding)
+
+        # Should return empty results when no documents in database
+        assert result.results == []
+        assert result.total_count == 0
