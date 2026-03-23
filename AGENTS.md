@@ -29,6 +29,7 @@ obsidian_rag/                    # Main package
 │   ├── __init__.py
 │   ├── __main__.py              # Server entry point
 │   ├── handlers.py              # Request handlers for tools
+│   ├── ingest_tracker.py        # Request tracking for ingest tool deduplication
 │   ├── middleware.py            # HTTP request/response logging middleware
 │   ├── models.py                # Pydantic request/response models
 │   ├── server.py                # FastMCP server setup and tool wrappers
@@ -148,47 +149,64 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
-### 023.rag-chunking (Completed 2026-03-22)
+### 025.ingest-bugfix (Completed 2026-03-23)
 
-**Objective:** Implement token-based chunking for RAG with 512 token target size, flashrank integration for reranking, chunk-level semantic search, and comprehensive test coverage for all chunking functionality. Includes BUG-001 fix for new document chunk creation.
+**Objective:** Fix MCP ingest tool double invocation bug that causes "Request already responded to" error. Implement request tracking mechanism to ensure idempotent behavior - duplicate calls within same session return cached result without re-processing files. Also implement REQ-005: vault not found error handling to return clean error responses instead of raising exceptions.
 
 **Changes Made:**
-- **Updated `obsidian_rag/chunking.py`**: Refactored chunking logic to use token-based sizing (512 tokens target) with character-based estimation (4 chars/token). Added `_calculate_next_start()` for proper overlap handling, `_create_chunks_from_content()` for batch processing, and `_find_split_point()` for smart boundary detection.
-- **Updated `obsidian_rag/tokenizer.py`**: Added `_initialize_tokenizer()` with fallback to character-based estimation when tiktoken is unavailable. Added `clear_tokenizer_cache()` for testing.
-- **Updated `obsidian_rag/services/ingestion_chunks.py`**: Added `_generate_embedding_with_retry()` with exponential backoff (MAX_RETRIES=3), `_create_document_chunk()` for chunk creation, `_process_chunk_batch()` for batch processing with partial failure handling, and `create_chunks_with_embeddings()` for end-to-end chunk creation.
-- **Updated `obsidian_rag/services/ingestion.py`**: Integrated chunking into document ingestion flow with `_process_chunks_for_document()` and `_delete_existing_chunks()`. **BUG-001 FIX**: Added `_create_chunks_for_new_document()` method and updated `_ingest_single_file()` to call it after `session.flush()` for new documents that need chunking.
-- **Updated `obsidian_rag/cli.py`**: Added `--chunks` flag for chunk-level semantic search, `--rerank` flag for flashrank integration, `_format_chunk_results_table()` for displaying chunk results with token counts and rerank scores, and library logging configuration.
-- **Updated `obsidian_rag/config.py`**: Added `rerank` configuration section with model, max_tokens, and timeout settings.
-- **Updated `obsidian_rag/mcp_server/server.py`**: Added `use_chunks` and `rerank` parameters to `query_documents()` tool wrapper for chunk-level search with optional re-ranking.
-- **Updated `obsidian_rag/mcp_server/tool_definitions.py`**: Added `use_chunks` and `rerank` parameters to `query_documents_tool()` for MCP tool interface.
-- **Updated `obsidian_rag/mcp_server/__main__.py`**: Added library logging configuration for better log analysis.
-- **Updated `obsidian_rag/mcp_server/tools/documents_chunks.py`**: Added `query_chunks()` for chunk-level semantic search with vault filtering.
-- **Created `tests/test_services_ingestion_chunks.py`**: Comprehensive test suite for chunking service with 20+ test cases covering embedding retry logic, batch processing, and edge cases.
-- **Created `tests/test_services_ingestion_bug001.py`**: BUG-001 regression test suite with 10+ test cases ensuring new documents get chunks created, including edge cases for empty documents, dry-run mode, and multiple documents.
-- **Updated `tests/test_cli_chunk_query.py`**: Added tests for CLI chunk query options and table formatting with token_count and rerank_score.
-- **Updated `tests/test_chunking.py`**: Added tests for token-based chunking, overlap calculation, and edge cases.
-- **Added pragma annotations** to defensive code paths in chunking.py, config.py, documents_chunks.py, and tokenizer.py.
+- **Created `obsidian_rag/mcp_server/ingest_tracker.py`**: New module containing `IngestRequestTracker` class with thread-safe request tracking using `asyncio.Lock`. Implements `start_request()`, `complete_request()`, `fail_request()`, and `get_result()` methods. Uses in-memory dictionary keyed by request ID to track pending and completed requests.
+- **Updated `obsidian_rag/mcp_server/server.py`**: 
+  - Added imports for `asyncio`, `hashlib`, `json`, and `IngestRequestTracker`
+  - Created global `_ingest_tracker` instance with `_get_ingest_tracker()` and `_clear_ingest_tracker()` functions
+  - Added `_generate_request_id()` helper for deterministic request ID generation using MD5 hash of sorted JSON parameters
+  - Modified `ingest()` tool wrapper to check tracker before processing, return cached results for duplicates, and cache successful results
+  - Added error handling with `fail_request()` to cache exceptions
+  - **REQ-005**: Added vault not found error handling in `ingest()` function:
+    - Catches `ValueError` with "not found in configuration" and "Vault" in message
+    - Returns error response dict with `success: False` instead of raising exception
+    - Logs WARNING with message: "client requested non-existent vault '{vault_name}'"
+    - Clears pending tracker entry (does NOT cache failed vault requests)
+    - Re-raises other ValueErrors after marking as failed in tracker
+  - Added helper function `_create_vault_error_response()` to reduce complexity
+  - Refactored exception handling to comply with McCabe complexity limit (≤5)
+- **Created `tests/mcp_server/test_ingest_tracker.py`**: Comprehensive test suite with 18 test cases covering initialization, request lifecycle, duplicate detection, thread safety, error handling, and cleanup operations.
+- **Updated `tests/mcp_server/test_server.py`**: 
+  - Added `TestIngestRequestTracking` class with 9 integration tests for request ID generation, tracker lifecycle, result caching, error caching, and logging verification
+  - Added `TestVaultErrorHandling` class with 4 tests for REQ-005:
+    - `test_ingest_vault_not_found_returns_error_dict`: Verifies error response format
+    - `test_ingest_vault_not_found_logs_warning`: Verifies warning log message
+    - `test_ingest_vault_not_found_not_cached`: Verifies failed vault requests not cached
+    - `test_ingest_other_valueerror_still_raises`: Verifies other ValueErrors still raise
 
 **Key Design Decisions:**
-- Token-based chunking with 512 tokens target (configurable) and 50 token overlap for context preservation
-- Character-based estimation (4 chars/token) when tiktoken unavailable for robustness
-- Batch processing of chunks (BATCH_SIZE=10) with individual retry logic per chunk
-- Flashrank integration for reranking chunk results with configurable model
-- Defensive code paths marked with `# pragma: no cover` for edge cases that would require impossible test conditions
+- Request tracking is in-memory only (not persisted) - purely defensive against FastMCP HTTP transport double-invocation
+- Deterministic request ID generation using MD5 hash of vault_name + path + no_delete parameters
+- Thread-safe using `asyncio.Lock` for concurrent access protection
+- Failed requests are cached to prevent re-processing of error conditions
+- Completed requests kept in cache for duration of session for duplicate detection
+- **REQ-005**: Vault not found errors return clean error response (not cached) to allow retry after vault configuration
+- Defensive code paths marked with `# pragma: no cover` for edge cases
 
-**BUG-001 Fix Details:**
-- **Problem:** New documents never got chunks created during ingestion, only updated documents
-- **Root Cause:** `_ingest_single_file()` called `_create_document()` which set `chunks_created=0` with comment "Will be created after flush", but no code actually created chunks after `session.flush()`
-- **Solution:** Added `_create_chunks_for_new_document()` method that checks `should_chunk` flag and calls `create_chunks_with_embeddings()` after document is flushed and has an ID
-- **Impact:** All new documents now correctly get chunks created when they exceed the chunk size threshold
+**Bug Fix Details:**
+- **Problem:** FastMCP HTTP transport invokes the `ingest()` tool wrapper twice, causing "Request already responded to" error on second call
+- **Root Cause:** Framework-level retry or session handling in FastMCP causes duplicate tool invocations
+- **Solution:** Request-scoped deduplication using `IngestRequestTracker` - first call processes, subsequent calls with same parameters return cached result
+- **Impact:** Duplicate calls return immediately with cached result, no re-processing delay, no error thrown
+
+**REQ-005 Implementation Details:**
+- **Requirement:** Return clean error response when vault not found instead of raising exception
+- **Implementation:** Inlined vault error detection and handling in `ingest()` ValueError handler
+- **Error Response Format:** `{"success": False, "error": "...", "total": 0, ...}`
+- **Log Message:** "client requested non-existent vault '{vault_name}'" at WARNING level
+- **Tracker Behavior:** Failed vault requests are NOT cached (tracker cleared), allowing retry after configuration fix
 
 **Verification:**
-- All 1187 tests pass (1 skipped)
-- 99% code coverage (3746 statements, 706 branches)
-- Only 3 lines uncovered in chunking.py (647-650) - defensive edge case check with existing pragma
-- All ruff checks pass
+- All 1223 tests pass (1 skipped)
+- 99% code coverage (3908 statements, 734 branches)
+- 100% coverage on new `ingest_tracker.py` (79 statements, 12 branches)
+- All ruff checks pass (including C901 complexity ≤5)
 - All mypy type checks pass on source code
-- All source files under 1000 lines (except pre-existing cli.py at 1076 lines)
+- All source files under 1000 lines
 
 ### 024.rag-bugfixes (Completed 2026-03-22)
 
