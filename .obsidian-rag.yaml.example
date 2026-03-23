@@ -1,0 +1,227 @@
+# Obsidian RAG Configuration File
+# Place this file in your working directory as `.obsidian-rag.yaml`
+# or in ~/.config/obsidian-rag/config.yaml for user-wide settings
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+database:
+  # PostgreSQL connection URL
+  # Format: postgresql+psycopg://user:password@host:port/database
+  url: "postgresql+psycopg://localhost/obsidian_rag"
+  
+  # Vector embedding dimension (must match your embedding model)
+  # Common values: 1536 (OpenAI), 384 (HuggingFace MiniLM), 768 (HuggingFace mpnet)
+  # Maximum: 2000 (pgvector index limit)
+  vector_dimension: 1536
+  
+  # Connection pool settings
+  pool_size: 10              # Persistent connections
+  max_overflow: 20           # Additional temporary connections
+  pool_timeout: 30           # Seconds to wait for connection
+  pool_recycle: 3600           # Recycle connections after N seconds
+
+# =============================================================================
+# LLM ENDPOINTS CONFIGURATION
+# =============================================================================
+endpoints:
+  # ---------------------------------------------------------------------------
+  # EMBEDDING PROVIDER (Required for semantic search)
+  # ---------------------------------------------------------------------------
+  embedding:
+    # Provider: openai, openrouter, or huggingface
+    provider: "openai"
+    
+    # Model name (must match provider)
+    # OpenAI: text-embedding-3-small (1536d), text-embedding-ada-002 (1536d)
+    # HuggingFace: sentence-transformers/all-MiniLM-L6-v2 (384d)
+    # OpenRouter: qwen/qwen3-embedding-8b (4096d - requires vector_dimension: 4096)
+    model: "text-embedding-3-small"
+    
+    # API key (use environment variable interpolation)
+    api_key: "${OPENAI_API_KEY}"
+    
+    # Optional: Custom base URL (for proxies or self-hosted)
+    # base_url: "https://api.openai.com/v1"
+  
+  # ---------------------------------------------------------------------------
+  # ANALYSIS PROVIDER (For document analysis tasks)
+  # ---------------------------------------------------------------------------
+  analysis:
+    provider: "openai"
+    model: "gpt-4"
+    api_key: "${OPENAI_API_KEY}"
+    base_url: "https://api.openai.com/v1"
+    temperature: 0.7
+    max_tokens: 2000
+  
+  # ---------------------------------------------------------------------------
+  # CHAT PROVIDER (For conversational queries)
+  # ---------------------------------------------------------------------------
+  chat:
+    provider: "openai"
+    model: "gpt-4"
+    api_key: "${OPENAI_API_KEY}"
+    base_url: "https://api.openai.com/v1"
+    temperature: 0.8
+
+# =============================================================================
+# DOCUMENT INGESTION SETTINGS
+# =============================================================================
+ingestion:
+  # Number of files to process in each batch
+  batch_size: 100
+  
+  # Maximum file size in MB (files larger than this are skipped)
+  max_file_size_mb: 10
+  
+  # Log progress every N files
+  progress_interval: 10
+  
+  # Legacy chunking (character-based, used if token-based not available)
+  max_chunk_chars: 24000
+  chunk_overlap_chars: 800
+
+# =============================================================================
+# TOKEN-BASED CHUNKING SETTINGS (Recommended)
+# =============================================================================
+chunking:
+  # Target number of tokens per chunk (range: 64-2048)
+  chunk_size: 512
+  
+  # Number of tokens to overlap between chunks (preserves context)
+  chunk_overlap: 50
+  
+  # Directory for caching tokenizer models
+  tokenizer_cache_dir: "~/.cache/obsidian-rag/tokenizers"
+  
+  # Tokenizer model to use
+  tokenizer_model: "gpt2"
+  
+  # Flashrank re-ranking settings (improves search relevance)
+  flashrank_enabled: true
+  flashrank_model: "ms-marco-MiniLM-L-12-v2"
+  flashrank_top_k: 10
+
+# =============================================================================
+# MCP SERVER CONFIGURATION
+# =============================================================================
+mcp:
+  # Server bind address
+  host: "0.0.0.0"
+  
+  # HTTP port for MCP server
+  port: 8000
+  
+  # Bearer token for authentication (REQUIRED)
+  # Generate a secure token and set via environment variable
+  token: "${OBSIDIAN_RAG_MCP_TOKEN}"
+  
+  # CORS allowed origins (use ["*"] for all, or specify domains)
+  cors_origins:
+    - "*"
+  
+  # Enable health check endpoint at /health
+  enable_health_check: true
+  
+  # Stateless mode for horizontal scaling (no session state)
+  stateless_http: false
+  
+  # Session management settings
+  max_concurrent_sessions: 100
+  session_timeout_seconds: 300
+  rate_limit_per_second: 10.0
+  rate_limit_window: 60
+  enable_request_logging: true
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+  
+  # Log format: text or json
+  format: "text"
+
+# =============================================================================
+# OBSIDIAN VAULTS CONFIGURATION
+# =============================================================================
+# Define one or more vaults. Each vault is an isolated knowledge base.
+# Vault names must start with alphanumeric and contain only letters, numbers,
+# spaces, hyphens, and underscores.
+# =============================================================================
+vaults:
+  # ---------------------------------------------------------------------------
+  # Example: Personal vault
+  # ---------------------------------------------------------------------------
+  "Personal":
+    # Path inside container/Docker (for file operations)
+    container_path: "/data/personal"
+    
+    # Path on host system (for constructing Obsidian URIs)
+    # If not specified, defaults to container_path
+    host_path: "/home/user/Documents/Obsidian/Personal"
+    
+    # Optional description
+    description: "Personal knowledge base and notes"
+  
+  # ---------------------------------------------------------------------------
+  # Example: Work vault
+  # ---------------------------------------------------------------------------
+  "Work":
+    container_path: "/data/work"
+    host_path: "/home/user/Documents/Obsidian/Work"
+    description: "Work projects and meeting notes"
+  
+  # ---------------------------------------------------------------------------
+  # Example: Projects vault (Docker-only, no host_path override)
+  # ---------------------------------------------------------------------------
+  "Projects":
+    container_path: "/data/projects"
+    description: "Side projects and ideas"
+
+# =============================================================================
+# ALTERNATIVE CONFIGURATION EXAMPLES
+# =============================================================================
+
+# --- HuggingFace Local Embeddings (No API key needed) ---
+# endpoints:
+#   embedding:
+#     provider: "huggingface"
+#     model: "sentence-transformers/all-MiniLM-L6-v2"
+#     # api_key not needed for local models
+# 
+# database:
+#   vector_dimension: 384  # Required for all-MiniLM-L6-v2
+
+# --- OpenRouter Multi-Provider Setup ---
+# endpoints:
+#   embedding:
+#     provider: "openrouter"
+#     model: "qwen/qwen3-embedding-8b"
+#     api_key: "${OPENROUTER_API_KEY}"
+#     base_url: "https://openrouter.ai/api/v1"
+#   
+#   chat:
+#     provider: "openrouter"
+#     model: "anthropic/claude-3-opus"
+#     api_key: "${OPENROUTER_API_KEY}"
+#     base_url: "https://openrouter.ai/api/v1"
+#     temperature: 0.7
+# 
+# database:
+#   vector_dimension: 4096  # Required for qwen3-embedding-8b
+
+# --- Production MCP Server ---
+# mcp:
+#   host: "0.0.0.0"
+#   port: 8000
+#   token: "${OBSIDIAN_RAG_MCP_TOKEN}"
+#   cors_origins:
+#     - "https://myapp.example.com"
+#     - "https://librechat.example.com"
+#   enable_health_check: true
+#   stateless_http: true  # Enable for load balancing
+#   max_concurrent_sessions: 200
+#   rate_limit_per_second: 5.0
