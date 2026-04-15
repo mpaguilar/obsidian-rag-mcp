@@ -26,6 +26,7 @@ from obsidian_rag.mcp_server.tools.documents_chunks import (
     query_chunks,
     rerank_chunk_results,
 )
+from obsidian_rag.mcp_server.tools.tasks import _strip_tag_list
 from obsidian_rag.parsing.scanner import (
     process_files_in_batches,
     scan_markdown_files,
@@ -756,14 +757,16 @@ class TaskFilterOptions:
 
     Attributes:
         status: Filter by task status.
-        tag: Filter by tag.
+        include_tags: List of tags that tasks must have.
+        exclude_tags: List of tags that tasks must NOT have.
         limit: Maximum number of results.
         date_filters: Date filter parameters.
 
     """
 
     status: str | None = None
-    tag: str | None = None
+    include_tags: list[str] | None = None
+    exclude_tags: list[str] | None = None
     limit: int = 20
     date_filters: TaskDateFilters | None = None
 
@@ -803,7 +806,16 @@ class TaskFilterOptions:
     type=str,
     help="Filter tasks completed on or after date (YYYY-MM-DD).",
 )
-@click.option("--tag", help="Filter by tag.")
+@click.option(
+    "--include-tags",
+    multiple=True,
+    help="Filter by tags tasks must have. Can be specified multiple times.",
+)
+@click.option(
+    "--exclude-tags",
+    multiple=True,
+    help="Filter by tags tasks must NOT have. Can be specified multiple times.",
+)
 @click.option("--limit", default=20, help="Maximum number of results.")
 @click.pass_context
 def tasks(
@@ -815,7 +827,8 @@ def tasks(
     scheduled_after: str | None,
     completion_before: str | None,
     completion_after: str | None,
-    tag: str | None,
+    include_tags: tuple[str, ...],
+    exclude_tags: tuple[str, ...],
     limit: int,
 ) -> None:
     """Query and filter tasks."""
@@ -834,7 +847,8 @@ def tasks(
 
     options = TaskFilterOptions(
         status=status,
-        tag=tag,
+        include_tags=list(include_tags) if include_tags else None,
+        exclude_tags=list(exclude_tags) if exclude_tags else None,
         limit=limit,
         date_filters=date_filters,
     )
@@ -864,7 +878,8 @@ def _execute_tasks_query(ctx: click.Context, options: TaskFilterOptions) -> None
             session=session,
             status=options.status,
             date_filters=options.date_filters or TaskDateFilters(),
-            tag=options.tag,
+            include_tags=options.include_tags,
+            exclude_tags=options.exclude_tags,
             limit=options.limit,
         )
         results = query.all()
@@ -961,27 +976,60 @@ def _apply_completion_date_filters_cli(
     return query
 
 
-def _apply_tag_filter_cli(query: "Query[Any]", tag: str | None) -> "Query[Any]":
-    """Apply tag filter to CLI tasks query.
+def _apply_include_tags_cli(
+    query: "Query[Any]", include_tags: list[str] | None
+) -> "Query[Any]":
+    """Apply include tag filter to CLI tasks query.
 
     Args:
         query: The base query to filter.
-        tag: Tag to filter by.
+        include_tags: List of tags that tasks must have.
 
     Returns:
-        Query with tag filter applied.
+        Query with include tag filter applied.
 
     """
-    if tag:
-        return query.filter(Task.tags.contains([tag]))
+    if not include_tags:
+        return query
+    stripped = _strip_tag_list(include_tags)
+    if not stripped:  # pragma: no cover - defensive edge case
+        return query
+    for tag in stripped:
+        query = query.filter(Task.tags.contains([tag.lower()]))
     return query
+
+
+def _apply_exclude_tags_cli(
+    query: "Query[Any]", exclude_tags: list[str] | None
+) -> "Query[Any]":
+    """Apply exclude tag filter to CLI tasks query.
+
+    Args:
+        query: The base query to filter.
+        exclude_tags: List of tags that tasks must NOT have.
+
+    Returns:
+        Query with exclude tag filter applied.
+
+    """
+    if not exclude_tags:
+        return query
+    stripped = _strip_tag_list(exclude_tags)
+    if not stripped:  # pragma: no cover - defensive edge case
+        return query
+    # Exclude tasks that have ANY of the excluded tags
+    from sqlalchemy import not_, or_
+
+    conditions = [Task.tags.contains([tag.lower()]) for tag in stripped]
+    return query.filter(not_(or_(*conditions)))
 
 
 def _build_tasks_query(
     session: Session,
     status: str | None,
     date_filters: TaskDateFilters,
-    tag: str | None,
+    include_tags: list[str] | None,
+    exclude_tags: list[str] | None,
     limit: int,
 ) -> "Query":
     """Build the tasks query with filters.
@@ -990,7 +1038,8 @@ def _build_tasks_query(
         session: Database session for queries.
         status: Filter by task status (optional).
         date_filters: Date filter parameters.
-        tag: Filter by tag (optional).
+        include_tags: List of tags that tasks must have.
+        exclude_tags: List of tags that tasks must NOT have.
         limit: Maximum number of results to return.
 
     Returns:
@@ -1017,7 +1066,8 @@ def _build_tasks_query(
     query = _apply_completion_date_filters_cli(
         query, date_filters.completion_before, date_filters.completion_after
     )
-    query = _apply_tag_filter_cli(query, tag)
+    query = _apply_include_tags_cli(query, include_tags)
+    query = _apply_exclude_tags_cli(query, exclude_tags)
 
     query = query.order_by(Task.priority, Task.due)
     query = query.limit(limit)

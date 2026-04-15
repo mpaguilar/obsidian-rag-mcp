@@ -1085,7 +1085,9 @@ class TestBuildTasksQuery:
         from obsidian_rag.cli import TaskDateFilters
 
         date_filters = TaskDateFilters()
-        result = _build_tasks_query(mock_session, "completed", date_filters, None, 10)
+        result = _build_tasks_query(
+            mock_session, "completed", date_filters, None, None, 10
+        )
 
         mock_session.query.assert_called_once()
         mock_query.filter.assert_called()
@@ -1095,7 +1097,7 @@ class TestBuildTasksQuery:
         """Test _build_tasks_query accepts date objects directly."""
         from datetime import date
 
-        from obsidian_rag.cli import TaskDateFilters, _build_tasks_query
+        from obsidian_rag.cli import _build_tasks_query, TaskDateFilters
 
         mock_session = MagicMock()
         mock_query = MagicMock()
@@ -1115,7 +1117,7 @@ class TestBuildTasksQuery:
             completion_before=today,
             completion_after=today,
         )
-        result = _build_tasks_query(mock_session, None, date_filters, None, 10)
+        result = _build_tasks_query(mock_session, None, date_filters, None, None, 10)
 
         mock_session.query.assert_called_once()
         mock_query.filter.assert_called()
@@ -1485,15 +1487,15 @@ class TestBuildTasksQueryCoverage:
 
         due_date = date(2026, 3, 15)
         date_filters = TaskDateFilters(due_before=due_date)
-        result = _build_tasks_query(mock_session, None, date_filters, None, 10)
+        result = _build_tasks_query(mock_session, None, date_filters, None, None, 10)
 
         mock_session.query.assert_called_once()
         mock_query.filter.assert_called()  # Should filter by due date
         mock_query.limit.assert_called_once_with(10)
 
-    def test_build_tasks_query_with_tag_filter(self):
-        """Test _build_tasks_query with tag filter (line 576)."""
-        from obsidian_rag.cli import TaskDateFilters, _build_tasks_query
+    def test_build_tasks_query_with_include_tags_filter(self):
+        """Test _build_tasks_query with include_tags filter."""
+        from obsidian_rag.cli import _build_tasks_query, TaskDateFilters
 
         mock_session = MagicMock()
         mock_query = MagicMock()
@@ -1504,11 +1506,91 @@ class TestBuildTasksQueryCoverage:
         mock_query.limit.return_value = mock_query
 
         date_filters = TaskDateFilters()
-        result = _build_tasks_query(mock_session, None, date_filters, "work", 10)
+        result = _build_tasks_query(
+            mock_session, None, date_filters, ["work"], None, 10
+        )
 
         mock_session.query.assert_called_once()
-        mock_query.filter.assert_called()  # Should filter by tag
+        mock_query.filter.assert_called()  # Should filter by include_tags
         mock_query.limit.assert_called_once_with(10)
+
+
+class TestApplyIncludeTagsCli:
+    """Test _apply_include_tags_cli function."""
+
+    def test_apply_include_tags_cli_with_tags(self):
+        """Test _apply_include_tags_cli applies filters for each tag."""
+        from obsidian_rag.cli import _apply_include_tags_cli
+
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+
+        result = _apply_include_tags_cli(mock_query, ["work", "urgent"])
+
+        # Should call filter for each tag (2 times)
+        assert mock_query.filter.call_count == 2
+        assert result == mock_query
+
+    def test_apply_include_tags_cli_with_empty_list(self):
+        """Test _apply_include_tags_cli returns query unchanged with empty list."""
+        from obsidian_rag.cli import _apply_include_tags_cli
+
+        mock_query = MagicMock()
+
+        result = _apply_include_tags_cli(mock_query, [])
+
+        mock_query.filter.assert_not_called()
+        assert result == mock_query
+
+    def test_apply_include_tags_cli_with_none(self):
+        """Test _apply_include_tags_cli returns query unchanged with None."""
+        from obsidian_rag.cli import _apply_include_tags_cli
+
+        mock_query = MagicMock()
+
+        result = _apply_include_tags_cli(mock_query, None)
+
+        mock_query.filter.assert_not_called()
+        assert result == mock_query
+
+
+class TestApplyExcludeTagsCli:
+    """Test _apply_exclude_tags_cli function."""
+
+    def test_apply_exclude_tags_cli_with_tags(self):
+        """Test _apply_exclude_tags_cli applies not_(or_()) filter."""
+        from obsidian_rag.cli import _apply_exclude_tags_cli
+
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+
+        result = _apply_exclude_tags_cli(mock_query, ["blocked", "waiting"])
+
+        # Should call filter once with not_(or_())
+        mock_query.filter.assert_called_once()
+        assert result == mock_query
+
+    def test_apply_exclude_tags_cli_with_empty_list(self):
+        """Test _apply_exclude_tags_cli returns query unchanged with empty list."""
+        from obsidian_rag.cli import _apply_exclude_tags_cli
+
+        mock_query = MagicMock()
+
+        result = _apply_exclude_tags_cli(mock_query, [])
+
+        mock_query.filter.assert_not_called()
+        assert result == mock_query
+
+    def test_apply_exclude_tags_cli_with_none(self):
+        """Test _apply_exclude_tags_cli returns query unchanged with None."""
+        from obsidian_rag.cli import _apply_exclude_tags_cli
+
+        mock_query = MagicMock()
+
+        result = _apply_exclude_tags_cli(mock_query, None)
+
+        mock_query.filter.assert_not_called()
+        assert result == mock_query
 
 
 class TestTasksCommandEarlyReturn:
@@ -1741,3 +1823,144 @@ class TestCliDateFiltering:
 
         assert result.exit_code == 1
         assert "Invalid date format" in result.output
+
+
+class TestCliTagFiltering:
+    """Tests for CLI tag filtering with --include-tags and --exclude-tags."""
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_include_tags_single(self, mock_db_manager):
+        """Test filtering with single include tag."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["tasks", "--include-tags", "work"])
+
+        assert result.exit_code == 0
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_include_tags_multiple(self, mock_db_manager):
+        """Test filtering with multiple include tags."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(
+                cli, ["tasks", "--include-tags", "work", "--include-tags", "urgent"]
+            )
+
+        assert result.exit_code == 0
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_exclude_tags_single(self, mock_db_manager):
+        """Test filtering with single exclude tag."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["tasks", "--exclude-tags", "blocked"])
+
+        assert result.exit_code == 0
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_include_and_exclude_combined(self, mock_db_manager):
+        """Test combining include and exclude tags."""
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(
+                cli,
+                [
+                    "tasks",
+                    "--include-tags",
+                    "work",
+                    "--exclude-tags",
+                    "blocked",
+                ],
+            )
+
+        assert result.exit_code == 0
+
+    @patch("obsidian_rag.cli.DatabaseManager")
+    def test_tag_prefix_stripped_cli(self, mock_db_manager):
+        """Test that # prefix is stripped in CLI."""
+        from obsidian_rag.mcp_server.tools.tasks import _strip_tag_prefix
+
+        runner = CliRunner()
+
+        mock_settings = MagicMock()
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+
+        mock_db_instance = MagicMock()
+        mock_db_instance.get_session.return_value = mock_session
+        mock_db_manager.return_value = mock_db_instance
+
+        # Verify that #work becomes work
+        assert _strip_tag_prefix("#work") == "work"
+        assert _strip_tag_prefix("work") == "work"
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["tasks", "--include-tags", "#work"])
+
+        assert result.exit_code == 0

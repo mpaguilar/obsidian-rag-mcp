@@ -343,19 +343,24 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
   - `tag_match_mode="any"`: Task must have ANY of the include tags
 - `exclude_tags`: List of tags tasks must NOT have (always OR logic - any excluded tag disqualifies)
 - `tag_match_mode`: How to combine include_tags - "all" (AND logic, default) or "any" (OR logic)
-- `tags`: Legacy parameter - list of tags tasks must have (all tags required, AND logic)
 - `priority`: List of priorities to filter by (e.g., ['high', 'highest'])
 - All filters are optional and combined with AND logic
 - Date comparisons are inclusive (>= for after, <= for before)
 - Tasks without dates are excluded from date filter comparisons
 - Conflicting tags (same tag in both include_tags and exclude_tags) are rejected with validation error
 
+**Tag Prefix Handling:**
+- Tags should NOT include the `#` prefix in filter values
+- The system defensively strips leading `#` characters from tag filter values
+- Both `include_tags=["#personal/expenses"]` and `include_tags=["personal/expenses"]` return the same results
+- Empty tags (after stripping all `#` characters) are silently ignored
+
 **Migration from removed tools:**
 | Old Tool | New `get_tasks` Equivalent |
 |----------|---------------------------|
 | `get_incomplete_tasks(include_cancelled=True)` | `get_tasks(status=["not_completed", "in_progress", "cancelled"])` |
 | `get_tasks_due_this_week(include_completed=False)` | `get_tasks(due_after="2026-03-11", due_before="2026-03-18")` |
-| `get_tasks_by_tag(tag="work")` | `get_tasks(include_tags=["work"])` or `get_tasks(tags=["work"])` |
+| `get_tasks_by_tag(tag="work")` | `get_tasks(include_tags=["work"])` |
 | `get_completed_tasks(completed_since="2026-01-01")` | `get_tasks(status=["completed"], completion_after="2026-01-01")` |
 
 **Tag Filtering Examples:**

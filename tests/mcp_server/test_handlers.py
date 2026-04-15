@@ -381,33 +381,6 @@ class TestGetTasksHandlerAdditional:
         assert call_args.kwargs["filters"].exclude_tags == ["blocked"]
         assert call_args.kwargs["filters"].tag_match_mode == "all"
 
-    @patch("obsidian_rag.mcp_server.handlers.get_tasks_tool")
-    def test_handler_backward_compatibility_legacy_tags(self, mock_get_tasks):
-        """Test that handler still supports legacy tags parameter."""
-        mock_db_manager = MagicMock()
-        mock_session = MagicMock()
-        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=mock_session
-        )
-        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
-            return_value=False
-        )
-
-        mock_get_tasks.return_value = MagicMock(model_dump=lambda: {"results": []})
-
-        request = GetTasksRequest(
-            tags=["work", "urgent"],
-        )
-
-        _get_tasks_handler(
-            db_manager=mock_db_manager,
-            request=request,
-        )
-
-        call_args = mock_get_tasks.call_args
-        filter_params = call_args.kwargs["filters"]
-        assert filter_params.tags == ["work", "urgent"]
-
 
 class TestParseJsonStr:
     """Tests for parse_json_str helper function."""
@@ -862,21 +835,6 @@ class TestAnnotatedGetTasksInputEdgeCases:
 
         with pytest.raises(ValidationError):
             adapter.validate_python(json_wrong_type)
-
-    def test_accepts_only_legacy_tags(self):
-        """Test that legacy tags parameter works in JSON."""
-        from obsidian_rag.mcp_server.handlers import (
-            AnnotatedGetTasksInput,
-            GetTasksToolInput,
-        )
-
-        adapter = TypeAdapter(AnnotatedGetTasksInput)
-        json_legacy = '{"tags": ["work", "urgent"]}'
-
-        result = adapter.validate_python(json_legacy)
-
-        assert isinstance(result, GetTasksToolInput)
-        assert result.tags == ["work", "urgent"]
 
 
 class TestJsonStringSpecialCharacters:

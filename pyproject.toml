@@ -101,7 +101,7 @@ ignore = ["COM812"]
 max-complexity = 5
 
 [tool.ruff.lint.pylint]
-max-args = 10
+max-args = 11
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

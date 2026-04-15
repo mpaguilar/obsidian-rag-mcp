@@ -28,6 +28,48 @@ _T = TypeVar("_T")
 log = logging.getLogger(__name__)
 
 
+def _strip_tag_prefix(tag: str) -> str:
+    """Strip leading '#' characters from a tag string.
+
+    Tags in the database are stored without the '#' prefix, but MCP clients
+    may include it when passing filter values. This function normalizes
+    tag filter values by removing the '#' prefix before building SQL conditions.
+
+    Args:
+        tag: Tag string that may include a leading '#' prefix.
+
+    Returns:
+        Tag string with leading '#' characters removed. Returns empty string
+        if the tag consists only of '#' characters.
+
+    """
+    _msg = "_strip_tag_prefix starting"
+    log.debug(_msg)
+    result = tag.lstrip("#")
+    _msg = "_strip_tag_prefix returning"
+    log.debug(_msg)
+    return result
+
+
+def _strip_tag_list(tags: list[str]) -> list[str]:
+    """Strip '#' prefix from all tags in a list, removing empty results.
+
+    Args:
+        tags: List of tag strings that may include '#' prefixes.
+
+    Returns:
+        List of tag strings with '#' prefixes stripped, excluding any
+        tags that become empty after stripping.
+
+    """
+    _msg = "_strip_tag_list starting"
+    log.debug(_msg)
+    result = [stripped for tag in tags if (stripped := _strip_tag_prefix(tag))]
+    _msg = "_strip_tag_list returning"
+    log.debug(_msg)
+    return result
+
+
 def _validate_tag_filters(
     include_tags: list[str] | None,
     exclude_tags: list[str] | None,
@@ -57,8 +99,12 @@ def _validate_tag_filters(
         log.debug(_msg)
         return
 
-    include_set = {tag.lower() for tag in include_tags}
-    exclude_set = {tag.lower() for tag in exclude_tags}
+    # Strip '#' prefix before comparing for conflicts
+    include_stripped = _strip_tag_list(include_tags)
+    exclude_stripped = _strip_tag_list(exclude_tags)
+
+    include_set = {tag.lower() for tag in include_stripped}
+    exclude_set = {tag.lower() for tag in exclude_stripped}
     conflicts = include_set & exclude_set
 
     if conflicts:
@@ -255,22 +301,6 @@ def _build_tag_condition(tag: str) -> "ColumnElement[bool]":
     )
 
 
-def _apply_legacy_tags(query: "Query[Any]", tags: list[str]) -> "Query[Any]":
-    """Apply legacy 'tags' parameter with AND logic.
-
-    Args:
-        query: The base query to filter.
-        tags: List of tags that tasks must have (all required).
-
-    Returns:
-        Query with legacy tag filters applied.
-
-    """
-    for tag in tags:
-        query = query.filter(_build_tag_condition(tag.lower()))
-    return query
-
-
 def _apply_include_tags_any(
     query: "Query[Any]", include_tags: list[str]
 ) -> "Query[Any]":
@@ -284,7 +314,10 @@ def _apply_include_tags_any(
         Query with include tag filters applied.
 
     """
-    include_lower = [t.lower() for t in include_tags]
+    stripped = _strip_tag_list(include_tags)
+    if not stripped:
+        return query
+    include_lower = [t.lower() for t in stripped]
     include_conditions = [_build_tag_condition(tag) for tag in include_lower]
     return query.filter(or_(*include_conditions))
 
@@ -302,7 +335,10 @@ def _apply_include_tags_all(
         Query with include tag filters applied.
 
     """
-    include_lower = [t.lower() for t in include_tags]
+    stripped = _strip_tag_list(include_tags)
+    if not stripped:
+        return query
+    include_lower = [t.lower() for t in stripped]
     for tag in include_lower:
         query = query.filter(_build_tag_condition(tag))
     return query
@@ -319,7 +355,10 @@ def _apply_exclude_tags(query: "Query[Any]", exclude_tags: list[str]) -> "Query[
         Query with exclude tag filters applied.
 
     """
-    exclude_lower = [t.lower() for t in exclude_tags]
+    stripped = _strip_tag_list(exclude_tags)
+    if not stripped:
+        return query
+    exclude_lower = [t.lower() for t in stripped]
     exclude_conditions = [_build_tag_condition(tag) for tag in exclude_lower]
     return query.filter(~or_(*exclude_conditions))
 
@@ -330,20 +369,18 @@ def _apply_tag_filters(
 ) -> "Query[Any]":
     """Apply tag filters to query with support for include/exclude and match modes.
 
-    Supports both legacy 'tags' parameter (AND logic) and new 'include_tags'
-    parameter with configurable match_mode ("all" for AND, "any" for OR).
-    Also supports 'exclude_tags' for exclusion filtering.
+    Supports 'include_tags' parameter with configurable match_mode ("all" for
+    AND, "any" for OR). Also supports 'exclude_tags' for exclusion filtering.
 
     Args:
         query: The base query to filter.
-        filters: Filter parameters including tags, include_tags, exclude_tags,
+        filters: Filter parameters including include_tags, exclude_tags,
             and tag_match_mode.
 
     Returns:
         Query with tag filters applied.
 
     Notes:
-        Legacy 'tags' parameter uses AND logic (all tags required).
         'include_tags' with tag_match_mode="all" uses AND logic.
         'include_tags' with tag_match_mode="any" uses OR logic.
         'exclude_tags' always uses OR logic (any excluded tag disqualifies).
@@ -353,11 +390,7 @@ def _apply_tag_filters(
     _msg = "_apply_tag_filters starting"
     log.debug(_msg)
 
-    # Handle legacy 'tags' parameter (AND logic for backward compatibility)
-    if filters.tags:
-        query = _apply_legacy_tags(query, filters.tags)
-
-    # Handle new 'include_tags' parameter with match_mode
+    # Handle 'include_tags' parameter with match_mode
     if filters.include_tags:
         if filters.tag_match_mode == "any":
             query = _apply_include_tags_any(query, filters.include_tags)
@@ -418,7 +451,6 @@ def get_tasks(
     Filter Logic:
         - Multiple status values: OR logic (task matches ANY status)
         - Multiple priority values: OR logic (task matches ANY priority)
-        - Legacy tags parameter: AND logic (task must have ALL tags)
         - include_tags with tag_match_mode="all" (default): AND logic
         - include_tags with tag_match_mode="any": OR logic
         - exclude_tags: OR logic (task excluded if it has ANY excluded tag)
@@ -426,6 +458,11 @@ def get_tasks(
             - "all" (default): AND logic across all date conditions
             - "any": OR logic across all date conditions
         - Different filter types (status, tags, priority, dates): AND logic
+
+    Tag Filtering:
+        Tags should NOT include the '#' prefix. Use plain tag names like
+        "personal/expenses" or "business/iConnections" instead of
+        "#personal/expenses" or "#business/iConnections".
 
     Tag Filtering Examples:
         - include_tags=["work", "urgent"], tag_match_mode="all": Task must have BOTH

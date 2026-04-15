@@ -993,3 +993,225 @@ class TestSettingsVaultMethods:
         names = settings.get_vault_names()
         # DEFAULT_CONFIG already has "Obsidian Vault", so we have 3 total
         assert sorted(names) == ["Obsidian Vault", "Vault1", "Vault2"]
+
+
+class TestSettingsEndpointEnvVarParsing:
+    """Tests for endpoint environment variable parsing."""
+
+    def setup_method(self):
+        """Clear all endpoint-related env vars before each test."""
+        import os
+
+        # Clear any existing endpoint env vars
+        for key in list(os.environ.keys()):
+            if key.startswith("OBSIDIAN_RAG_ENDPOINTS_"):
+                del os.environ[key]
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_endpoint_env_var_parsing_basic(self, mock_get_config):
+        """Test that endpoint env vars are parsed into endpoints dict."""
+        import os
+
+        mock_get_config.return_value = None
+
+        # Set env vars
+        os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER"] = "openrouter"
+        os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MODEL"] = (
+            "openai/text-embedding-3-small"
+        )
+        os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_API_KEY"] = "test-api-key"
+        os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_BASE_URL"] = (
+            "https://openrouter.ai/api/v1"
+        )
+
+        try:
+            settings = Settings()
+
+            assert settings.endpoints["embedding"].provider == "openrouter"
+            assert (
+                settings.endpoints["embedding"].model == "openai/text-embedding-3-small"
+            )
+            assert settings.endpoints["embedding"].api_key == "test-api-key"
+            assert (
+                settings.endpoints["embedding"].base_url
+                == "https://openrouter.ai/api/v1"
+            )
+        finally:
+            # Clean up
+            del os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER"]
+            del os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MODEL"]
+            del os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_API_KEY"]
+            del os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_BASE_URL"]
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_endpoint_env_var_type_conversion(self, mock_get_config):
+        """Test that endpoint env vars are converted to proper types."""
+        import os
+
+        mock_get_config.return_value = None
+
+        # Set env vars with types
+        os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_TEMPERATURE"] = "0.5"
+        os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MAX_TOKENS"] = "1000"
+        os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_ENABLED"] = "true"
+        os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_EMPTY"] = ""
+
+        try:
+            settings = Settings()
+
+            assert settings.endpoints["embedding"].temperature == 0.5
+            assert isinstance(settings.endpoints["embedding"].temperature, float)
+            assert settings.endpoints["embedding"].max_tokens == 1000
+            assert isinstance(settings.endpoints["embedding"].max_tokens, int)
+        finally:
+            # Clean up
+            del os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_TEMPERATURE"]
+            del os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MAX_TOKENS"]
+            del os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_ENABLED"]
+            del os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_EMPTY"]
+
+    @patch("obsidian_rag.config._get_config_file_path")
+    def test_endpoint_env_var_explicit_overrides_env(self, mock_get_config):
+        """Test that explicit kwargs override env vars."""
+        import os
+
+        mock_get_config.return_value = None
+
+        os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER"] = "openrouter"
+        os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MODEL"] = "wrong-model"
+
+        try:
+            settings = Settings(
+                endpoints={
+                    "embedding": {
+                        "provider": "openai",
+                        "model": "text-embedding-3-small",
+                    }
+                }
+            )
+
+            # Explicit values should override env vars
+            assert settings.endpoints["embedding"].provider == "openai"
+            assert settings.endpoints["embedding"].model == "text-embedding-3-small"
+        finally:
+            del os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER"]
+            del os.environ["OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MODEL"]
+
+    def test_convert_endpoint_value_numeric(self):
+        """Test _convert_endpoint_value for numeric fields."""
+        from obsidian_rag.config import Settings
+
+        # Temperature should be float
+        result = Settings._convert_endpoint_value("temperature", "0.75")
+        assert result == 0.75
+        assert isinstance(result, float)
+
+        # Max tokens should be int
+        result = Settings._convert_endpoint_value("max_tokens", "2048")
+        assert result == 2048
+        assert isinstance(result, int)
+
+    def test_convert_endpoint_value_boolean(self):
+        """Test _convert_endpoint_value for boolean fields."""
+        from obsidian_rag.config import Settings
+
+        result = Settings._convert_endpoint_value("enabled", "true")
+        assert result is True
+
+        result = Settings._convert_endpoint_value("enabled", "TRUE")
+        assert result is True
+
+        result = Settings._convert_endpoint_value("enabled", "false")
+        assert result is False
+
+        result = Settings._convert_endpoint_value("enabled", "FALSE")
+        assert result is False
+
+    def test_convert_endpoint_value_empty(self):
+        """Test _convert_endpoint_value for empty string."""
+        from obsidian_rag.config import Settings
+
+        result = Settings._convert_endpoint_value("api_key", "")
+        assert result is None
+
+    def test_convert_endpoint_value_string(self):
+        """Test _convert_endpoint_value for regular strings."""
+        from obsidian_rag.config import Settings
+
+        result = Settings._convert_endpoint_value("model", "gpt-4")
+        assert result == "gpt-4"
+
+    def test_parse_env_var_key_valid(self):
+        """Test _parse_env_var_key with valid key."""
+        from obsidian_rag.config import Settings
+
+        result = Settings._parse_env_var_key(
+            "OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER"
+        )
+        assert result == ("embedding", "provider")
+
+        result = Settings._parse_env_var_key("OBSIDIAN_RAG_ENDPOINTS_CHAT_MODEL")
+        assert result == ("chat", "model")
+
+    def test_parse_env_var_key_invalid(self):
+        """Test _parse_env_var_key with invalid keys."""
+        from obsidian_rag.config import Settings
+
+        # Wrong prefix
+        result = Settings._parse_env_var_key("SOME_OTHER_VAR")
+        assert result is None
+
+        # No underscore after endpoint name
+        result = Settings._parse_env_var_key("OBSIDIAN_RAG_ENDPOINTS_EMBEDDING")
+        assert result is None
+
+    def test_try_parse_numeric_temperature(self):
+        """Test _try_parse_numeric for temperature."""
+        from obsidian_rag.config import Settings
+
+        result = Settings._try_parse_numeric("temperature", "0.5")
+        assert result == 0.5
+        assert isinstance(result, float)
+
+        # Invalid float returns original
+        result = Settings._try_parse_numeric("temperature", "not-a-number")
+        assert result == "not-a-number"
+
+    def test_try_parse_numeric_max_tokens(self):
+        """Test _try_parse_numeric for max_tokens."""
+        from obsidian_rag.config import Settings
+
+        result = Settings._try_parse_numeric("max_tokens", "1000")
+        assert result == 1000
+        assert isinstance(result, int)
+
+        # Invalid int returns original
+        result = Settings._try_parse_numeric("max_tokens", "not-an-int")
+        assert result == "not-an-int"
+
+    def test_try_parse_numeric_other_fields(self):
+        """Test _try_parse_numeric for non-numeric fields."""
+        from obsidian_rag.config import Settings
+
+        # Other fields should return original value
+        result = Settings._try_parse_numeric("model", "gpt-4")
+        assert result == "gpt-4"
+
+    def test_merge_endpoints_into_data_no_endpoints(self):
+        """Test _merge_endpoints_into_data with no endpoints."""
+        from obsidian_rag.config import Settings
+
+        data = {"database": {"url": "test"}}
+        result = Settings._merge_endpoints_into_data({}, data)
+        assert result == data
+
+    def test_merge_endpoints_into_data_with_endpoints(self):
+        """Test _merge_endpoints_into_data with endpoints."""
+        from obsidian_rag.config import Settings
+
+        data = {"database": {"url": "test"}}
+        endpoints = {"embedding": {"provider": "openai"}}
+        result = Settings._merge_endpoints_into_data(endpoints, data)
+
+        assert result["endpoints"]["embedding"]["provider"] == "openai"
+        assert result["database"]["url"] == "test"

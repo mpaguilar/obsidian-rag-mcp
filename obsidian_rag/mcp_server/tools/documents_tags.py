@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlalchemy import func, or_, text
 
 from obsidian_rag.database.models import Document
+from obsidian_rag.mcp_server.tools.tasks import _strip_tag_list
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Query
@@ -169,8 +170,8 @@ def _check_tag_conflicts(tag_filter: "TagFilter") -> None:
     """
     if not tag_filter.include_tags or not tag_filter.exclude_tags:
         return
-    include_set = {t.lower() for t in tag_filter.include_tags}
-    exclude_set = {t.lower() for t in tag_filter.exclude_tags}
+    include_set = {t.lower() for t in _strip_tag_list(tag_filter.include_tags)}
+    exclude_set = {t.lower() for t in _strip_tag_list(tag_filter.exclude_tags)}
     conflicts = include_set & exclude_set
     if conflicts:
         msg = f"Conflicting tags: {sorted(conflicts)}. Tags cannot appear in both include and exclude lists."
@@ -260,7 +261,8 @@ def apply_postgresql_include_tags(
     if not tag_filter.include_tags:
         return query
 
-    include_lower = [t.lower() for t in tag_filter.include_tags]
+    stripped = _strip_tag_list(tag_filter.include_tags)
+    include_lower = [t.lower() for t in stripped]
     if tag_filter.match_mode == "all":
         # Document must have ALL include tags
         for tag in include_lower:
@@ -294,7 +296,8 @@ def apply_postgresql_exclude_tags(
     if not tag_filter.exclude_tags:
         return query
 
-    exclude_lower = [t.lower() for t in tag_filter.exclude_tags]
+    stripped = _strip_tag_list(tag_filter.exclude_tags)
+    exclude_lower = [t.lower() for t in stripped]
     # Document must NOT have ANY exclude tags
     exclude_conditions = [
         func.lower(func.array_to_string(Document.tags, ",")).contains(tag)

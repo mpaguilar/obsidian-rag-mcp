@@ -19,7 +19,6 @@ class TestGetTasksFilterParams:
         assert params.scheduled_before is None
         assert params.completion_after is None
         assert params.completion_before is None
-        assert params.tags is None
         assert params.priority is None
         assert params.limit == 20
         assert params.offset == 0
@@ -34,7 +33,6 @@ class TestGetTasksFilterParams:
             scheduled_before=date(2026, 6, 30),
             completion_after=date(2026, 1, 1),
             completion_before=date(2026, 3, 31),
-            tags=["work", "urgent"],
             priority=["high", "highest"],
             limit=50,
             offset=10,
@@ -47,7 +45,6 @@ class TestGetTasksFilterParams:
         assert params.scheduled_before == date(2026, 6, 30)
         assert params.completion_after == date(2026, 1, 1)
         assert params.completion_before == date(2026, 3, 31)
-        assert params.tags == ["work", "urgent"]
         assert params.priority == ["high", "highest"]
         assert params.limit == 50
         assert params.offset == 10
@@ -121,13 +118,6 @@ class TestGetTasksFilterParams:
         assert params.exclude_tags == ["blocked"]
         assert params.tag_match_mode == "all"
 
-    def test_legacy_tags_backward_compatibility(self):
-        """Test that legacy tags parameter still works."""
-        params = GetTasksFilterParams(tags=["work", "urgent"])
-        assert params.tags == ["work", "urgent"]
-        assert params.include_tags is None
-        assert params.exclude_tags is None
-
 
 class TestGetTasksRequest:
     """Tests for GetTasksRequest dataclass."""
@@ -141,7 +131,6 @@ class TestGetTasksRequest:
         assert request.status is None
         assert request.tag_filters is None
         assert request.date_filters is None
-        assert request.tags is None
         assert request.priority is None
         assert request.limit == 20
         assert request.offset == 0

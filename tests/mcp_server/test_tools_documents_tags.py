@@ -394,7 +394,6 @@ class TestApplyPostgresqlIncludeTags:
 
     def test_apply_postgresql_include_tags_match_mode_any(self):
         """Test apply_postgresql_include_tags with match_mode='any' (TASK-092)."""
-        from sqlalchemy import or_
 
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
@@ -528,3 +527,157 @@ class TestMatchesAnyTagsAdditional:
 
         result = _matches_any_tags(doc, ["work", "urgent"])
         assert result is False
+
+
+class TestDocumentTagPrefixStripping:
+    """Tests for # prefix stripping in document tag filtering."""
+
+    def test_apply_postgresql_include_tags_strips_hash(self):
+        """Verify apply_postgresql_include_tags strips # from tag values."""
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+
+        tag_filter = TagFilter(
+            include_tags=["#work", "#urgent"],
+            match_mode="all",
+        )
+
+        result = apply_postgresql_include_tags(mock_query, tag_filter)
+
+        # Should filter twice (once per stripped tag)
+        assert mock_query.filter.call_count == 2
+        assert result is mock_query
+
+    def test_apply_postgresql_include_tags_any_strips_hash(self):
+        """Verify apply_postgresql_include_tags strips # in any mode."""
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+
+        tag_filter = TagFilter(
+            include_tags=["#work", "#urgent"],
+            match_mode="any",
+        )
+
+        with patch("obsidian_rag.mcp_server.tools.documents_tags.or_") as mock_or:
+            mock_or.return_value = "or_condition"
+
+            result = apply_postgresql_include_tags(mock_query, tag_filter)
+
+            # Should use or_ for 'any' mode with stripped tags
+            mock_or.assert_called_once()
+            mock_query.filter.assert_called_once_with("or_condition")
+            assert result is mock_query
+
+    def test_apply_postgresql_exclude_tags_strips_hash(self):
+        """Verify apply_postgresql_exclude_tags strips # from tag values."""
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+
+        tag_filter = TagFilter(exclude_tags=["#archived", "#deleted"])
+
+        with patch("obsidian_rag.mcp_server.tools.documents_tags.or_") as mock_or:
+            with patch(
+                "obsidian_rag.mcp_server.tools.documents_tags.text"
+            ) as mock_text:
+                mock_or.return_value = "or_condition"
+                mock_text.side_effect = lambda x: x
+
+                result = apply_postgresql_exclude_tags(mock_query, tag_filter)
+
+                # Should create exclude conditions with stripped tags
+                mock_or.assert_called_once()
+                mock_query.filter.assert_called_once()
+                assert result is mock_query
+
+    def test_check_tag_conflicts_strips_before_compare(self):
+        """Verify conflict detection works after # stripping."""
+        # Test that #work and work are detected as conflict
+        tag_filter = TagFilter(
+            include_tags=["#work", "urgent"],
+            exclude_tags=["work", "archived"],
+        )
+
+        # Should raise ValueError because #work and work are the same after stripping
+        with pytest.raises(ValueError, match="Conflicting tags"):
+            _check_tag_conflicts(tag_filter)
+
+    def test_check_tag_conflicts_multiple_hashes_stripped(self):
+        """Verify tags with multiple # are properly stripped before conflict check."""
+        tag_filter = TagFilter(
+            include_tags=["##work"],
+            exclude_tags=["#work"],
+        )
+
+        # ##work and #work both become "work" after stripping
+        with pytest.raises(ValueError, match="Conflicting tags"):
+            _check_tag_conflicts(tag_filter)
+
+    def test_check_tag_conflicts_case_insensitive_after_strip(self):
+        """Verify case-insensitive conflict detection after # stripping."""
+        tag_filter = TagFilter(
+            include_tags=["#WORK"],
+            exclude_tags=["work"],
+        )
+
+        # #WORK and work should conflict (case-insensitive after strip)
+        with pytest.raises(ValueError, match="Conflicting tags"):
+            _check_tag_conflicts(tag_filter)
+
+    def test_validate_tag_filter_strips_hash(self):
+        """Verify validate_tag_filter strips # before validation."""
+        # Tags with # should be stripped before validation
+        tag_filter = TagFilter(
+            include_tags=["#work"],
+            exclude_tags=["work"],  # Same as #work after strip
+        )
+
+        with pytest.raises(ValueError, match="Conflicting tags"):
+            validate_tag_filter(tag_filter)
+
+    def test_hierarchical_tags_with_hash_stripped(self):
+        """Verify hierarchical tags like #personal/expenses are handled correctly."""
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+
+        tag_filter = TagFilter(
+            include_tags=["#personal/expenses"],
+            match_mode="all",
+        )
+
+        result = apply_postgresql_include_tags(mock_query, tag_filter)
+
+        # Should filter with the hierarchical tag (minus the #)
+        mock_query.filter.assert_called_once()
+        assert result is mock_query
+
+    def test_empty_tags_after_strip_filtered_out(self):
+        """Verify tags that become empty after # stripping are filtered out."""
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+
+        tag_filter = TagFilter(
+            include_tags=["#", "##", "#work"],
+            match_mode="all",
+        )
+
+        result = apply_postgresql_include_tags(mock_query, tag_filter)
+
+        # Should only filter once (for "work", the others are filtered out)
+        assert mock_query.filter.call_count == 1
+        assert result is mock_query
+
+    def test_mixed_hash_and_no_hash_consistency(self):
+        """Verify mixed # and non-# tags are handled consistently."""
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+
+        tag_filter = TagFilter(
+            include_tags=["#work", "urgent", "##personal"],
+            match_mode="all",
+        )
+
+        result = apply_postgresql_include_tags(mock_query, tag_filter)
+
+        # Should filter 3 times (one for each unique tag after strip)
+        assert mock_query.filter.call_count == 3
+        assert result is mock_query

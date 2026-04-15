@@ -857,7 +857,6 @@ class TestToolImplementations:
             request = GetTasksRequest(
                 status=["not_completed"],
                 date_filters=date_filters,
-                tags=["work"],
                 priority=["high"],
                 limit=20,
                 offset=0,
@@ -1063,33 +1062,6 @@ class TestGetTasksServerWrapper:
         assert request.tag_filters.include_tags is None
         assert request.tag_filters.exclude_tags is None
         assert request.tag_filters.match_mode == "all"
-
-    @patch("obsidian_rag.mcp_server.server._get_registry")
-    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
-    def test_server_wrapper_backward_compatibility_legacy_tags(
-        self, mock_handler, mock_registry
-    ):
-        """Test that server wrapper still supports legacy tags parameter."""
-        mock_registry_instance = MagicMock()
-        mock_registry.return_value = mock_registry_instance
-
-        mock_handler.return_value = {
-            "results": [],
-            "total_count": 0,
-            "has_more": False,
-            "next_offset": None,
-        }
-
-        from obsidian_rag.mcp_server.server import get_tasks
-        from obsidian_rag.mcp_server.handlers import GetTasksToolInput
-
-        params = GetTasksToolInput(tags=["work", "urgent"])
-        result = get_tasks(params=params)
-
-        mock_handler.assert_called_once()
-        call_args = mock_handler.call_args
-        request = call_args.kwargs["request"]
-        assert request.tags == ["work", "urgent"]
 
 
 class TestGetTasksJsonString:

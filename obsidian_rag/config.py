@@ -763,6 +763,202 @@ class Settings(BaseSettings):
 
         super().__init__(**kwargs)
 
+    @staticmethod
+    def _try_parse_numeric(field_name: str, value: str) -> float | int | str:
+        """Try to parse value as numeric type based on field name.
+
+        Args:
+            field_name: The field name to determine numeric type.
+            value: The string value to parse.
+
+        Returns:
+            Parsed float, int, or original string if parsing fails.
+
+        """
+        if field_name == "temperature":
+            try:
+                return float(value)
+            except ValueError:  # pragma: no cover
+                return value
+        if field_name == "max_tokens":
+            try:
+                return int(value)
+            except ValueError:  # pragma: no cover
+                return value
+        return value
+
+    @staticmethod
+    def _convert_endpoint_value(field_name: str, value: str) -> object:
+        """Convert string env var value to appropriate type.
+
+        Args:
+            field_name: The field name (e.g., 'temperature', 'max_tokens').
+            value: The string value from environment variable.
+
+        Returns:
+            The converted value (float, int, bool, None, or str).
+
+        """
+        # Try numeric conversion first
+        result = Settings._try_parse_numeric(field_name, value)
+        if result is not value:
+            return result
+
+        # Handle boolean and empty values
+        if value.lower() in ("true", "false"):
+            return value.lower() == "true"
+        if value == "":
+            return None
+        return value
+
+    @staticmethod
+    def _parse_env_var_key(key: str) -> tuple[str, str] | None:
+        """Parse environment variable key into endpoint and field names.
+
+        Args:
+            key: The environment variable key.
+
+        Returns:
+            Tuple of (endpoint_name, field_name) or None if invalid.
+
+        """
+        prefix = "OBSIDIAN_RAG_ENDPOINTS_"
+        expected_parts_count = 2
+
+        if not key.startswith(prefix):
+            return None
+
+        remaining = key[len(prefix) :]
+        parts = remaining.split("_", 1)
+
+        if len(parts) != expected_parts_count:  # pragma: no cover
+            return None
+
+        endpoint_name, field_name = parts
+        return endpoint_name.lower(), field_name.lower()
+
+    @staticmethod
+    def _merge_endpoint_config(
+        existing_config: dict[str, object],
+        env_config: dict[str, object],
+    ) -> None:
+        """Merge env var config into existing endpoint config in-place.
+
+        Only sets values that are None or missing in existing_config.
+
+        Args:
+            existing_config: The existing endpoint configuration dict.
+            env_config: The configuration from environment variables.
+
+        """
+        for field_name, value in env_config.items():
+            existing_value = existing_config.get(field_name)
+            if existing_value is None:
+                existing_config[field_name] = value
+
+    @staticmethod
+    def _apply_endpoint_merge(
+        existing_endpoints: dict[str, object],
+        endpoint_name: str,
+        endpoint_config: dict[str, object],
+    ) -> None:
+        """Apply merge for a single endpoint configuration.
+
+        Args:
+            existing_endpoints: The existing endpoints dictionary.
+            endpoint_name: The name of the endpoint to merge.
+            endpoint_config: The configuration from environment variables.
+
+        """
+        if endpoint_name not in existing_endpoints:
+            existing_endpoints[endpoint_name] = endpoint_config
+            return
+
+        existing = existing_endpoints[endpoint_name]
+        if isinstance(existing, dict):  # pragma: no cover - defensive edge case
+            Settings._merge_endpoint_config(existing, endpoint_config)
+
+    @staticmethod
+    def _merge_endpoints_into_data(
+        endpoints: dict[str, dict[str, object]],
+        data: dict[str, object],
+    ) -> dict[str, object]:
+        """Merge parsed endpoints into the data dictionary.
+
+        Fills in missing values and replaces None values with env var values.
+        Explicit non-None kwargs take precedence over env vars.
+
+        Args:
+            endpoints: The parsed endpoints dictionary (from env vars).
+            data: The raw data dictionary being validated.
+
+        Returns:
+            The data dictionary with endpoints merged in.
+
+        """
+        if not endpoints:
+            return data
+
+        existing_endpoints = data.get("endpoints", {})
+        if not isinstance(
+            existing_endpoints, dict
+        ):  # pragma: no cover - defensive edge case
+            data["endpoints"] = endpoints
+            return data
+
+        for endpoint_name, endpoint_config in endpoints.items():
+            Settings._apply_endpoint_merge(
+                existing_endpoints,
+                endpoint_name,
+                endpoint_config,
+            )
+
+        data["endpoints"] = existing_endpoints
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_endpoint_env_vars(cls, data: dict[str, object]) -> dict[str, object]:
+        """Parse endpoint environment variables into endpoints dict.
+
+        Environment variables like OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER
+        are parsed into the endpoints dictionary structure since Pydantic
+        settings' env_nested_delimiter only works with nested models,
+        not with dict fields.
+
+        Args:
+            data: The raw data dictionary being validated.
+
+        Returns:
+            The data dictionary with parsed endpoints merged in.
+
+        """
+        _msg = "Parsing endpoint environment variables"
+        log.debug(_msg)
+
+        endpoints: dict[str, dict[str, object]] = {}
+
+        for key, value in os.environ.items():
+            parsed = cls._parse_env_var_key(key)
+            if parsed is None:
+                continue
+
+            endpoint_name, field_name = parsed
+
+            if endpoint_name not in endpoints:
+                endpoints[endpoint_name] = {}
+
+            endpoints[endpoint_name][field_name] = cls._convert_endpoint_value(
+                field_name,
+                value,
+            )
+
+        data = cls._merge_endpoints_into_data(endpoints, data)
+
+        _msg = "Endpoint environment variables parsed"
+        log.debug(_msg)
+        return data
+
     @classmethod
     def settings_customise_sources(
         cls,

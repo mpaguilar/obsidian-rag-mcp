@@ -212,6 +212,8 @@ def get_documents_by_tag(
             parsed before validation.
             Example dict: {"include_tags": ["work"], "match_mode": "any"}
             Example JSON: '{"include_tags": ["work"], "match_mode": "any"}'
+            Tags should NOT include the '#' prefix. Use plain tag names like
+            "personal/expenses" instead of "#personal/expenses".
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
@@ -592,6 +594,10 @@ def get_tasks(
         - "lowest": Lowest priority tasks
 
     Tag Filtering:
+        Tags should NOT include the '#' prefix. Use plain tag names like
+        "personal/expenses" or "business/iConnections" instead of
+        "#personal/expenses" or "#business/iConnections".
+
         Tag filters are specified in the tag_filters object:
 
         include_tags: Tasks must have these tags (controlled by match_mode).
@@ -629,15 +635,9 @@ def get_tasks(
             - "all" (default): AND logic across all date conditions
             - "any": OR logic across all date conditions
 
-    Legacy Support:
-        The 'tags' parameter is maintained for backward compatibility and uses
-        AND logic (all specified tags required). New code should use
-        'tag_filters.include_tags' with 'tag_filters.match_mode' for more flexibility.
-
     Filter Logic:
         - Multiple status values: OR logic (task matches ANY status)
         - Multiple priority values: OR logic (task matches ANY priority)
-        - Legacy tags parameter: AND logic (task must have ALL tags)
         - tag_filters.include_tags with match_mode="all" (default): AND logic
         - tag_filters.include_tags with match_mode="any": OR logic
         - tag_filters.exclude_tags: OR logic (task excluded if it has ANY excluded tag)
@@ -692,7 +692,6 @@ def get_tasks(
         status=params.status,
         tag_filters=tag_filters,
         date_filters=date_filters,
-        tags=params.tags,
         priority=params.priority,
         limit=params.limit,
         offset=params.offset,

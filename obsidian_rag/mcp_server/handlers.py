@@ -351,8 +351,9 @@ class GetTasksToolInput:
     Attributes:
         status: List of statuses to filter by.
         tag_filters: Tag filter parameters with include/exclude lists and match mode.
+            Tags should NOT include the '#' prefix. Use plain tag names like
+            "personal/expenses" instead of "#personal/expenses".
         date_filters: Date filter parameters with ISO date strings and match mode.
-        tags: Legacy parameter - list of tags that tasks must have (all required).
         priority: List of priorities to filter by.
         limit: Maximum number of results.
         offset: Number of results to skip.
@@ -362,7 +363,6 @@ class GetTasksToolInput:
     status: list[str] | None = None
     tag_filters: "TagFilterStrings | None" = None
     date_filters: "TaskDateFilterStrings | None" = None
-    tags: list[str] | None = None
     priority: list[str] | None = None
     limit: int = 20
     offset: int = 0
@@ -396,6 +396,9 @@ class TaskDateFilterStrings:
 @dataclass
 class TagFilterStrings:
     """Tag filter string parameters for get_tasks handler.
+
+    Tags should NOT include the '#' prefix. Use plain tag names like
+    "personal/expenses" instead of "#personal/expenses".
 
     Attributes:
         include_tags: List of tags that tasks must have.
@@ -458,7 +461,6 @@ def _get_tasks_handler(
         scheduled_before=scheduled_before_date,
         completion_after=completion_after_date,
         completion_before=completion_before_date,
-        tags=request.tags,
         include_tags=tag_filters.include_tags,
         exclude_tags=tag_filters.exclude_tags,
         tag_match_mode=tag_filters.match_mode,

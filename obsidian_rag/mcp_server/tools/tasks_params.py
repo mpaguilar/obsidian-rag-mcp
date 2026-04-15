@@ -33,7 +33,6 @@ class GetTasksFilterParams:
     Filter Logic:
         - Multiple status values: OR logic (task matches ANY status)
         - Multiple priority values: OR logic (task matches ANY priority)
-        - Legacy tags parameter: AND logic (task must have ALL tags)
         - include_tags with tag_match_mode="all" (default): AND logic
         - include_tags with tag_match_mode="any": OR logic
         - exclude_tags: OR logic (task excluded if it has ANY excluded tag)
@@ -41,6 +40,11 @@ class GetTasksFilterParams:
             - "all" (default): AND logic across all date conditions
             - "any": OR logic across all date conditions
         - Different filter types (status, tags, priority, dates): AND logic
+
+    Tag Filtering:
+        Tags should NOT include the '#' prefix. Use plain tag names like
+        "personal/expenses" or "business/iConnections" instead of
+        "#personal/expenses" or "#business/iConnections".
 
     Tag Filtering Examples:
         - include_tags=["work", "urgent"], tag_match_mode="all": Task must have BOTH
@@ -58,8 +62,6 @@ class GetTasksFilterParams:
         scheduled_before: Filter tasks scheduled on or before this date (inclusive).
         completion_after: Filter tasks completed on or after this date (inclusive).
         completion_before: Filter tasks completed on or before this date (inclusive).
-        tags: Legacy parameter - list of tags that tasks must have (all required, AND logic).
-            Deprecated: Use include_tags instead.
         include_tags: List of tags that tasks must have.
             Use tag_match_mode to control AND vs OR logic.
         exclude_tags: List of tags that tasks must NOT have (OR logic - any match excludes).
@@ -82,7 +84,6 @@ class GetTasksFilterParams:
     scheduled_before: date | None = None
     completion_after: date | None = None
     completion_before: date | None = None
-    tags: list[str] | None = None  # Legacy parameter
     include_tags: list[str] | None = None
     exclude_tags: list[str] | None = None
     tag_match_mode: Literal["all", "any"] = "all"
@@ -120,7 +121,6 @@ class GetTasksRequest:
         status: List of statuses to filter by.
         tag_filters: Tag filter parameters with include/exclude lists and match mode.
         date_filters: Date filter parameters with ISO date strings.
-        tags: Legacy parameter - list of tags to filter by (all required).
         priority: List of priorities to filter by.
         limit: Maximum number of results.
         offset: Number of results to skip.
@@ -130,7 +130,6 @@ class GetTasksRequest:
     status: list[str] | None = None
     tag_filters: "TagFilterStrings | None" = None
     date_filters: "TaskDateFilterStrings | None" = None
-    tags: list[str] | None = None
     priority: list[str] | None = None
     limit: int = 20
     offset: int = 0

@@ -36,7 +36,7 @@ class TestGetTasksPostgresql:
 
         # Create filters with tags
         filters = GetTasksFilterParams(
-            tags=["work", "urgent"],
+            include_tags=["work", "urgent"],
             limit=20,
             offset=0,
         )
@@ -118,7 +118,7 @@ class TestGetTasksPostgresql:
 
         # Create filters with multiple tags
         filters = GetTasksFilterParams(
-            tags=["work", "urgent"],
+            include_tags=["work", "urgent"],
             limit=20,
             offset=0,
         )
@@ -160,7 +160,7 @@ class TestApplyTagFiltersPostgresql:
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
 
-        filters = GetTasksFilterParams(tags=["work"])
+        filters = GetTasksFilterParams(include_tags=["work"])
         result = _apply_tag_filters(mock_query, filters)
 
         # Should call filter once for the tag
@@ -175,7 +175,7 @@ class TestApplyTagFiltersPostgresql:
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
 
-        filters = GetTasksFilterParams(tags=["work", "urgent", "personal"])
+        filters = GetTasksFilterParams(include_tags=["work", "urgent", "personal"])
         result = _apply_tag_filters(mock_query, filters)
 
         # Should call filter once per tag
@@ -189,7 +189,7 @@ class TestApplyTagFiltersPostgresql:
 
         mock_query = MagicMock()
 
-        filters = GetTasksFilterParams(tags=[])
+        filters = GetTasksFilterParams(include_tags=[])
         result = _apply_tag_filters(mock_query, filters)
 
         # Should not call filter
@@ -203,7 +203,7 @@ class TestApplyTagFiltersPostgresql:
 
         mock_query = MagicMock()
 
-        filters = GetTasksFilterParams(tags=None)
+        filters = GetTasksFilterParams(include_tags=None)
         result = _apply_tag_filters(mock_query, filters)
 
         # Should not call filter

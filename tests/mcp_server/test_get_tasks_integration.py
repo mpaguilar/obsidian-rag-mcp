@@ -245,7 +245,7 @@ class TestGetTasksIntegration:
         filtered = [t for t in tasks if t.tags and "urgent" in t.tags]
         _configure_mock_for_tasks(db_session, filtered, doc, total_count=len(filtered))
 
-        filters = GetTasksFilterParams(tags=["urgent"])
+        filters = GetTasksFilterParams(include_tags=["urgent"])
         result = get_tasks(db_session, filters)
 
         # Should find task with urgent tag
@@ -372,7 +372,7 @@ class TestGetTasksEdgeCases:
 
         filters = GetTasksFilterParams(
             status=["completed"],
-            tags=["nonexistent_tag"],
+            include_tags=["nonexistent_tag"],
         )
         result = get_tasks(db_session, filters)
 
@@ -660,52 +660,3 @@ class TestGetTasksTagFiltering:
                 db_manager=db_manager,
                 request=request,
             )
-
-    def test_get_tasks_integration_backward_compatibility_legacy_tags(
-        self, db_session, sample_data
-    ):
-        """Integration test for backward compatibility with legacy tags parameter."""
-        from unittest.mock import patch
-
-        vault, doc, tasks = sample_data
-
-        # Create a mock db_manager that returns our test session
-        db_manager = MagicMock()
-        db_manager.get_session.return_value.__enter__ = MagicMock(
-            return_value=db_session
-        )
-        db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch("obsidian_rag.mcp_server.handlers.get_tasks_tool") as mock_get_tasks:
-            mock_get_tasks.return_value.model_dump.return_value = {
-                "results": [
-                    {
-                        "id": "task-1",
-                        "description": "Legacy tagged task",
-                        "tags": ["work", "urgent"],
-                        "status": "not_completed",
-                    }
-                ],
-                "total_count": 1,
-                "has_more": False,
-                "next_offset": None,
-            }
-
-            # Use legacy 'tags' parameter
-            request = GetTasksRequest(
-                tags=["work", "urgent"],
-            )
-
-            result = _get_tasks_handler(
-                db_manager=db_manager,
-                request=request,
-            )
-
-            assert result["total_count"] == 1
-
-            # Verify legacy tags parameter is passed
-            call_args = mock_get_tasks.call_args
-            filter_params = call_args.kwargs["filters"]
-            assert filter_params.tags == ["work", "urgent"]
-            assert filter_params.include_tags is None
-            assert filter_params.exclude_tags is None

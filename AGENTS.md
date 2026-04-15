@@ -149,6 +149,61 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 027.task-tags (Completed 2026-04-15)
+
+**Objective:** Implement defensive tag prefix stripping and remove legacy `tags` parameter from MCP task tools. Tags are stored in the database without the `#` prefix, but LLM clients may include it when passing filter values. This checkpoint ensures tag filters work correctly regardless of whether the `#` prefix is included.
+
+**Changes Made:**
+- **Updated `obsidian_rag/mcp_server/tools/tasks.py`**:
+  - Added `_strip_tag_prefix()` helper function to strip leading `#` characters from tag strings
+  - Added `_strip_tag_list()` helper to strip prefixes from all tags in a list
+  - Applied prefix stripping in `_apply_include_tags_any()`, `_apply_include_tags_all()`, and `_apply_exclude_tags()`
+  - Removed `_apply_legacy_tags()` function (legacy `tags` parameter removed per REQ-003)
+  - Updated `_apply_tag_filters()` to remove legacy tags support
+- **Updated `obsidian_rag/mcp_server/tools/documents_tags.py`**:
+  - Imported `_strip_tag_list` from tasks module
+  - Applied prefix stripping in `apply_postgresql_include_tags()` and `apply_postgresql_exclude_tags()`
+- **Updated `obsidian_rag/cli.py`**:
+  - Imported `_strip_tag_list` from tasks module
+  - Replaced legacy `--tag` option with `--include-tags` and `--exclude-tags` options
+  - Updated `TaskFilterOptions` dataclass to use `include_tags` and `exclude_tags`
+  - Applied prefix stripping in `_apply_include_tags_cli()` and `_apply_exclude_tags_cli()`
+- **Updated `obsidian_rag/mcp_server/tools/tasks_params.py`**:
+  - Removed legacy `tags` field from `GetTasksFilterParams` dataclass
+  - Removed legacy `tags` field from `GetTasksRequest` dataclass
+  - Updated docstrings to remove references to legacy parameter
+- **Updated `obsidian_rag/mcp_server/handlers.py`**:
+  - Removed legacy `tags` field from `GetTasksToolInput` dataclass
+  - Updated `_get_tasks_handler()` to remove legacy tags support
+  - Updated `TagFilterStrings` docstring to explicitly state tags should NOT include `#` prefix
+- **Updated `obsidian_rag/mcp_server/server.py`**:
+  - Updated `get_tasks()` docstring with explicit note: "Tags should NOT include the '#' prefix"
+  - Removed `tags=params.tags` from `GetTasksRequest` creation
+- **Updated test files**:
+  - Updated tests to use `include_tags` instead of legacy `tags` parameter
+  - Removed tests for legacy `tags` parameter functionality
+
+**Key Design Decisions:**
+- Defensive prefix stripping ensures LLM clients get correct results regardless of whether they include `#`
+- The stripping is applied early in the filter pipeline before building SQL conditions
+- Empty tags (after stripping all `#` characters) are silently ignored
+- Legacy `tags` parameter fully removed as confirmed by user: "legacy tools should be removed"
+- CLI now uses `--include-tags` and `--exclude-tags` to match MCP API
+
+**Tag Filter Examples:**
+```python
+# These now return the same results:
+get_tasks(tag_filters={"include_tags": ["#personal/expenses"]})
+get_tasks(tag_filters={"include_tags": ["personal/expenses"]})
+```
+
+**Verification:**
+- All 1364 tests pass (1 skipped)
+- 100% code coverage (4084 statements, 790 branches)
+- All ruff checks pass (no violations)
+- All mypy type checks pass on source code
+- All source files under 1000 lines (cli.py at 1126 is pre-existing exception)
+
 ### 026.validation-bugfix (Completed 2026-04-15)
 
 **Objective:** Fix MCP tool parameter validation to handle JSON-encoded string inputs from clients that double-encode their parameters. Also complete documentation of all environment variables (46+ OBSIDIAN_RAG_* variables) to achieve 80%+ documentation coverage.

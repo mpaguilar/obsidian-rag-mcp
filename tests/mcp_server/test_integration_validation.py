@@ -171,7 +171,6 @@ class TestFullFilterSerialization:
             date_filters=TaskDateFilterStrings(
                 due_after="2026-01-01", due_before="2026-12-31", match_mode="any"
             ),
-            tags=None,
             priority=["high"],
             limit=50,
             offset=10,
@@ -191,7 +190,6 @@ class TestFullFilterSerialization:
                     "due_before": original.date_filters.due_before,
                     "match_mode": original.date_filters.match_mode,
                 },
-                "tags": original.tags,
                 "priority": original.priority,
                 "limit": original.limit,
                 "offset": original.offset,

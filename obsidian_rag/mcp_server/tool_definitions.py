@@ -404,6 +404,10 @@ def get_tasks_tool(
         - "lowest": Lowest priority tasks
 
     Tag Filtering:
+        Tags should NOT include the '#' prefix. Use plain tag names like
+        "personal/expenses" or "business/iConnections" instead of
+        "#personal/expenses" or "#business/iConnections".
+
         Tag filters are specified in the request.tag_filters object:
 
         include_tags: Tasks must have these tags (controlled by match_mode).
@@ -440,15 +444,9 @@ def get_tasks_tool(
             - "all" (default): AND logic across all date conditions
             - "any": OR logic across all date conditions
 
-    Legacy Support:
-        The 'tags' parameter is deprecated but maintained for backward
-        compatibility. It uses AND logic (all tags required). Use
-        'tag_filters.include_tags' with 'tag_filters.match_mode' for new code.
-
     Filter Logic Summary:
         - Multiple status values: OR logic (task matches ANY status)
         - Multiple priority values: OR logic (task matches ANY priority)
-        - Legacy tags parameter: AND logic (all tags required)
         - tag_filters.include_tags with match_mode="all": AND logic
         - tag_filters.include_tags with match_mode="any": OR logic
         - tag_filters.exclude_tags: OR logic (any match excludes task)
