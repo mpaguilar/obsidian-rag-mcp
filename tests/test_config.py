@@ -856,6 +856,40 @@ class TestMCPConfigValidators:
         config = MCPConfig(rate_limit_per_second=-5.0)
         assert config.rate_limit_per_second == 10.0
 
+    def test_mcp_config_host_strips_quotes(self):
+        """Test host validator strips surrounding quotes (lines 603-621)."""
+        from obsidian_rag.config import MCPConfig
+
+        # Test double quotes
+        config = MCPConfig(host='"0.0.0.0"')
+        assert config.host == "0.0.0.0"
+
+        # Test single quotes
+        config = MCPConfig(host="'127.0.0.1'")
+        assert config.host == "127.0.0.1"
+
+        # Test whitespace and quotes
+        config = MCPConfig(host='  "localhost"  ')
+        assert config.host == "localhost"
+
+    def test_mcp_config_host_empty_raises(self):
+        """Test host validator raises for empty string after stripping (lines 616-617)."""
+        from obsidian_rag.config import MCPConfig
+
+        with pytest.raises(ValueError) as exc_info:
+            MCPConfig(host='""')
+
+        assert "Host cannot be empty" in str(exc_info.value)
+
+    def test_mcp_config_host_empty_whitespace_raises(self):
+        """Test host validator raises for whitespace-only string (lines 616-617)."""
+        from obsidian_rag.config import MCPConfig
+
+        with pytest.raises(ValueError) as exc_info:
+            MCPConfig(host="   ")
+
+        assert "Host cannot be empty" in str(exc_info.value)
+
 
 class TestSettingsVaultValidation:
     """Test Settings vault validation."""

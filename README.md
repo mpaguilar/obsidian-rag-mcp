@@ -231,15 +231,41 @@ mcp:
   token: ${OBSIDIAN_RAG_MCP_TOKEN}  # Required for authentication
   cors_origins: ["*"]
   enable_health_check: true
+  stateless_http: false
   max_concurrent_sessions: 100
+  session_timeout_seconds: 300
   rate_limit_per_second: 10.0
+  rate_limit_window: 60
+  enable_request_logging: true
 ```
 
 Or via environment variables:
 
 ```bash
+# Required
 export OBSIDIAN_RAG_MCP_TOKEN="your-secret-token"
+
+# Server binding and ports
+export OBSIDIAN_RAG_MCP_HOST="0.0.0.0"
 export OBSIDIAN_RAG_MCP_PORT=8000
+
+# CORS configuration
+export OBSIDIAN_RAG_MCP_CORS_ORIGINS='["*"]'  # JSON array format
+
+# Health check endpoint
+export OBSIDIAN_RAG_MCP_ENABLE_HEALTH_CHECK=true
+
+# Stateless mode for horizontal scaling
+export OBSIDIAN_RAG_MCP_STATELESS_HTTP=false
+
+# Connection limits and rate limiting
+export OBSIDIAN_RAG_MCP_MAX_CONCURRENT_SESSIONS=100
+export OBSIDIAN_RAG_MCP_SESSION_TIMEOUT_SECONDS=300
+export OBSIDIAN_RAG_MCP_RATE_LIMIT_PER_SECOND=10.0
+export OBSIDIAN_RAG_MCP_RATE_LIMIT_WINDOW=60
+
+# Request logging
+export OBSIDIAN_RAG_MCP_ENABLE_REQUEST_LOGGING=true
 ```
 
 ### MCP Endpoint and Transport
@@ -457,6 +483,18 @@ Config files are searched in order:
 1. `$PWD/.obsidian-rag.yaml` - Project-specific config
 2. `$XDG_CONFIG_HOME/obsidian-rag/config.yaml` (or `~/.config/obsidian-rag/config.yaml`) - User config
 
+**XDG_CONFIG_HOME:**
+
+The `XDG_CONFIG_HOME` environment variable specifies the base directory for user-specific configuration files. If not set, it defaults to `~/.config`.
+
+```bash
+# Use custom config directory
+export XDG_CONFIG_HOME="/path/to/custom/config"
+
+# Config will be loaded from:
+# /path/to/custom/config/obsidian-rag/config.yaml
+```
+
 ### Example Configuration
 
 ```yaml
@@ -515,20 +553,216 @@ api_key: ${OPENAI_API_KEY:-default_key}
 
 ### Environment Variables
 
-All settings can be configured via environment variables using the prefix `OBSIDIAN_RAG_`:
+All settings can be configured via environment variables using the prefix `OBSIDIAN_RAG_`. Create a `.env` file or set variables directly:
 
 ```bash
-# Database URL
-export OBSIDIAN_RAG_DATABASE_URL="postgresql://user:pass@localhost/obsidian_rag"
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
 
-# Embedding provider settings
-export OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER="openai"
-export OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MODEL="text-embedding-3-small"
-export OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_API_KEY="sk-..."
+# PostgreSQL connection URL (required)
+# Format: postgresql+psycopg://user:password@host:port/database
+# Default: postgresql+psycopg://localhost/obsidian_rag
+OBSIDIAN_RAG_DATABASE_URL=postgresql://user:password@localhost/obsidian_rag
 
-# Logging
-export OBSIDIAN_RAG_LOGGING_LEVEL="DEBUG"
+# Vector embedding dimension - must match your embedding model output
+# Valid range: 1-2000 (pgvector HNSW index limit)
+# Default: 1536 (matches text-embedding-3-small)
+# Other common values: 384 (all-MiniLM-L6-v2), 768 (text-embedding-3-large)
+OBSIDIAN_RAG_DATABASE_VECTOR_DIMENSION=1536
+
+# Connection pool settings for production deployments
+# Number of persistent connections to maintain
+OBSIDIAN_RAG_DATABASE_POOL_SIZE=10
+
+# Maximum temporary connections beyond pool_size during bursts
+OBSIDIAN_RAG_DATABASE_MAX_OVERFLOW=20
+
+# Seconds to wait for a connection from the pool before timeout
+OBSIDIAN_RAG_DATABASE_POOL_TIMEOUT=30
+
+# Seconds after which to recycle connections (prevent stale connections)
+OBSIDIAN_RAG_DATABASE_POOL_RECYCLE=3600
+
+
+# =============================================================================
+# EMBEDDING ENDPOINT (for vector search)
+# =============================================================================
+
+# Provider: openai, openrouter, or huggingface
+OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER=openai
+
+# Model name - must match provider
+# OpenAI: text-embedding-3-small, text-embedding-3-large
+# OpenRouter: openai/text-embedding-3-small
+# HuggingFace: all-MiniLM-L6-v2, sentence-transformers/all-mpnet-base-v2
+OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MODEL=text-embedding-3-small
+
+# API key for the embedding provider (required for openai/openrouter)
+# For HuggingFace, this is optional (uses local models)
+OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_API_KEY=sk-your-api-key-here
+
+# Optional: Custom base URL for the embedding API
+# Leave empty to use provider defaults
+OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_BASE_URL=
+
+
+# =============================================================================
+# ANALYSIS ENDPOINT (for document analysis tasks)
+# =============================================================================
+
+# Provider: openai or openrouter
+OBSIDIAN_RAG_ENDPOINTS_ANALYSIS_PROVIDER=openai
+
+# Model for analysis tasks (e.g., summarization, extraction)
+OBSIDIAN_RAG_ENDPOINTS_ANALYSIS_MODEL=gpt-4
+
+# API key for analysis provider
+OBSIDIAN_RAG_ENDPOINTS_ANALYSIS_API_KEY=sk-your-api-key-here
+
+# Base URL for analysis API
+OBSIDIAN_RAG_ENDPOINTS_ANALYSIS_BASE_URL=https://api.openai.com/v1
+
+# Temperature for generation (0.0-2.0, lower is more deterministic)
+OBSIDIAN_RAG_ENDPOINTS_ANALYSIS_TEMPERATURE=0.7
+
+# Maximum tokens for analysis responses
+OBSIDIAN_RAG_ENDPOINTS_ANALYSIS_MAX_TOKENS=2000
+
+
+# =============================================================================
+# CHAT ENDPOINT (for conversational queries)
+# =============================================================================
+
+# Provider: openai or openrouter
+OBSIDIAN_RAG_ENDPOINTS_CHAT_PROVIDER=openai
+
+# Model for chat/completion tasks
+OBSIDIAN_RAG_ENDPOINTS_CHAT_MODEL=gpt-4
+
+# API key for chat provider
+OBSIDIAN_RAG_ENDPOINTS_CHAT_API_KEY=sk-your-api-key-here
+
+# Base URL for chat API
+OBSIDIAN_RAG_ENDPOINTS_CHAT_BASE_URL=https://api.openai.com/v1
+
+# Temperature for chat responses (higher = more creative)
+OBSIDIAN_RAG_ENDPOINTS_CHAT_TEMPERATURE=0.8
+
+
+# =============================================================================
+# INGESTION SETTINGS
+# =============================================================================
+
+# Number of files to process in a single batch
+OBSIDIAN_RAG_INGESTION_BATCH_SIZE=100
+
+# Maximum file size in MB (files larger than this are skipped)
+OBSIDIAN_RAG_INGESTION_MAX_FILE_SIZE_MB=10
+
+# Log progress every N files during ingestion
+OBSIDIAN_RAG_INGESTION_PROGRESS_INTERVAL=10
+
+# Legacy: Maximum characters per chunk (use chunking settings below instead)
+OBSIDIAN_RAG_INGESTION_MAX_CHUNK_CHARS=24000
+
+# Legacy: Character overlap between chunks
+OBSIDIAN_RAG_INGESTION_CHUNK_OVERLAP_CHARS=800
+
+
+# =============================================================================
+# CHUNKING CONFIGURATION (token-based document splitting)
+# =============================================================================
+
+# Target chunk size in tokens (determines how documents are split)
+# Valid range: 64-2048
+# Smaller chunks = more precise search, more storage
+# Larger chunks = broader context, less storage
+OBSIDIAN_RAG_CHUNKING_CHUNK_SIZE=512
+
+# Token overlap between chunks (preserves context across boundaries)
+OBSIDIAN_RAG_CHUNKING_CHUNK_OVERLAP=50
+
+# Directory to cache tokenizer models (created automatically)
+OBSIDIAN_RAG_CHUNKING_TOKENIZER_CACHE_DIR=~/.cache/obsidian-rag/tokenizers
+
+# Tokenizer model to use for counting tokens
+# gpt2 is a good general-purpose tokenizer
+OBSIDIAN_RAG_CHUNKING_TOKENIZER_MODEL=gpt2
+
+# Enable flashrank re-ranking for improved search relevance
+# Requires flashrank package: pip install flashrank
+OBSIDIAN_RAG_CHUNKING_FLASHRANK_ENABLED=true
+
+# Flashrank model for re-ranking (cross-encoder)
+# ms-marco-MiniLM-L-12-v2 is ~100-200MB RAM
+OBSIDIAN_RAG_CHUNKING_FLASHRANK_MODEL=ms-marco-MiniLM-L-12-v2
+
+# Number of top results to re-rank after vector search
+OBSIDIAN_RAG_CHUNKING_FLASHRANK_TOP_K=10
+
+
+# =============================================================================
+# MCP SERVER CONFIGURATION
+# =============================================================================
+
+# Bind address for the HTTP server (0.0.0.0 = all interfaces)
+OBSIDIAN_RAG_MCP_HOST=0.0.0.0
+
+# HTTP port for the MCP server
+OBSIDIAN_RAG_MCP_PORT=8000
+
+# Bearer token for authentication (REQUIRED - no default)
+# Clients must include: Authorization: Bearer <token>
+OBSIDIAN_RAG_MCP_TOKEN=your-secret-token-here
+
+# CORS origins (JSON array format)
+# Use '["*"]' to allow all origins (development only)
+# Use '["https://app.example.com"]' for specific domains
+OBSIDIAN_RAG_MCP_CORS_ORIGINS=["*"]
+
+# Enable health check endpoint at /health
+OBSIDIAN_RAG_MCP_ENABLE_HEALTH_CHECK=true
+
+# Stateless mode for horizontal scaling (disables session affinity)
+OBSIDIAN_RAG_MCP_STATELESS_HTTP=false
+
+# Maximum concurrent client sessions
+OBSIDIAN_RAG_MCP_MAX_CONCURRENT_SESSIONS=100
+
+# Session timeout in seconds (inactive sessions are cleaned up)
+OBSIDIAN_RAG_MCP_SESSION_TIMEOUT_SECONDS=300
+
+# Rate limit: maximum connections per second per IP
+OBSIDIAN_RAG_MCP_RATE_LIMIT_PER_SECOND=10.0
+
+# Rate limit window in seconds
+OBSIDIAN_RAG_MCP_RATE_LIMIT_WINDOW=60
+
+# Enable HTTP request/response logging (can be verbose)
+OBSIDIAN_RAG_MCP_ENABLE_REQUEST_LOGGING=true
+
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+
+# Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+OBSIDIAN_RAG_LOGGING_LEVEL=INFO
+
+# Log format: text or json
+# text = human-readable, json = structured for log aggregation
+OBSIDIAN_RAG_LOGGING_FORMAT=text
 ```
+
+**Configuration Precedence** (highest to lowest):
+1. CLI flags (e.g., `--embedding-provider openai`)
+2. Environment variables (shown above)
+3. Config file (`.obsidian-rag.yaml` or `~/.config/obsidian-rag/config.yaml`)
+4. Default values
+
+**See Also:**
+- [Complete Environment Variables Reference](./docs/environment-variables.md) - Detailed reference with validation rules and examples
 
 ## Multi-Vault Configuration
 

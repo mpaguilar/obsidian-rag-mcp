@@ -21,6 +21,7 @@ class TestMainFunction:
         mock_settings.mcp.token = "test-token"
         mock_settings.mcp.host = "127.0.0.1"
         mock_settings.mcp.port = 8000
+        mock_settings.database.url = "postgresql://user:pass@localhost/db"
         mock_get_settings.return_value = mock_settings
 
         mock_app = MagicMock()
@@ -94,3 +95,53 @@ class TestMainFunction:
             main()
 
         assert exc_info.value.code == 1
+
+    @patch("obsidian_rag.mcp_server.__main__.uvicorn")
+    @patch("obsidian_rag.mcp_server.__main__.get_settings")
+    @patch("obsidian_rag.mcp_server.__main__.create_http_app")
+    def test_main_uvicorn_system_exit(
+        self, mock_create_http_app, mock_get_settings, mock_uvicorn
+    ):
+        """Test main function handles SystemExit from uvicorn (lines 78-86)."""
+        from obsidian_rag.mcp_server.__main__ import main
+
+        mock_settings = MagicMock()
+        mock_settings.mcp.token = "test-token"
+        mock_settings.mcp.host = "0.0.0.0"
+        mock_settings.mcp.port = 8000
+        mock_get_settings.return_value = mock_settings
+
+        mock_create_http_app.return_value = MagicMock()
+
+        # Simulate SystemExit from uvicorn (e.g., port already in use)
+        mock_uvicorn.run.side_effect = SystemExit(1)
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+
+    @patch("obsidian_rag.mcp_server.__main__.uvicorn")
+    @patch("obsidian_rag.mcp_server.__main__.get_settings")
+    @patch("obsidian_rag.mcp_server.__main__.create_http_app")
+    def test_main_uvicorn_os_error(
+        self, mock_create_http_app, mock_get_settings, mock_uvicorn
+    ):
+        """Test main function handles OSError from uvicorn (lines 87-95)."""
+        from obsidian_rag.mcp_server.__main__ import main
+
+        mock_settings = MagicMock()
+        mock_settings.mcp.token = "test-token"
+        mock_settings.mcp.host = "invalid-host"
+        mock_settings.mcp.port = 8000
+        mock_get_settings.return_value = mock_settings
+
+        mock_create_http_app.return_value = MagicMock()
+
+        # Simulate OSError from uvicorn (e.g., invalid host)
+        mock_uvicorn.run.side_effect = OSError("Name or service not known")
+
+        with pytest.raises(OSError) as exc_info:
+            main()
+
+        assert "Name or service not known" in str(exc_info.value)

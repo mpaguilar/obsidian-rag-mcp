@@ -149,6 +149,52 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 026.validation-bugfix (Completed 2026-04-15)
+
+**Objective:** Fix MCP tool parameter validation to handle JSON-encoded string inputs from clients that double-encode their parameters. Also complete documentation of all environment variables (46+ OBSIDIAN_RAG_* variables) to achieve 80%+ documentation coverage.
+
+**Changes Made:**
+- **Updated `obsidian_rag/mcp_server/handlers.py`**:
+  - Added `parse_json_str()` function to parse JSON strings to dicts before Pydantic validation
+  - Added `AnnotatedQueryFilter` and `AnnotatedGetTasksInput` types with `BeforeValidator` for automatic JSON parsing
+  - Updated `QueryFilterParams` to use default field values (fixes validation issues)
+  - Added comprehensive docstrings for new types and functions
+- **Updated `obsidian_rag/mcp_server/server.py`**:
+  - Modified `query_documents()`, `get_documents_by_tag()`, `get_documents_by_property()`, and `get_tasks()` to handle JSON string inputs
+  - Added runtime type checking and conversion for filter parameters
+  - Updated docstrings with examples for JSON string inputs
+- **Updated `obsidian_rag/chunking.py`**:
+  - Removed unused `_calculate_next_start_legacy()` function (lines 630-650)
+  - This was dead code not used anywhere in the codebase
+- **Created `docs/environment-variables.md`**:
+  - Comprehensive reference documenting all 46+ OBSIDIAN_RAG_* environment variables
+  - Includes type, default value, description, and usage examples for each variable
+  - Covers: Database (6), Endpoints (15), Ingestion (5), Chunking (7), Logging (2), MCP Server (11)
+- **Updated `README.md`**:
+  - Added database pool settings section (OBSIDIAN_RAG_DATABASE_POOL_SIZE, MAX_OVERFLOW, etc.)
+  - Added ingestion settings documentation
+  - Added complete MCP server environment variables
+  - Added XDG_CONFIG_HOME documentation
+  - Cross-reference to new environment-variables.md doc
+- **Updated `docs/chunking.md`**:
+  - Added missing chunking environment variables (TOKENIZER_CACHE_DIR, TOKENIZER_MODEL, FLASHRANK_MODEL)
+
+**Bug Fixes:**
+- **JSON String Handling**: MCP tools now accept filter parameters as JSON strings (e.g., `'{"include_tags": ["work"]}'`) in addition to dict objects. This fixes issues with clients that serialize their parameters before sending.
+- **Empty String Handling**: Empty or whitespace-only JSON strings are treated as None (no filters)
+- **Nested Dataclass Support**: JSON parsing handles nested structures like `tag_filters` and `date_filters`
+
+**Documentation Coverage:**
+- **Before**: ~20% of environment variables documented in README
+- **After**: 100% of environment variables documented across README and environment-variables.md
+
+**Verification:**
+- All 1311 tests pass (1 skipped)
+- 100% code coverage (3953 statements, 752 branches)
+- All ruff checks pass (no violations)
+- All mypy type checks pass on source code
+- All source files under 1000 lines (cli.py at 1076 is pre-existing exception)
+
 ### 025.ingest-bugfix (Completed 2026-03-23)
 
 **Objective:** Fix MCP ingest tool double invocation bug that causes "Request already responded to" error. Implement request tracking mechanism to ensure idempotent behavior - duplicate calls within same session return cached result without re-processing files. Also implement REQ-005: vault not found error handling to return clean error responses instead of raising exceptions.

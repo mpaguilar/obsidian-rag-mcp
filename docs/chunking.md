@@ -45,9 +45,17 @@ chunking:
 All chunking options can be configured via environment variables:
 
 ```bash
+# Chunk sizing
 export OBSIDIAN_RAG_CHUNKING_CHUNK_SIZE=512
 export OBSIDIAN_RAG_CHUNKING_CHUNK_OVERLAP=50
+
+# Tokenizer configuration
+export OBSIDIAN_RAG_CHUNKING_TOKENIZER_CACHE_DIR="~/.cache/obsidian-rag/tokenizers"
+export OBSIDIAN_RAG_CHUNKING_TOKENIZER_MODEL="gpt2"
+
+# FlashRank re-ranking
 export OBSIDIAN_RAG_CHUNKING_FLASHRANK_ENABLED=true
+export OBSIDIAN_RAG_CHUNKING_FLASHRANK_MODEL="ms-marco-MiniLM-L-12-v2"
 export OBSIDIAN_RAG_CHUNKING_FLASHRANK_TOP_K=10
 ```
 
@@ -233,7 +241,7 @@ Ingestion complete:
   Updated: 5
   Unchanged: 133
   Errors: 0
-  
+
 Chunk statistics:
   Total chunks: 1,247
   Average tokens per chunk: 498

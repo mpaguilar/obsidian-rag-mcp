@@ -1,7 +1,10 @@
 """Tests for _get_tasks_handler function."""
 
+import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from obsidian_rag.mcp_server.handlers import (
     GetTasksRequest,
@@ -404,3 +407,513 @@ class TestGetTasksHandlerAdditional:
         call_args = mock_get_tasks.call_args
         filter_params = call_args.kwargs["filters"]
         assert filter_params.tags == ["work", "urgent"]
+
+
+class TestParseJsonStr:
+    """Tests for parse_json_str helper function."""
+
+    def test_parse_valid_json_string(self):
+        """Test parsing a valid JSON string."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        json_str = '{"include_tags": ["work"], "match_mode": "any"}'
+        result = parse_json_str(json_str)
+
+        assert result == {"include_tags": ["work"], "match_mode": "any"}
+
+    def test_parse_invalid_json_string_raises_error(self):
+        """Test that invalid JSON raises ValidationError."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        invalid_json = "{not valid json}"
+
+        with pytest.raises(json.JSONDecodeError):
+            parse_json_str(invalid_json)
+
+    def test_parse_empty_string_returns_none(self):
+        """Test that empty string returns None."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        result = parse_json_str("")
+        assert result is None
+
+    def test_parse_whitespace_string_returns_none(self):
+        """Test that whitespace-only string returns None."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        result = parse_json_str("   ")
+        assert result is None
+
+    def test_pass_through_dict_unchanged(self):
+        """Test that dict is passed through unchanged."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        input_dict = {"include_tags": ["work"], "match_mode": "any"}
+        result = parse_json_str(input_dict)
+
+        assert result is input_dict
+
+    def test_pass_through_none_unchanged(self):
+        """Test that None is passed through unchanged."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        result = parse_json_str(None)
+        assert result is None
+
+
+class TestAnnotatedQueryFilter:
+    """Tests for AnnotatedQueryFilter type with BeforeValidator."""
+
+    def test_accepts_dict_input(self):
+        """Test that AnnotatedQueryFilter accepts dict input."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedQueryFilter,
+            QueryFilterParams,
+        )
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+        input_data = {"include_tags": ["work"], "match_mode": "any"}
+
+        result = adapter.validate_python(input_data)
+
+        assert isinstance(result, QueryFilterParams)
+        assert result.include_tags == ["work"]
+        assert result.match_mode == "any"
+
+    def test_accepts_json_string_input(self):
+        """Test that AnnotatedQueryFilter accepts JSON string input."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedQueryFilter,
+            QueryFilterParams,
+        )
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+        json_str = '{"include_tags": ["work"], "match_mode": "any"}'
+
+        result = adapter.validate_python(json_str)
+
+        assert isinstance(result, QueryFilterParams)
+        assert result.include_tags == ["work"]
+        assert result.match_mode == "any"
+
+    def test_accepts_none_input(self):
+        """Test that AnnotatedQueryFilter accepts None input."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedQueryFilter
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+
+        result = adapter.validate_python(None)
+
+        assert result is None
+
+    def test_accepts_empty_string_input(self):
+        """Test that AnnotatedQueryFilter treats empty string as None."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedQueryFilter
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+
+        result = adapter.validate_python("")
+
+        assert result is None
+
+    def test_rejects_invalid_json_string(self):
+        """Test that AnnotatedQueryFilter rejects invalid JSON."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedQueryFilter
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+        invalid_json = "{not valid}"
+
+        with pytest.raises(ValidationError):
+            adapter.validate_python(invalid_json)
+
+
+class TestAnnotatedGetTasksInput:
+    """Tests for AnnotatedGetTasksInput type with BeforeValidator."""
+
+    def test_accepts_dict_input(self):
+        """Test that AnnotatedGetTasksInput accepts dict input."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedGetTasksInput,
+            GetTasksToolInput,
+        )
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+        input_data = {"status": ["not_completed"], "limit": 10}
+
+        result = adapter.validate_python(input_data)
+
+        assert isinstance(result, GetTasksToolInput)
+        assert result.status == ["not_completed"]
+        assert result.limit == 10
+
+    def test_accepts_json_string_input(self):
+        """Test that AnnotatedGetTasksInput accepts JSON string input."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedGetTasksInput,
+            GetTasksToolInput,
+        )
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+        json_str = '{"status": ["not_completed"], "limit": 10}'
+
+        result = adapter.validate_python(json_str)
+
+        assert isinstance(result, GetTasksToolInput)
+        assert result.status == ["not_completed"]
+        assert result.limit == 10
+
+    def test_accepts_none_input(self):
+        """Test that AnnotatedGetTasksInput accepts None input."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedGetTasksInput
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+
+        result = adapter.validate_python(None)
+
+        assert result is None
+
+    def test_accepts_empty_string_input(self):
+        """Test that AnnotatedGetTasksInput treats empty string as None."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedGetTasksInput
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+
+        result = adapter.validate_python("")
+
+        assert result is None
+
+    def test_rejects_invalid_json_string(self):
+        """Test that AnnotatedGetTasksInput rejects invalid JSON."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedGetTasksInput
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+        invalid_json = "{not valid}"
+
+        with pytest.raises(ValidationError):
+            adapter.validate_python(invalid_json)
+
+    def test_nested_tag_filters_in_json_string(self):
+        """Test that nested tag_filters work in JSON string."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedGetTasksInput,
+            GetTasksToolInput,
+        )
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+        json_str = json.dumps(
+            {
+                "status": ["not_completed"],
+                "tag_filters": {
+                    "include_tags": ["work", "urgent"],
+                    "exclude_tags": ["blocked"],
+                    "match_mode": "all",
+                },
+                "limit": 20,
+            }
+        )
+
+        result = adapter.validate_python(json_str)
+
+        assert isinstance(result, GetTasksToolInput)
+        assert result.status == ["not_completed"]
+        assert result.tag_filters is not None
+        assert result.tag_filters.include_tags == ["work", "urgent"]
+        assert result.tag_filters.exclude_tags == ["blocked"]
+        assert result.tag_filters.match_mode == "all"
+
+    def test_nested_date_filters_in_json_string(self):
+        """Test that nested date_filters work in JSON string."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedGetTasksInput,
+            GetTasksToolInput,
+        )
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+        json_str = json.dumps(
+            {
+                "date_filters": {
+                    "due_after": "2026-01-01",
+                    "due_before": "2026-12-31",
+                    "match_mode": "any",
+                }
+            }
+        )
+
+        result = adapter.validate_python(json_str)
+
+        assert isinstance(result, GetTasksToolInput)
+        assert result.date_filters is not None
+        assert result.date_filters.due_after == "2026-01-01"
+        assert result.date_filters.due_before == "2026-12-31"
+        assert result.date_filters.match_mode == "any"
+
+
+class TestParseJsonStrComplex:
+    """Additional tests for parse_json_str with complex inputs."""
+
+    def test_parse_nested_object(self):
+        """Test parsing JSON string with nested objects."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        json_str = '{"outer": {"inner": [1, 2, 3]}, "simple": "value"}'
+        result = parse_json_str(json_str)
+
+        assert result == {"outer": {"inner": [1, 2, 3]}, "simple": "value"}
+
+    def test_parse_array(self):
+        """Test parsing JSON string with array at root."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        json_str = '["item1", "item2", "item3"]'
+        result = parse_json_str(json_str)
+
+        assert result == ["item1", "item2", "item3"]
+
+    def test_parse_boolean(self):
+        """Test parsing JSON string with boolean value."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        json_str = "true"
+        result = parse_json_str(json_str)
+
+        assert result is True
+
+    def test_parse_number(self):
+        """Test parsing JSON string with number value."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        json_str = "42"
+        result = parse_json_str(json_str)
+
+        assert result == 42
+
+    def test_parse_string(self):
+        """Test parsing JSON string with string value."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        json_str = '"just a string"'
+        result = parse_json_str(json_str)
+
+        assert result == "just a string"
+
+    def test_pass_through_list_unchanged(self):
+        """Test that list is passed through unchanged."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        input_list = [1, 2, 3]
+        result = parse_json_str(input_list)
+
+        assert result is input_list
+
+    def test_pass_through_int_unchanged(self):
+        """Test that int is passed through unchanged."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        result = parse_json_str(42)
+        assert result == 42
+
+    def test_pass_through_bool_unchanged(self):
+        """Test that bool is passed through unchanged."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        result = parse_json_str(True)
+        assert result is True
+
+
+class TestAnnotatedQueryFilterEdgeCases:
+    """Edge case tests for AnnotatedQueryFilter."""
+
+    def test_rejects_partial_json(self):
+        """Test that partial JSON is rejected."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedQueryFilter
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+        partial_json = '{"include_tags": ["work"]'  # Missing closing brace
+
+        with pytest.raises(ValidationError):
+            adapter.validate_python(partial_json)
+
+    def test_rejects_trailing_comma(self):
+        """Test that JSON with trailing comma is rejected."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedQueryFilter
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+        json_with_trailing = '{"include_tags": ["work"],}'
+
+        with pytest.raises(ValidationError):
+            adapter.validate_python(json_with_trailing)
+
+    def test_rejects_single_quotes(self):
+        """Test that JSON with single quotes is rejected."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedQueryFilter
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+        single_quotes = "{'include_tags': ['work']}"
+
+        with pytest.raises(ValidationError):
+            adapter.validate_python(single_quotes)
+
+    def test_accepts_unicode_in_json(self):
+        """Test that JSON with unicode characters is accepted."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedQueryFilter,
+            QueryFilterParams,
+        )
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+        json_with_unicode = '{"include_tags": ["café", "naïve"]}'
+
+        result = adapter.validate_python(json_with_unicode)
+
+        assert isinstance(result, QueryFilterParams)
+        assert result.include_tags == ["café", "naïve"]
+
+    def test_accepts_whitespace_around_json(self):
+        """Test that JSON with surrounding whitespace is accepted."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedQueryFilter,
+            QueryFilterParams,
+        )
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+        json_with_whitespace = '  \n  {"include_tags": ["work"]}  \n  '
+
+        result = adapter.validate_python(json_with_whitespace)
+
+        assert isinstance(result, QueryFilterParams)
+        assert result.include_tags == ["work"]
+
+
+class TestValidationErrorMessages:
+    """Tests for validation error message quality."""
+
+    def test_invalid_json_error_message(self):
+        """Test that invalid JSON provides helpful error message."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedQueryFilter
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+        invalid_json = "{not valid json}"
+
+        with pytest.raises(ValidationError) as exc_info:
+            adapter.validate_python(invalid_json)
+
+        error_str = str(exc_info.value)
+        # Should indicate JSON parsing failed
+        assert "JSON" in error_str or "json" in error_str.lower()
+
+    def test_validation_error_includes_location(self):
+        """Test that validation error includes field location."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedQueryFilter
+
+        adapter = TypeAdapter(AnnotatedQueryFilter)
+        # match_mode has wrong type
+        json_wrong_type = '{"match_mode": 123}'
+
+        with pytest.raises(ValidationError) as exc_info:
+            adapter.validate_python(json_wrong_type)
+
+        error_str = str(exc_info.value)
+        # Should mention match_mode field
+        assert "match_mode" in error_str
+
+
+class TestAnnotatedGetTasksInputEdgeCases:
+    """Edge case tests for AnnotatedGetTasksInput."""
+
+    def test_all_optional_fields_omitted(self):
+        """Test that all optional fields can be omitted."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedGetTasksInput,
+            GetTasksToolInput,
+        )
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+
+        # Empty JSON object should create default GetTasksToolInput
+        result = adapter.validate_python("{}")
+
+        assert isinstance(result, GetTasksToolInput)
+        assert result.status is None
+        assert result.limit == 20  # Default value
+        assert result.offset == 0  # Default value
+
+    def test_ignores_unknown_fields(self):
+        """Test that unknown fields are ignored (dataclass behavior)."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedGetTasksInput,
+            GetTasksToolInput,
+        )
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+        json_with_unknown = '{"status": ["not_completed"], "unknown_field": "value"}'
+
+        # Dataclasses ignore unknown fields rather than rejecting them
+        result = adapter.validate_python(json_with_unknown)
+
+        assert isinstance(result, GetTasksToolInput)
+        assert result.status == ["not_completed"]
+
+    def test_rejects_wrong_type_for_field(self):
+        """Test that wrong types are rejected."""
+        from obsidian_rag.mcp_server.handlers import AnnotatedGetTasksInput
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+        json_wrong_type = '{"limit": "not a number"}'
+
+        with pytest.raises(ValidationError):
+            adapter.validate_python(json_wrong_type)
+
+    def test_accepts_only_legacy_tags(self):
+        """Test that legacy tags parameter works in JSON."""
+        from obsidian_rag.mcp_server.handlers import (
+            AnnotatedGetTasksInput,
+            GetTasksToolInput,
+        )
+
+        adapter = TypeAdapter(AnnotatedGetTasksInput)
+        json_legacy = '{"tags": ["work", "urgent"]}'
+
+        result = adapter.validate_python(json_legacy)
+
+        assert isinstance(result, GetTasksToolInput)
+        assert result.tags == ["work", "urgent"]
+
+
+class TestJsonStringSpecialCharacters:
+    """Tests for JSON strings with special characters."""
+
+    def test_escapes_quotes(self):
+        """Test JSON with escaped quotes."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        json_str = '{"description": "He said \\"hello\\""}'
+        result = parse_json_str(json_str)
+
+        assert result == {"description": 'He said "hello"'}
+
+    def test_escapes_backslash(self):
+        """Test JSON with escaped backslash."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        json_str = '{"path": "C:\\\\Users\\\\test"}'
+        result = parse_json_str(json_str)
+
+        assert result == {"path": "C:\\Users\\test"}
+
+    def test_escapes_newline(self):
+        """Test JSON with escaped newline."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        json_str = '{"text": "line1\\nline2"}'
+        result = parse_json_str(json_str)
+
+        assert result == {"text": "line1\nline2"}
+
+    def test_null_value(self):
+        """Test JSON with explicit null value."""
+        from obsidian_rag.mcp_server.handlers import parse_json_str
+
+        json_str = '{"field": null}'
+        result = parse_json_str(json_str)
+
+        assert result == {"field": None}

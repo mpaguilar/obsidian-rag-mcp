@@ -19,6 +19,7 @@ from starlette.responses import JSONResponse
 from obsidian_rag.config import Settings, get_settings
 from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.mcp_server.handlers import (
+    AnnotatedQueryFilter,
     DocumentTagParams,
     GetTasksToolInput,
     IngestHandlerParams,
@@ -29,6 +30,7 @@ from obsidian_rag.mcp_server.handlers import (
     _create_tag_filter,
     _get_documents_by_tag_handler,
     _ingest_handler,
+    parse_json_str,
 )
 from obsidian_rag.mcp_server.ingest_tracker import IngestRequestTracker
 from obsidian_rag.mcp_server.middleware import SessionLoggingMiddleware
@@ -149,7 +151,7 @@ def _create_vault_error_response(error_msg: str) -> dict[str, object]:
 
 def query_documents(
     query: str,
-    filters: QueryFilterParams | None = None,
+    filters: AnnotatedQueryFilter = None,
     limit: int = 20,
     offset: int = 0,
     *,
@@ -161,7 +163,11 @@ def query_documents(
     Args:
         query: Search query text.
         filters: QueryFilterParams with include_properties, exclude_properties,
-            include_tags, exclude_tags, and match_mode.
+            include_tags, exclude_tags, and match_mode. Can be passed as a
+            JSON string or a dict. Examples:
+            - Dict: {"include_tags": ["work"], "match_mode": "any"}
+            - JSON string: '{"include_tags": ["work"], "match_mode": "any"}'
+            - None or "": No filter
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
         use_chunks: If True, search at chunk level instead of document level.
@@ -192,7 +198,7 @@ def query_documents(
 
 
 def get_documents_by_tag(
-    filters: QueryFilterParams | None = None,
+    filters: AnnotatedQueryFilter = None,
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
@@ -200,7 +206,12 @@ def get_documents_by_tag(
     """Query documents filtered by tags with include/exclude semantics.
 
     Args:
-        filters: QueryFilterParams with include_tags, exclude_tags, and match_mode.
+        filters: Query filter parameters with include_tags, exclude_tags, and
+            match_mode. Can be provided as a QueryFilterParams object, a dict,
+            a JSON string, or None (default). JSON strings are automatically
+            parsed before validation.
+            Example dict: {"include_tags": ["work"], "match_mode": "any"}
+            Example JSON: '{"include_tags": ["work"], "match_mode": "any"}'
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
@@ -213,6 +224,16 @@ def get_documents_by_tag(
     log.info(_msg)
 
     registry = _get_registry()
+
+    # Handle JSON string or dict input (when called directly without FastMCP validation)
+    if isinstance(filters, (str, dict)):
+        parsed = parse_json_str(filters)
+        if parsed is None:
+            filters = None
+        elif isinstance(parsed, dict):
+            filters = QueryFilterParams(**parsed)
+        else:
+            filters = parsed  # pragma: no cover
 
     filters = filters or QueryFilterParams(
         include_properties=None,
@@ -236,7 +257,7 @@ def get_documents_by_tag(
 
 
 def get_documents_by_property(
-    filters: QueryFilterParams | None = None,
+    filters: AnnotatedQueryFilter = None,
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
@@ -245,7 +266,10 @@ def get_documents_by_property(
 
     Args:
         filters: QueryFilterParams with include_properties, exclude_properties,
-            include_tags, exclude_tags, and match_mode.
+            include_tags, exclude_tags, and match_mode. Can be provided as a
+            dict object or a JSON-encoded string. JSON strings are automatically
+            parsed before validation. Empty or whitespace-only strings are
+            treated as None (no filters).
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 100).
         offset: Number of results to skip (default: 0).
@@ -254,7 +278,15 @@ def get_documents_by_property(
         Document list response with pagination and relative paths.
 
     Raises:
-        ValueError: If property filter validation fails.
+        ValueError: If property filter validation fails or JSON parsing fails.
+
+    Examples:
+        Dict input:
+            filters={"include_tags": ["work"], "match_mode": "any"}
+        JSON string input:
+            filters='{"include_tags": ["work"], "match_mode": "any"}'
+        No filters:
+            filters=None
 
     """
     from obsidian_rag.mcp_server.tools.documents import (
@@ -269,6 +301,14 @@ def get_documents_by_property(
     log.info(_msg)
 
     registry = _get_registry()
+
+    # Parse JSON string filters if needed (handles clients that pass JSON strings)
+    if isinstance(filters, str):
+        filters = parse_json_str(filters)
+
+    # Convert dict to QueryFilterParams if needed
+    if isinstance(filters, dict):
+        filters = QueryFilterParams(**filters)
 
     filters = filters or QueryFilterParams(
         include_properties=None,
@@ -629,6 +669,20 @@ def get_tasks(
     from obsidian_rag.mcp_server.handlers import GetTasksRequest, _get_tasks_handler
 
     registry = _get_registry()
+
+    # Handle JSON string or dict input (when called directly without FastMCP validation)
+    if isinstance(params, (str, dict)):
+        parsed = parse_json_str(params)
+        if parsed is None:
+            params = GetTasksToolInput()
+        elif isinstance(parsed, dict):
+            params = GetTasksToolInput(**parsed)
+        else:
+            params = parsed  # pragma: no cover
+
+    # Handle None params - create default GetTasksToolInput
+    if params is None:
+        params = GetTasksToolInput()
 
     # Create default filters if not provided
     tag_filters = params.tag_filters or TagFilterStrings()

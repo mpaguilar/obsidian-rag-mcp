@@ -1424,7 +1424,7 @@ wheels = [
 
 [[package]]
 name = "litellm"
-version = "1.82.0"
+version = "1.82.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1440,9 +1440,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/00/49bb5c28e0dea0f5086229a2a08d5fdc6c8dc0d8e2acb2a2d1f7dd9f4b70/litellm-1.82.0.tar.gz", hash = "sha256:d388f52447daccbcaafa19a3e68d17b75f1374b5bf2cde680d65e1cd86e50d22", size = 16800355, upload-time = "2026-03-01T02:35:30.363Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d7/f0/ec42ee14b388ce1d08a1df638f894ed7f1e6ac35b9daf0588ff7f7d52262/litellm-1.82.5.tar.gz", hash = "sha256:7988a9b48c8ccd9e5ebced80a4dfce9ce87083b303c3f67082450a4ad6dd312f", size = 17406156, upload-time = "2026-03-21T00:03:53.239Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/28/89/eb28bfcf97d6b045c400e72eb047c381594467048c237dbb6c227764084c/litellm-1.82.0-py3-none-any.whl", hash = "sha256:5496b5d4532cccdc7a095c21cbac4042f7662021c57bc1d17be4e39838929e80", size = 14911978, upload-time = "2026-03-01T02:35:26.844Z" },
+    { url = "https://files.pythonhosted.org/packages/68/1f/b6c8043eec81eade53a4d0e15a50b788ab0e82661e01a25e0b8536a4dca0/litellm-1.82.5-py3-none-any.whl", hash = "sha256:e1012ab816352215c4e00776dd48b0c68058b537888a8ff82cca62af19e6fb11", size = 15589652, upload-time = "2026-03-21T00:03:48.87Z" },
 ]
 
 [[package]]
@@ -1853,7 +1853,7 @@ requires-dist = [
     { name = "langchain-huggingface", specifier = ">=0.0.1" },
     { name = "langchain-huggingface", marker = "extra == 'all'", specifier = ">=0.0.1" },
     { name = "langchain-huggingface", marker = "extra == 'local'", specifier = ">=0.0.1" },
-    { name = "litellm", specifier = ">=1.0.0" },
+    { name = "litellm", specifier = "==1.82.5" },
     { name = "litellm", marker = "extra == 'all'", specifier = ">=1.0.0" },
     { name = "litellm", marker = "extra == 'openai'", specifier = ">=1.0.0" },
     { name = "pgvector", specifier = ">=0.2.0" },

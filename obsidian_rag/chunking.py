@@ -627,29 +627,6 @@ def _create_chunks_from_content(
     ]
 
 
-# Backward compatibility wrapper
-def _calculate_next_start_legacy(
-    actual_end: int,
-    overlap_chars: int,
-    current_start: int,
-) -> int:
-    """Calculate the starting position for the next chunk (backward compatibility).
-
-    Args:
-        actual_end: The end position of the current chunk.
-        overlap_chars: The overlap amount in characters.
-        current_start: The start position of the current chunk.
-
-    Returns:
-        The start position for the next chunk.
-
-    """
-    next_start = actual_end - overlap_chars
-    if next_start <= current_start:
-        next_start = actual_end  # pragma: no cover
-    return next_start
-
-
 # Legacy _find_split_point for backward compatibility (old signature)
 def _find_split_point_legacy(
     text: str,

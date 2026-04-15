@@ -1092,6 +1092,221 @@ class TestGetTasksServerWrapper:
         assert request.tags == ["work", "urgent"]
 
 
+class TestGetTasksJsonString:
+    """Tests for get_tasks server wrapper with JSON string input."""
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+    def test_get_tasks_accepts_json_string(self, mock_handler, mock_registry):
+        """Test that get_tasks accepts JSON string params."""
+        mock_registry_instance = MagicMock()
+        mock_registry.return_value = mock_registry_instance
+
+        mock_handler.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        # Pass JSON string instead of dataclass
+        json_params = '{"status": ["not_completed"], "limit": 10}'
+        result = get_tasks(params=json_params)
+
+        assert result == {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+        mock_handler.assert_called_once()
+        call_args = mock_handler.call_args
+        request = call_args.kwargs["request"]
+        assert request.status == ["not_completed"]
+        assert request.limit == 10
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+    def test_get_tasks_accepts_dict(self, mock_handler, mock_registry):
+        """Test that get_tasks accepts dict params."""
+        mock_registry_instance = MagicMock()
+        mock_registry.return_value = mock_registry_instance
+
+        mock_handler.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        # Pass dict instead of dataclass
+        dict_params = {"status": ["completed"], "offset": 5}
+        result = get_tasks(params=dict_params)
+
+        assert result == {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+        mock_handler.assert_called_once()
+        call_args = mock_handler.call_args
+        request = call_args.kwargs["request"]
+        assert request.status == ["completed"]
+        assert request.offset == 5
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+    def test_get_tasks_accepts_none(self, mock_handler, mock_registry):
+        """Test that get_tasks accepts None params and returns all tasks."""
+        mock_registry_instance = MagicMock()
+        mock_registry.return_value = mock_registry_instance
+
+        mock_handler.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        # Pass None
+        result = get_tasks(params=None)
+
+        assert result == {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+        mock_handler.assert_called_once()
+        call_args = mock_handler.call_args
+        request = call_args.kwargs["request"]
+        # None should create default GetTasksToolInput with default values
+        assert request.status is None
+        assert request.limit == 20  # Default value
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+    def test_get_tasks_json_with_nested_filters(self, mock_handler, mock_registry):
+        """Test that get_tasks accepts JSON with nested tag_filters.
+
+        Note: When calling directly (not through FastMCP), nested dicts remain
+        as dicts rather than being converted to dataclasses. The full Pydantic
+        validation with nested conversion only happens when FastMCP invokes
+        the tool with AnnotatedGetTasksInput.
+        """
+        mock_registry_instance = MagicMock()
+        mock_registry.return_value = mock_registry_instance
+
+        mock_handler.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        # Pass JSON string with nested tag_filters
+        json_params = (
+            '{"status": ["not_completed"], '
+            '"tag_filters": {"include_tags": ["work", "urgent"], "match_mode": "all"}}'
+        )
+        result = get_tasks(params=json_params)
+
+        assert result == {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+        mock_handler.assert_called_once()
+        call_args = mock_handler.call_args
+        request = call_args.kwargs["request"]
+        assert request.status == ["not_completed"]
+        # When called directly, nested objects remain as dicts
+        assert request.tag_filters == {
+            "include_tags": ["work", "urgent"],
+            "match_mode": "all",
+        }
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+    def test_get_tasks_with_empty_string(self, mock_handler, mock_registry):
+        """Test that get_tasks treats empty string as no params."""
+        mock_registry_instance = MagicMock()
+        mock_registry.return_value = mock_registry_instance
+
+        mock_handler.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        # Pass empty string - should be treated as no params
+        result = get_tasks(params="")
+
+        assert result == {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+        mock_handler.assert_called_once()
+        call_args = mock_handler.call_args
+        request = call_args.kwargs["request"]
+        # Empty string should create default GetTasksToolInput
+        assert request.status is None
+        assert request.limit == 20  # Default value
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+    def test_get_tasks_with_dataclass(self, mock_handler, mock_registry):
+        """Test that get_tasks accepts GetTasksToolInput dataclass directly."""
+        mock_registry_instance = MagicMock()
+        mock_registry.return_value = mock_registry_instance
+
+        mock_handler.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+
+        from obsidian_rag.mcp_server.server import get_tasks
+        from obsidian_rag.mcp_server.handlers import GetTasksToolInput
+
+        # Pass GetTasksToolInput dataclass directly
+        params = GetTasksToolInput(
+            status=["completed"],
+            limit=15,
+            offset=10,
+        )
+        result = get_tasks(params=params)
+
+        assert result == {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+        mock_handler.assert_called_once()
+        call_args = mock_handler.call_args
+        request = call_args.kwargs["request"]
+        assert request.status == ["completed"]
+        assert request.limit == 15
+        assert request.offset == 10
+
+
 class TestIngestRequestTracking:
     """Tests for ingest tool request tracking functionality."""
 
@@ -1720,3 +1935,430 @@ class TestCreateHTTPAppFactory:
             create_http_app_factory()
 
         assert exc_info.value.code == 1
+
+
+class TestGetDocumentsByTagJsonString:
+    """Tests for get_documents_by_tag with JSON string filters parameter."""
+
+    @pytest.fixture
+    def setup_registry(self):
+        """Set up mock registry for testing."""
+        from obsidian_rag.mcp_server.tool_definitions import (
+            MCPToolRegistry,
+            _set_registry,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_embedding_provider = MagicMock()
+        mock_settings = MagicMock()
+
+        registry = MCPToolRegistry(
+            db_manager=mock_db_manager,
+            embedding_provider=mock_embedding_provider,
+            settings=mock_settings,
+        )
+        _set_registry(registry)
+        yield registry
+        _set_registry(None)
+
+    def test_get_documents_by_tag_with_json_string_filters(self, setup_registry):
+        """Test get_documents_by_tag accepts filters as JSON string."""
+        from obsidian_rag.mcp_server.server import get_documents_by_tag
+
+        with patch(
+            "obsidian_rag.mcp_server.server._get_documents_by_tag_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {
+                "results": [{"id": "doc1", "title": "Test"}],
+                "total_count": 1,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            filters_json = '{"include_tags": ["work"], "match_mode": "any"}'
+            result = get_documents_by_tag(filters=filters_json)
+
+            assert result["total_count"] == 1
+            mock_handler.assert_called_once()
+            call_kwargs = mock_handler.call_args[0][1]
+            assert call_kwargs["include_tags"] == ["work"]
+            assert call_kwargs["match_mode"] == "any"
+
+    def test_get_documents_by_tag_with_dict_filters(self, setup_registry):
+        """Test get_documents_by_tag accepts filters as dict."""
+        from obsidian_rag.mcp_server.server import get_documents_by_tag
+
+        with patch(
+            "obsidian_rag.mcp_server.server._get_documents_by_tag_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {
+                "results": [{"id": "doc1", "title": "Test"}],
+                "total_count": 1,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            filters_dict = {"include_tags": ["personal"], "match_mode": "all"}
+            result = get_documents_by_tag(filters=filters_dict)
+
+            assert result["total_count"] == 1
+            mock_handler.assert_called_once()
+            call_kwargs = mock_handler.call_args[0][1]
+            assert call_kwargs["include_tags"] == ["personal"]
+            assert call_kwargs["match_mode"] == "all"
+
+    def test_get_documents_by_tag_with_none_filters(self, setup_registry):
+        """Test get_documents_by_tag works with None filters (default)."""
+        from obsidian_rag.mcp_server.server import get_documents_by_tag
+
+        with patch(
+            "obsidian_rag.mcp_server.server._get_documents_by_tag_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {
+                "results": [],
+                "total_count": 0,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            result = get_documents_by_tag(filters=None)
+
+            assert result["total_count"] == 0
+            mock_handler.assert_called_once()
+            call_kwargs = mock_handler.call_args[0][1]
+            assert call_kwargs["include_tags"] == []
+            assert call_kwargs["exclude_tags"] == []
+            assert call_kwargs["match_mode"] == "all"
+
+    def test_get_documents_by_tag_with_empty_string_filters(self, setup_registry):
+        """Test get_documents_by_tag handles empty string as None."""
+        from obsidian_rag.mcp_server.server import get_documents_by_tag
+
+        with patch(
+            "obsidian_rag.mcp_server.server._get_documents_by_tag_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {
+                "results": [],
+                "total_count": 0,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            result = get_documents_by_tag(filters="")
+
+            assert result["total_count"] == 0
+            mock_handler.assert_called_once()
+            call_kwargs = mock_handler.call_args[0][1]
+            assert call_kwargs["include_tags"] == []
+            assert call_kwargs["exclude_tags"] == []
+
+    def test_get_documents_by_tag_with_whitespace_string_filters(self, setup_registry):
+        """Test get_documents_by_tag handles whitespace-only string as None."""
+        from obsidian_rag.mcp_server.server import get_documents_by_tag
+
+        with patch(
+            "obsidian_rag.mcp_server.server._get_documents_by_tag_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {
+                "results": [],
+                "total_count": 0,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            result = get_documents_by_tag(filters="   ")
+
+            assert result["total_count"] == 0
+            mock_handler.assert_called_once()
+            call_kwargs = mock_handler.call_args[0][1]
+            assert call_kwargs["include_tags"] == []
+            assert call_kwargs["exclude_tags"] == []
+
+
+class TestGetDocumentsByPropertyJsonString:
+    """Tests for get_documents_by_property with JSON string filters parameter."""
+
+    @pytest.fixture
+    def setup_registry(self):
+        """Set up mock registry for testing."""
+        from obsidian_rag.mcp_server.tool_definitions import (
+            MCPToolRegistry,
+            _set_registry,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_embedding_provider = MagicMock()
+        mock_settings = MagicMock()
+
+        registry = MCPToolRegistry(
+            db_manager=mock_db_manager,
+            embedding_provider=mock_embedding_provider,
+            settings=mock_settings,
+        )
+        _set_registry(registry)
+        yield registry
+        _set_registry(None)
+
+    def test_get_documents_by_property_with_json_string_filters(self, setup_registry):
+        """Test get_documents_by_property accepts filters as JSON string."""
+        from obsidian_rag.mcp_server.server import get_documents_by_property
+        from obsidian_rag.mcp_server.models import DocumentListResponse
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property"
+        ) as mock_tool:
+            mock_tool.return_value = DocumentListResponse(
+                results=[],
+                total_count=0,
+                has_more=False,
+                next_offset=None,
+            )
+
+            filters_json = '{"include_tags": ["work"], "match_mode": "any"}'
+            result = get_documents_by_property(filters=filters_json)
+
+            assert result["total_count"] == 0
+            mock_tool.assert_called_once()
+
+    def test_get_documents_by_property_with_dict_filters(self, setup_registry):
+        """Test get_documents_by_property accepts filters as dict."""
+        from obsidian_rag.mcp_server.server import get_documents_by_property
+        from obsidian_rag.mcp_server.models import DocumentListResponse
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property"
+        ) as mock_tool:
+            mock_tool.return_value = DocumentListResponse(
+                results=[],
+                total_count=0,
+                has_more=False,
+                next_offset=None,
+            )
+
+            filters_dict = {"include_tags": ["work"], "match_mode": "any"}
+            result = get_documents_by_property(filters=filters_dict)
+
+            assert result["total_count"] == 0
+            mock_tool.assert_called_once()
+
+    def test_get_documents_by_property_with_none_filters(self, setup_registry):
+        """Test get_documents_by_property handles None filters."""
+        from obsidian_rag.mcp_server.server import get_documents_by_property
+        from obsidian_rag.mcp_server.models import DocumentListResponse
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property"
+        ) as mock_tool:
+            mock_tool.return_value = DocumentListResponse(
+                results=[],
+                total_count=0,
+                has_more=False,
+                next_offset=None,
+            )
+
+            result = get_documents_by_property(filters=None)
+
+            assert result["total_count"] == 0
+            mock_tool.assert_called_once()
+
+    def test_get_documents_by_property_with_empty_string_filters(self, setup_registry):
+        """Test get_documents_by_property treats empty string as None."""
+        from obsidian_rag.mcp_server.server import get_documents_by_property
+        from obsidian_rag.mcp_server.models import DocumentListResponse
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property"
+        ) as mock_tool:
+            mock_tool.return_value = DocumentListResponse(
+                results=[],
+                total_count=0,
+                has_more=False,
+                next_offset=None,
+            )
+
+            result = get_documents_by_property(filters="")
+
+            assert result["total_count"] == 0
+            mock_tool.assert_called_once()
+
+    def test_get_documents_by_property_with_whitespace_string_filters(
+        self, setup_registry
+    ):
+        """Test get_documents_by_property handles whitespace-only string as None."""
+        from obsidian_rag.mcp_server.server import get_documents_by_property
+        from obsidian_rag.mcp_server.models import DocumentListResponse
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property"
+        ) as mock_tool:
+            mock_tool.return_value = DocumentListResponse(
+                results=[],
+                total_count=0,
+                has_more=False,
+                next_offset=None,
+            )
+
+            result = get_documents_by_property(filters="   ")
+
+            assert result["total_count"] == 0
+            mock_tool.assert_called_once()
+
+    def test_get_documents_by_property_with_complex_json_filters(self, setup_registry):
+        """Test get_documents_by_property with complex JSON filters including properties."""
+        from obsidian_rag.mcp_server.server import get_documents_by_property
+        from obsidian_rag.mcp_server.models import DocumentListResponse
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property"
+        ) as mock_tool:
+            mock_tool.return_value = DocumentListResponse(
+                results=[],
+                total_count=0,
+                has_more=False,
+                next_offset=None,
+            )
+
+            # Complex JSON with property filters
+            json_filters = json.dumps(
+                {
+                    "include_properties": [
+                        {"path": "status", "operator": "equals", "value": "active"}
+                    ],
+                    "exclude_properties": [
+                        {"path": "archived", "operator": "equals", "value": True}
+                    ],
+                    "include_tags": ["work"],
+                    "exclude_tags": ["blocked"],
+                    "match_mode": "all",
+                }
+            )
+
+            result = get_documents_by_property(
+                filters=json_filters, vault_name="test-vault", limit=50, offset=10
+            )
+
+            assert result["total_count"] == 0
+            mock_tool.assert_called_once()
+            # Verify the call was made with correct vault_name
+            call_kwargs = mock_tool.call_args[1]
+            assert call_kwargs["vault_name"] == "test-vault"
+
+    def test_get_documents_by_property_invalid_json_raises_error(self, setup_registry):
+        """Test get_documents_by_property raises error for invalid JSON."""
+        from obsidian_rag.mcp_server.server import get_documents_by_property
+
+        # Invalid JSON string (missing closing bracket)
+        invalid_json = '{"include_tags": ["work", "match_mode": "any"}'
+
+        with pytest.raises(json.JSONDecodeError):
+            get_documents_by_property(filters=invalid_json)
+
+
+class TestQueryDocumentsJsonString:
+    """Tests for query_documents with AnnotatedQueryFilter type."""
+
+    @pytest.fixture
+    def setup_registry(self):
+        """Set up mock registry for testing."""
+        from obsidian_rag.mcp_server.tool_definitions import (
+            MCPToolRegistry,
+            _set_registry,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_embedding_provider = MagicMock()
+        mock_settings = MagicMock()
+
+        registry = MCPToolRegistry(
+            db_manager=mock_db_manager,
+            embedding_provider=mock_embedding_provider,
+            settings=mock_settings,
+        )
+        _set_registry(registry)
+        yield registry
+        _set_registry(None)
+
+    def test_query_documents_with_dict_filters(self, setup_registry):
+        """Test query_documents accepts filters as dict."""
+        from obsidian_rag.mcp_server.server import query_documents
+
+        with patch("obsidian_rag.mcp_server.server.query_documents_tool") as mock_tool:
+            mock_tool.return_value = {
+                "results": [{"id": "doc1", "title": "Test"}],
+                "total_count": 1,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            filters_dict = {"include_tags": ["personal"], "match_mode": "all"}
+            result = query_documents(query="test", filters=filters_dict)
+
+            assert result["total_count"] == 1
+            mock_tool.assert_called_once()
+            call_kwargs = mock_tool.call_args.kwargs
+            assert call_kwargs["filters"] is not None
+
+    def test_query_documents_with_none_filters(self, setup_registry):
+        """Test query_documents works with None filters (default)."""
+        from obsidian_rag.mcp_server.server import query_documents
+
+        with patch("obsidian_rag.mcp_server.server.query_documents_tool") as mock_tool:
+            mock_tool.return_value = {
+                "results": [],
+                "total_count": 0,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            result = query_documents(query="test", filters=None)
+
+            assert result["total_count"] == 0
+            mock_tool.assert_called_once()
+            call_kwargs = mock_tool.call_args.kwargs
+            assert call_kwargs["filters"] is None
+
+    def test_query_documents_without_filters(self, setup_registry):
+        """Test query_documents works without filters parameter."""
+        from obsidian_rag.mcp_server.server import query_documents
+
+        with patch("obsidian_rag.mcp_server.server.query_documents_tool") as mock_tool:
+            mock_tool.return_value = {
+                "results": [],
+                "total_count": 0,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            result = query_documents(query="test")
+
+            assert result["total_count"] == 0
+            mock_tool.assert_called_once()
+            call_kwargs = mock_tool.call_args.kwargs
+            assert call_kwargs["filters"] is None
+
+    def test_query_documents_with_complex_dict_filter(self, setup_registry):
+        """Test query_documents handles complex filter dict."""
+        from obsidian_rag.mcp_server.server import query_documents
+
+        with patch("obsidian_rag.mcp_server.server.query_documents_tool") as mock_tool:
+            mock_tool.return_value = {
+                "results": [],
+                "total_count": 0,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            # Complex filter with include_properties
+            filters_dict = {
+                "include_properties": [
+                    {"path": "kind", "operator": "equals", "value": "note"}
+                ],
+                "include_tags": ["work", "urgent"],
+                "match_mode": "any",
+            }
+            result = query_documents(query="test query", filters=filters_dict)
+
+            assert result["total_count"] == 0
+            mock_tool.assert_called_once()
+            call_kwargs = mock_tool.call_args.kwargs
+            assert call_kwargs["filters"] is not None

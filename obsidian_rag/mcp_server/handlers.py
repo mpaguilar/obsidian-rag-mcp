@@ -1,9 +1,12 @@
 """Tool handlers for MCP server."""
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, TypedDict, cast
+from typing import Annotated, Any, Literal, TypedDict, cast
+
+from pydantic import BeforeValidator
 
 from obsidian_rag.config import Settings
 from obsidian_rag.database.engine import DatabaseManager
@@ -25,6 +28,51 @@ from obsidian_rag.mcp_server.tools.vaults import list_vaults as list_vaults_tool
 from obsidian_rag.services.ingestion import IngestionService, IngestVaultOptions
 
 log = logging.getLogger(__name__)
+
+
+def parse_json_str(value: Any) -> Any:  # noqa: ANN401
+    """Parse JSON string to dict, or pass through other values unchanged.
+
+    This helper function is used with Pydantic's BeforeValidator to handle
+    clients that pass JSON-encoded strings instead of JSON objects.
+
+    Args:
+        value: The input value, which may be a JSON string, dict, or None.
+
+    Returns:
+        Parsed dict if input was a JSON string, original value otherwise.
+        Empty or whitespace-only strings are treated as None.
+
+    Raises:
+        json.JSONDecodeError: If the input is a string but not valid JSON.
+
+    Notes:
+        This function logs at DEBUG level when parsing JSON strings to help
+        diagnose client-side double-encoding issues.
+
+    """
+    _msg = "parse_json_str starting"
+    log.debug(_msg)
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            _msg = "parse_json_str returning None for empty string"
+            log.debug(_msg)
+            return None
+        try:
+            parsed = json.loads(stripped)
+            _msg = "parse_json_str parsed JSON string"
+            log.debug(_msg)
+            return parsed
+        except json.JSONDecodeError:
+            _msg = "parse_json_str failed to parse JSON string"
+            log.debug(_msg)
+            raise
+
+    _msg = "parse_json_str returning value unchanged"
+    log.debug(_msg)
+    return value
 
 
 class DocumentTagParams(TypedDict, total=False):
@@ -52,10 +100,10 @@ class QueryFilterParams:
 
     """
 
-    include_properties: list[dict] | None
-    exclude_properties: list[dict] | None
-    include_tags: list[str] | None
-    exclude_tags: list[str] | None
+    include_properties: list[dict] | None = None
+    exclude_properties: list[dict] | None = None
+    include_tags: list[str] | None = None
+    exclude_tags: list[str] | None = None
     match_mode: Literal["all", "any"] = "all"
 
 
@@ -425,3 +473,44 @@ def _get_tasks_handler(
         _msg = "_get_tasks_handler returning"
         log.debug(_msg)
         return result.model_dump()
+
+
+# Annotated types for MCP tool parameters that may be passed as JSON strings
+# These are defined at the end of the module to avoid forward reference issues
+AnnotatedQueryFilter = Annotated[
+    QueryFilterParams | None,
+    BeforeValidator(parse_json_str),
+]
+"""QueryFilterParams that can be passed as JSON string or dict.
+
+This type wraps QueryFilterParams with a BeforeValidator that automatically
+parses JSON strings before Pydantic validation. This makes the server robust
+to clients that double-encode their parameters.
+
+Examples:
+    - Dict input: {"include_tags": ["work"], "match_mode": "any"}
+    - JSON string input: '{"include_tags": ["work"], "match_mode": "any"}'
+    - None input: None (returns None)
+    - Empty string input: "" (returns None)
+
+"""
+
+AnnotatedGetTasksInput = Annotated[
+    GetTasksToolInput | None,
+    BeforeValidator(parse_json_str),
+]
+"""GetTasksToolInput that can be passed as JSON string or dict.
+
+This type wraps GetTasksToolInput with a BeforeValidator that automatically
+parses JSON strings before Pydantic validation. Supports nested dataclasses
+like tag_filters and date_filters within the JSON.
+
+Examples:
+    - Dict input with nested objects:
+      {"status": ["not_completed"], "tag_filters": {"include_tags": ["work"]}}
+    - JSON string input:
+      '{"status": ["not_completed"], "tag_filters": {"include_tags": ["work"]}}'
+    - None input: None (returns None)
+    - Empty string input: "" (returns None)
+
+"""

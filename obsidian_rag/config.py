@@ -600,6 +600,31 @@ class MCPConfig(BaseModel):
     rate_limit_window: int = 60
     enable_request_logging: bool = True
 
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, v: str) -> str:
+        """Validate and clean host address.
+
+        Strips surrounding quotes that may be included from environment
+        variables and validates the host is not empty.
+
+        Args:
+            v: The host string to validate.
+
+        Returns:
+            Cleaned host string.
+
+        Raises:
+            ValueError: If host is empty after stripping.
+
+        """
+        # Strip quotes that may be present in environment variable values
+        cleaned = v.strip().strip('"').strip("'")
+        if not cleaned:
+            _msg = "Host cannot be empty"
+            raise ValueError(_msg)
+        return cleaned
+
     @field_validator("port")
     @classmethod
     def validate_port(cls, v: int) -> int:
