@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -54,10 +55,10 @@ class TestCli:
 class TestCliCommands:
     """Test actual CLI command execution with mocks."""
 
-    @patch("obsidian_rag.cli.scan_markdown_files")
-    @patch("obsidian_rag.cli.process_files_in_batches")
-    @patch("obsidian_rag.cli.DatabaseManager")
-    @patch("obsidian_rag.cli._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.scan_markdown_files")
+    @patch("obsidian_rag.cli_commands.process_files_in_batches")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
     def test_ingest_command_no_files(
         self, _mock_get_provider, _mock_db_manager, _mock_process, mock_scan
     ):
@@ -98,8 +99,8 @@ class TestCliCommands:
         assert result.exit_code == 0
         assert "No markdown files found" in result.output
 
-    @patch("obsidian_rag.cli.DatabaseManager")
-    @patch("obsidian_rag.cli._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
     def test_query_command_no_results(self, mock_get_provider, mock_db_manager):
         """Test query command when no results found."""
         runner = CliRunner()
@@ -127,7 +128,7 @@ class TestCliCommands:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_command_no_results(self, mock_db_manager):
         """Test tasks command when no tasks found."""
         runner = CliRunner()
@@ -152,7 +153,7 @@ class TestCliCommands:
         assert result.exit_code == 0
         assert "Found 0 tasks" in result.output
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_command_with_invalid_date(self, mock_db_manager):
         """Test tasks command with invalid date format."""
         runner = CliRunner()
@@ -179,9 +180,9 @@ class TestCliHelpers:
         """Test _scan_vault with successful scan."""
         from pathlib import Path
 
-        from obsidian_rag.cli import _scan_vault
+        from obsidian_rag.cli_commands import _scan_vault
 
-        with patch("obsidian_rag.cli.scan_markdown_files") as mock_scan:
+        with patch("obsidian_rag.cli_commands.scan_markdown_files") as mock_scan:
             mock_scan.return_value = [Path("test.md")]
             result = _scan_vault(Path("/vault"))
 
@@ -191,9 +192,9 @@ class TestCliHelpers:
         """Test _scan_vault with scan failure."""
         from pathlib import Path
 
-        from obsidian_rag.cli import _scan_vault
+        from obsidian_rag.cli_commands import _scan_vault
 
-        with patch("obsidian_rag.cli.scan_markdown_files") as mock_scan:
+        with patch("obsidian_rag.cli_commands.scan_markdown_files") as mock_scan:
             mock_scan.side_effect = Exception("Scan failed")
             with pytest.raises(SystemExit) as exc_info:
                 _scan_vault(Path("/vault"))
@@ -206,14 +207,14 @@ class TestFormatTaskResults:
 
     def test_format_task_results_empty(self):
         """Test _format_task_results with empty list."""
-        from obsidian_rag.cli import _format_task_results
+        from obsidian_rag.cli_commands import _format_task_results
 
         result = _format_task_results([])
         assert "Found 0 tasks" in result
 
     def test_format_task_results_one_line_per_task(self):
         """Test _format_task_results outputs one task per line."""
-        from obsidian_rag.cli import _format_task_results
+        from obsidian_rag.cli_commands import _format_task_results
 
         mock_document = MagicMock()
         mock_document.file_name = "test.md"
@@ -237,7 +238,7 @@ class TestFormatTaskResults:
         """Test _format_task_results includes all metadata when present."""
         from datetime import date
 
-        from obsidian_rag.cli import _format_task_results
+        from obsidian_rag.cli_commands import _format_task_results
 
         mock_document = MagicMock()
         mock_document.file_name = "project.md"
@@ -260,7 +261,7 @@ class TestFormatTaskResults:
 
     def test_format_task_results_optional_metadata_omitted(self):
         """Test _format_task_results omits optional metadata when not present."""
-        from obsidian_rag.cli import _format_task_results
+        from obsidian_rag.cli_commands import _format_task_results
 
         mock_document = MagicMock()
         mock_document.file_name = "simple.md"
@@ -285,7 +286,7 @@ class TestFormatTaskResults:
         """Test _format_task_results with multiple tasks."""
         from datetime import date
 
-        from obsidian_rag.cli import _format_task_results
+        from obsidian_rag.cli_commands import _format_task_results
 
         mock_document = MagicMock()
         mock_document.file_name = "notes.md"
@@ -325,7 +326,7 @@ class TestFormatTaskResults:
 
     def test_format_task_results_no_unicode_emojis(self):
         """Test _format_task_results uses only ASCII indicators."""
-        from obsidian_rag.cli import _format_task_results
+        from obsidian_rag.cli_commands import _format_task_results
 
         mock_document = MagicMock()
         mock_document.file_name = "test.md"
@@ -384,7 +385,7 @@ class TestLogLevelFlag:
         with patch(
             "obsidian_rag.cli.get_settings", return_value=mock_settings
         ) as mock_get_settings:
-            with patch("obsidian_rag.cli.DatabaseManager") as mock_db_manager:
+            with patch("obsidian_rag.cli_commands.DatabaseManager") as mock_db_manager:
                 mock_db_manager.return_value = mock_db_instance
                 result = runner.invoke(cli, ["--log-level", "DEBUG", "tasks"])
 
@@ -410,7 +411,7 @@ class TestLogLevelFlag:
         mock_db_instance.get_session.return_value = mock_session
 
         with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
-            with patch("obsidian_rag.cli.DatabaseManager") as mock_db_manager:
+            with patch("obsidian_rag.cli_commands.DatabaseManager") as mock_db_manager:
                 mock_db_manager.return_value = mock_db_instance
                 result = runner.invoke(cli, ["--log-level", "info", "tasks"])
 
@@ -433,7 +434,7 @@ class TestLogLevelFlag:
         mock_db_instance.get_session.return_value = mock_session
 
         with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
-            with patch("obsidian_rag.cli.DatabaseManager") as mock_db_manager:
+            with patch("obsidian_rag.cli_commands.DatabaseManager") as mock_db_manager:
                 mock_db_manager.return_value = mock_db_instance
                 result = runner.invoke(cli, ["--log-level", "INVALID", "tasks"])
 
@@ -461,7 +462,7 @@ class TestLogLevelFlag:
         with patch(
             "obsidian_rag.cli.get_settings", return_value=mock_settings
         ) as mock_get_settings:
-            with patch("obsidian_rag.cli.DatabaseManager") as mock_db_manager:
+            with patch("obsidian_rag.cli_commands.DatabaseManager") as mock_db_manager:
                 mock_db_manager.return_value = mock_db_instance
                 # Both --verbose and --log-level ERROR specified
                 result = runner.invoke(
@@ -482,10 +483,10 @@ class TestLoggingToStderr:
         import logging
         import sys
 
-        from obsidian_rag.cli import _setup_logging
+        from obsidian_rag.cli_commands import setup_logging
 
         # Setup logging
-        _setup_logging("INFO", "text")
+        setup_logging("INFO", "text")
 
         # Get root logger and check handler stream
         root_logger = logging.getLogger()
@@ -500,7 +501,7 @@ class TestLoggingToStderr:
         import sys
         from io import StringIO
 
-        from obsidian_rag.cli import _setup_logging
+        from obsidian_rag.cli_commands import setup_logging
 
         # Capture stderr
         stderr_capture = StringIO()
@@ -509,7 +510,7 @@ class TestLoggingToStderr:
 
         try:
             # Setup logging and emit a message
-            _setup_logging("INFO", "text")
+            setup_logging("INFO", "text")
             logger = logging.getLogger("test_logger")
             logger.info("Test message to stderr")
 
@@ -524,7 +525,7 @@ class TestLoggingToStderr:
         import sys
         from io import StringIO
 
-        from obsidian_rag.cli import _setup_logging
+        from obsidian_rag.cli_commands import setup_logging
 
         # Capture stderr
         stderr_capture = StringIO()
@@ -534,7 +535,7 @@ class TestLoggingToStderr:
         try:
             # Try to setup logging with invalid level
             try:
-                _setup_logging("INVALID", "text")
+                setup_logging("INVALID", "text")
             except SystemExit:
                 pass  # Expected to exit
 
@@ -554,7 +555,7 @@ class TestSetupLoggingJsonFormat:
         import sys
         from io import StringIO
 
-        from obsidian_rag.cli import _setup_logging
+        from obsidian_rag.cli_commands import setup_logging
 
         # Capture stderr
         stderr_capture = StringIO()
@@ -562,7 +563,7 @@ class TestSetupLoggingJsonFormat:
         sys.stderr = stderr_capture
 
         try:
-            _setup_logging("INFO", "json")
+            setup_logging("INFO", "json")
             logger = logging.getLogger("json_test_logger")
             logger.info("JSON test message")
 
@@ -578,7 +579,7 @@ class TestSetupLoggingJsonFormat:
 class TestCliConfigFileLogging:
     """Test CLI config file path logging."""
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_cli_with_config_file_path_logging(self, _mock_db_manager):
         """Test CLI with config file path logging (TASK-039)."""
         from pathlib import Path
@@ -615,7 +616,7 @@ class TestCliConfigFileLogging:
 class TestCliVerboseFlag:
     """Test CLI verbose flag behavior."""
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_cli_with_verbose_flag(self, _mock_db_manager):
         """Test CLI with verbose flag (TASK-040)."""
         runner = CliRunner()
@@ -645,12 +646,12 @@ class TestGetEmbeddingProvider:
 
     def test_get_embedding_provider_with_missing_config(self):
         """Test _get_embedding_provider with missing config (TASK-041)."""
-        from obsidian_rag.cli import _get_embedding_provider
+        from obsidian_rag.cli_commands import _get_embedding_provider
 
         mock_settings = MagicMock()
         mock_settings.get_endpoint_config.return_value = None
 
-        with patch("obsidian_rag.cli.ProviderFactory") as mock_factory:
+        with patch("obsidian_rag.cli_commands.ProviderFactory") as mock_factory:
             mock_provider = MagicMock()
             mock_factory.create_embedding_provider.return_value = mock_provider
 
@@ -664,7 +665,7 @@ class TestGetEmbeddingProvider:
 
     def test_get_embedding_provider_with_config(self):
         """Test _get_embedding_provider with existing config (lines 115-123)."""
-        from obsidian_rag.cli import _get_embedding_provider
+        from obsidian_rag.cli_commands import _get_embedding_provider
 
         mock_settings = MagicMock()
         mock_config = MagicMock()
@@ -674,7 +675,7 @@ class TestGetEmbeddingProvider:
         mock_config.base_url = None
         mock_settings.get_endpoint_config.return_value = mock_config
 
-        with patch("obsidian_rag.cli.ProviderFactory") as mock_factory:
+        with patch("obsidian_rag.cli_commands.ProviderFactory") as mock_factory:
             mock_provider = MagicMock()
             mock_factory.create_embedding_provider.return_value = mock_provider
 
@@ -701,7 +702,7 @@ class TestCreateProgressCallback:
         import click
         from click.testing import CliRunner
 
-        from obsidian_rag.cli import progress_callback
+        from obsidian_rag.cli_commands import progress_callback
 
         runner = CliRunner()
 
@@ -726,7 +727,7 @@ class TestReportIngestResults:
         import click
         from click.testing import CliRunner
 
-        from obsidian_rag.cli import _report_ingest_results
+        from obsidian_rag.cli_commands import _report_ingest_results
 
         runner = CliRunner()
 
@@ -745,11 +746,11 @@ class TestReportIngestResults:
 class TestIngestCommand:
     """Test ingest command with various options."""
 
-    @patch("obsidian_rag.cli._scan_vault")
-    @patch("obsidian_rag.cli.process_files_in_batches")
-    @patch("obsidian_rag.cli.DatabaseManager")
-    @patch("obsidian_rag.cli._get_embedding_provider")
-    @patch("obsidian_rag.cli.IngestionService")
+    @patch("obsidian_rag.cli_commands._scan_vault")
+    @patch("obsidian_rag.cli_commands.process_files_in_batches")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.IngestionService")
     def test_ingest_command_with_dry_run(
         self,
         mock_ingestion_service,
@@ -823,11 +824,11 @@ class TestIngestCommand:
         assert result.exit_code == 0
         assert "DRY RUN: No changes will be written to the database" in result.output
 
-    @patch("obsidian_rag.cli._scan_vault")
-    @patch("obsidian_rag.cli.process_files_in_batches")
-    @patch("obsidian_rag.cli.DatabaseManager")
-    @patch("obsidian_rag.cli._get_embedding_provider")
-    @patch("obsidian_rag.cli.IngestionService")
+    @patch("obsidian_rag.cli_commands._scan_vault")
+    @patch("obsidian_rag.cli_commands.process_files_in_batches")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.IngestionService")
     def test_ingest_command_full_flow(
         self,
         mock_ingestion_service,
@@ -916,7 +917,7 @@ class TestFormatQueryResults:
         """Test _format_query_results_json with results containing tags (TASK-046)."""
         import json
 
-        from obsidian_rag.cli import _format_query_results_json
+        from obsidian_rag.cli_commands import _format_query_results_json
 
         mock_doc = MagicMock()
         mock_doc.file_path = "/path/to/doc.md"
@@ -937,7 +938,7 @@ class TestFormatQueryResults:
 
     def test_format_query_results_table_with_kind_and_tags(self):
         """Test _format_query_results_table with documents having kind and tags (TASK-047)."""
-        from obsidian_rag.cli import _format_query_results_table
+        from obsidian_rag.cli_commands import _format_query_results_table
 
         mock_doc = MagicMock()
         mock_doc.file_name = "doc.md"
@@ -959,8 +960,8 @@ class TestFormatQueryResults:
 class TestQueryCommand:
     """Test query command with various scenarios."""
 
-    @patch("obsidian_rag.cli.DatabaseManager")
-    @patch("obsidian_rag.cli._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
     def test_query_command_with_embedding_failure(
         self, mock_get_provider, mock_db_manager
     ):
@@ -987,8 +988,8 @@ class TestQueryCommand:
         assert result.exit_code == 1
         assert "Failed to generate query embedding" in result.output
 
-    @patch("obsidian_rag.cli.DatabaseManager")
-    @patch("obsidian_rag.cli._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
     def test_query_command_with_json_output(self, mock_get_provider, mock_db_manager):
         """Test query command with JSON output format (TASK-049)."""
         import json
@@ -1039,7 +1040,7 @@ class TestQueryCommand:
 class TestTasksCommand:
     """Test tasks command with various scenarios."""
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_command_with_no_results(self, mock_db_manager):
         """Test tasks command with no results (TASK-050)."""
         runner = CliRunner()
@@ -1072,7 +1073,7 @@ class TestBuildTasksQuery:
 
     def test_build_tasks_query_with_status_filter(self):
         """Test _build_tasks_query with status filter (TASK-051)."""
-        from obsidian_rag.cli import _build_tasks_query
+        from obsidian_rag.cli_commands import _build_tasks_query
 
         mock_session = MagicMock()
         mock_query = MagicMock()
@@ -1082,7 +1083,7 @@ class TestBuildTasksQuery:
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
 
-        from obsidian_rag.cli import TaskDateFilters
+        from obsidian_rag.cli_commands import TaskDateFilters
 
         date_filters = TaskDateFilters()
         result = _build_tasks_query(
@@ -1097,7 +1098,7 @@ class TestBuildTasksQuery:
         """Test _build_tasks_query accepts date objects directly."""
         from datetime import date
 
-        from obsidian_rag.cli import _build_tasks_query, TaskDateFilters
+        from obsidian_rag.cli_commands import _build_tasks_query, TaskDateFilters
 
         mock_session = MagicMock()
         mock_query = MagicMock()
@@ -1144,7 +1145,7 @@ class TestCreateProgressCallbackCoverage:
         """Test progress callback does not print when verbose=False."""
         from functools import partial
 
-        from obsidian_rag.cli import progress_callback
+        from obsidian_rag.cli_commands import progress_callback
 
         callback = partial(progress_callback, verbose=False)
 
@@ -1158,9 +1159,9 @@ class TestProgressCallback:
 
     def test_progress_callback_verbose_true(self):
         """Test progress_callback with verbose=True prints message."""
-        from obsidian_rag.cli import progress_callback
+        from obsidian_rag.cli_commands import progress_callback
 
-        with patch("obsidian_rag.cli.click.echo") as mock_echo:
+        with patch("obsidian_rag.cli_commands.click.echo") as mock_echo:
             progress_callback(5, 10, 4, 1, verbose=True)
 
             mock_echo.assert_called_once()
@@ -1170,9 +1171,9 @@ class TestProgressCallback:
 
     def test_progress_callback_verbose_false(self):
         """Test progress_callback with verbose=False does not print."""
-        from obsidian_rag.cli import progress_callback
+        from obsidian_rag.cli_commands import progress_callback
 
-        with patch("obsidian_rag.cli.click.echo") as mock_echo:
+        with patch("obsidian_rag.cli_commands.click.echo") as mock_echo:
             progress_callback(5, 10, 4, 1, verbose=False)
 
             mock_echo.assert_not_called()
@@ -1186,7 +1187,7 @@ class TestReportIngestResultsCoverage:
         import sys
         from io import StringIO
 
-        from obsidian_rag.cli import _report_ingest_results
+        from obsidian_rag.cli_commands import _report_ingest_results
 
         stats = {"new": 5, "updated": 3, "unchanged": 2, "errors": 0}
 
@@ -1203,55 +1204,307 @@ class TestReportIngestResultsCoverage:
         assert "deletion skipped" in output
 
 
-class TestValidateVaultConfigCoverage:
-    """Test _validate_vault_config error paths (lines 239-245, 252-258)."""
+class TestResolveIngestPath:
+    """Test _resolve_ingest_path path resolution logic."""
 
-    def test_validate_vault_config_vault_not_found(self):
-        """Test error when vault not found (lines 239-245)."""
-        from pathlib import Path
-
-        from obsidian_rag.cli import _validate_vault_config
-        from obsidian_rag.config import Settings
-
-        mock_settings = MagicMock(spec=Settings)
-        mock_settings.get_vault.return_value = None
-        mock_settings.get_vault_names.return_value = ["vault1", "vault2"]
-
-        with pytest.raises(SystemExit) as exc_info:
-            _validate_vault_config(mock_settings, "nonexistent", "/path")
-
-        assert exc_info.value.code == 1
-
-    def test_validate_vault_config_path_mismatch(self):
-        """Test error when path does not match vault config (lines 252-258)."""
+    def test_resolve_ingest_path_explicit_path_provided(self):
+        """When explicit path is provided, it is returned as-is (REQ-009)."""
         import tempfile
-        from pathlib import Path
 
-        from obsidian_rag.cli import _validate_vault_config
+        from obsidian_rag.cli_ingest import _resolve_ingest_path
         from obsidian_rag.config import Settings, VaultConfig
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            mock_settings = MagicMock(spec=Settings)
             vault_config = VaultConfig(
-                container_path=str(Path(tmpdir) / "vault_a"),
-                host_path=str(Path(tmpdir) / "vault_a"),
+                container_path=tmpdir,
+                host_path=tmpdir,
             )
+            settings = MagicMock(spec=Settings)
+            settings.get_vault.return_value = vault_config
+            # Explicit path should be returned even if vault config exists
+            result = _resolve_ingest_path(settings, tmpdir, "any-vault")
+            assert result == tmpdir
+
+    def test_resolve_ingest_path_uses_vault_container_path(self):
+        """When no path provided, vault's container_path is used (REQ-008)."""
+        import tempfile
+
+        from obsidian_rag.cli_ingest import _resolve_ingest_path
+        from obsidian_rag.config import Settings, VaultConfig
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vault_config = VaultConfig(
+                container_path=tmpdir,
+                host_path=tmpdir,
+            )
+            settings = MagicMock(spec=Settings)
+            settings.get_vault.return_value = vault_config
+
+            result = _resolve_ingest_path(settings, None, "Personal")
+            assert result == tmpdir
+
+    def test_resolve_ingest_path_vault_not_found_no_path(self):
+        """Vault not found in config and no PATH provided → click.BadParameter."""
+        from obsidian_rag.cli_ingest import _resolve_ingest_path
+        from obsidian_rag.config import Settings
+
+        settings = MagicMock(spec=Settings)
+        settings.get_vault.return_value = None
+        settings.get_vault_names.return_value = ["vault1", "vault2"]
+
+        with pytest.raises(click.BadParameter, match="not found in configuration"):
+            _resolve_ingest_path(settings, None, "Nonexistent")
+
+    def test_resolve_ingest_path_configured_path_does_not_exist(self):
+        """Vault's container_path doesn't exist → click.BadParameter."""
+        from obsidian_rag.cli_ingest import _resolve_ingest_path
+        from obsidian_rag.config import Settings
+
+        vault_config = MagicMock()
+        vault_config.container_path = "/nonexistent/path"
+        settings = MagicMock(spec=Settings)
+        settings.get_vault.return_value = vault_config
+
+        with pytest.raises(click.BadParameter, match="does not exist"):
+            _resolve_ingest_path(settings, None, "Personal")
+
+    def test_resolve_ingest_path_explicit_path_does_not_exist(self):
+        """Explicit PATH that doesn't exist → click.BadParameter."""
+        from obsidian_rag.cli_ingest import _resolve_ingest_path
+        from obsidian_rag.config import Settings
+
+        vault_config = MagicMock()
+        vault_config.container_path = "/nonexistent/path"
+        settings = MagicMock(spec=Settings)
+        settings.get_vault.return_value = vault_config
+
+        with pytest.raises(click.BadParameter, match="does not exist"):
+            _resolve_ingest_path(settings, "/nonexistent/path", "Personal")
+
+    def test_resolve_ingest_path_is_not_directory(self):
+        """Resolved path is a file, not a directory → click.BadParameter."""
+        import tempfile
+        from pathlib import Path
+
+        from obsidian_rag.cli_ingest import _resolve_ingest_path
+        from obsidian_rag.config import Settings
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "file.txt"
+            file_path.write_text("not a directory")
+
+            vault_config = MagicMock()
+            vault_config.container_path = str(file_path)
+            settings = MagicMock(spec=Settings)
+            settings.get_vault.return_value = vault_config
+
+            with pytest.raises(click.BadParameter, match="not a directory"):
+                _resolve_ingest_path(settings, None, "Personal")
+
+    def test_resolve_ingest_path_no_vaults_configured(self):
+        """No vaults configured at all → error message shows 'none configured'."""
+        from obsidian_rag.cli_ingest import _resolve_ingest_path
+        from obsidian_rag.config import Settings
+
+        settings = MagicMock(spec=Settings)
+        settings.get_vault.return_value = None
+        settings.get_vault_names.return_value = []
+
+        with pytest.raises(click.BadParameter, match="none configured"):
+            _resolve_ingest_path(settings, None, "Nonexistent")
+
+    def test_resolve_ingest_path_vault_not_found_error_includes_available(self):
+        """Error message includes list of available vaults."""
+        from obsidian_rag.cli_ingest import _resolve_ingest_path
+        from obsidian_rag.config import Settings
+
+        settings = MagicMock(spec=Settings)
+        settings.get_vault.return_value = None
+        settings.get_vault_names.return_value = ["Personal", "Work"]
+
+        with pytest.raises(click.BadParameter, match="Personal, Work"):
+            _resolve_ingest_path(settings, None, "Nonexistent")
+
+    def test_resolve_ingest_path_path_mismatch(self):
+        """Explicit path that doesn't match vault's container_path → error."""
+        import tempfile
+        from pathlib import Path
+
+        from obsidian_rag.cli_ingest import _resolve_ingest_path
+        from obsidian_rag.config import Settings, VaultConfig
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vault_a = Path(tmpdir) / "vault_a"
+            vault_b = Path(tmpdir) / "vault_b"
+            vault_a.mkdir()
+            vault_b.mkdir()
+
+            vault_config = VaultConfig(
+                container_path=str(vault_a),
+                host_path=str(vault_a),
+            )
+            mock_settings = MagicMock(spec=Settings)
             mock_settings.get_vault.return_value = vault_config
 
-            # Try to validate with a different path
-            with pytest.raises(SystemExit) as exc_info:
-                _validate_vault_config(
-                    mock_settings, "test-vault", str(Path(tmpdir) / "vault_b")
+            with pytest.raises(click.BadParameter, match="does not match"):
+                _resolve_ingest_path(mock_settings, str(vault_b), "test-vault")
+
+
+class TestIngestCommandOptionalPath:
+    """Test ingest command with optional PATH behavior."""
+
+    def test_ingest_no_path_vault_not_configured(self):
+        """CLI shows error when vault not found and no PATH provided."""
+        runner = CliRunner()
+        mock_settings = MagicMock()
+        mock_settings.get_vault.return_value = None
+        mock_settings.get_vault_names.return_value = ["Personal"]
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["ingest", "--vault", "Nonexistent"])
+
+        assert result.exit_code != 0
+        assert "not found in configuration" in result.output
+
+    def test_ingest_no_path_container_path_not_found(self):
+        """CLI shows error when vault's container_path doesn't exist."""
+        runner = CliRunner()
+        vault_config = MagicMock()
+        vault_config.container_path = "/nonexistent/path"
+        mock_settings = MagicMock()
+        mock_settings.get_vault.return_value = vault_config
+        mock_settings.get_vault_names.return_value = ["Personal"]
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            result = runner.invoke(cli, ["ingest", "--vault", "Personal"])
+
+        assert result.exit_code != 0
+        assert "does not exist" in result.output
+
+    @patch("obsidian_rag.cli_commands.scan_markdown_files")
+    @patch("obsidian_rag.cli_commands.process_files_in_batches")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    def test_ingest_explicit_path_backward_compatible(
+        self, _mock_get_provider, _mock_db_manager, _mock_process, mock_scan
+    ):
+        """Existing 'ingest <path> --vault <name>' usage still works."""
+        from pathlib import Path
+
+        from obsidian_rag.config import VaultConfig
+
+        runner = CliRunner()
+        mock_scan.return_value = []
+        mock_settings = MagicMock()
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
+        mock_settings.ingestion.batch_size = 100
+        mock_settings.ingestion.progress_interval = 10
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        vault_config = VaultConfig(container_path="/vault", host_path="/vault")
+        mock_settings.get_vault.return_value = vault_config
+        mock_settings.get_vault_names.return_value = ["test-vault"]
+
+        with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+            with runner.isolated_filesystem() as fs:
+                vault_path = Path(fs) / "vault"
+                vault_path.mkdir()
+                vault_config.container_path = str(vault_path)
+                vault_config.host_path = str(vault_path)
+                result = runner.invoke(
+                    cli, ["ingest", str(vault_path), "--vault", "test-vault"]
                 )
 
-            assert exc_info.value.code == 1
+        assert result.exit_code == 0
+        assert "No markdown files found" in result.output
+
+    @patch("obsidian_rag.cli_commands.scan_markdown_files")
+    @patch("obsidian_rag.cli_commands.process_files_in_batches")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    def test_ingest_no_path_uses_container_path(
+        self, _mock_get_provider, _mock_db_manager, _mock_process, mock_scan
+    ):
+        """Ingest without PATH uses vault's container_path from config."""
+        from pathlib import Path
+
+        from obsidian_rag.config import VaultConfig
+
+        runner = CliRunner()
+        mock_scan.return_value = []
+        mock_settings = MagicMock()
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
+        mock_settings.ingestion.batch_size = 100
+        mock_settings.ingestion.progress_interval = 10
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        with runner.isolated_filesystem() as fs:
+            vault_path = Path(fs) / "vault"
+            vault_path.mkdir()
+            vault_config = VaultConfig(
+                container_path=str(vault_path),
+                host_path=str(vault_path),
+            )
+            mock_settings.get_vault.return_value = vault_config
+            mock_settings.get_vault_names.return_value = ["test-vault"]
+
+            with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+                result = runner.invoke(cli, ["ingest", "--vault", "test-vault"])
+
+        assert result.exit_code == 0
+        assert "No markdown files found" in result.output
+
+    @patch("obsidian_rag.cli_commands.scan_markdown_files")
+    @patch("obsidian_rag.cli_commands.process_files_in_batches")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    def test_ingest_path_overrides_container_path(
+        self, _mock_get_provider, _mock_db_manager, _mock_process, mock_scan
+    ):
+        """Explicit PATH takes precedence over vault's container_path."""
+        from pathlib import Path
+
+        from obsidian_rag.config import VaultConfig
+
+        runner = CliRunner()
+        mock_scan.return_value = []
+        mock_settings = MagicMock()
+        mock_settings.database.url = "postgresql+psycopg://localhost/test"
+        mock_settings.ingestion.batch_size = 100
+        mock_settings.ingestion.progress_interval = 10
+        mock_settings.logging.level = "INFO"
+        mock_settings.logging.format = "text"
+
+        with runner.isolated_filesystem() as fs:
+            vault_path = Path(fs) / "vault"
+            vault_path.mkdir()
+            # Config points to /other/path, but explicit path is used
+            vault_config = VaultConfig(
+                container_path=str(vault_path),
+                host_path=str(vault_path),
+            )
+            mock_settings.get_vault.return_value = vault_config
+            mock_settings.get_vault_names.return_value = ["test-vault"]
+
+            with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
+                result = runner.invoke(
+                    cli, ["ingest", str(vault_path), "--vault", "test-vault"]
+                )
+
+        assert result.exit_code == 0
 
 
 class TestQueryCommandCoverage:
     """Test query command coverage gaps."""
 
-    @patch("obsidian_rag.cli.DatabaseManager")
-    @patch("obsidian_rag.cli._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
     def test_query_command_with_table_output(self, mock_get_provider, mock_db_manager):
         """Test query command with table output format (line 494)."""
         from datetime import datetime
@@ -1296,8 +1549,8 @@ class TestQueryCommandCoverage:
         assert "note" in result.output  # Kind is displayed
         assert "tag1" in result.output  # Tags are displayed
 
-    @patch("obsidian_rag.cli.DatabaseManager")
-    @patch("obsidian_rag.cli._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
     def test_query_command_no_matching_documents(
         self, mock_get_provider, mock_db_manager
     ):
@@ -1332,7 +1585,7 @@ class TestQueryCommandCoverage:
 class TestTasksCommandCoverage:
     """Test tasks command coverage gaps (lines 529-530)."""
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_command_no_tasks_found_message(self, mock_db_manager):
         """Test tasks command shows 'No tasks found' message (lines 529-530)."""
         runner = CliRunner()
@@ -1364,7 +1617,7 @@ class TestFormatTaskResultsCoverage:
 
     def test_format_task_results_with_different_statuses(self):
         """Test task formatting with all statuses (line 569-570, 576)."""
-        from obsidian_rag.cli import _format_task_results
+        from obsidian_rag.cli_commands import _format_task_results
 
         mock_document = MagicMock()
         mock_document.file_name = "test.md"
@@ -1390,10 +1643,10 @@ class TestFormatTaskResultsCoverage:
 class TestRunIngestionCoverage:
     """Test _run_ingestion with no_delete option (line 282)."""
 
-    @patch("obsidian_rag.cli._scan_vault")
-    @patch("obsidian_rag.cli.process_files_in_batches")
-    @patch("obsidian_rag.cli.DatabaseManager")
-    @patch("obsidian_rag.cli._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands._scan_vault")
+    @patch("obsidian_rag.cli_commands.process_files_in_batches")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
     def test_run_ingestion_with_no_delete(
         self, mock_get_provider, mock_db_manager, mock_process, mock_scan
     ):
@@ -1402,7 +1655,7 @@ class TestRunIngestionCoverage:
         from io import StringIO
         from pathlib import Path
 
-        from obsidian_rag.cli import _run_ingestion, IngestOptions
+        from obsidian_rag.cli_commands import _run_ingestion, IngestOptions
 
         mock_settings = MagicMock()
         mock_settings.database = MagicMock()
@@ -1448,7 +1701,7 @@ class TestFormatQueryResultsTableCoverage:
 
     def test_format_query_results_table_without_kind_and_tags(self):
         """Test table format when doc.kind and doc.tags are None/empty."""
-        from obsidian_rag.cli import _format_query_results_table
+        from obsidian_rag.cli_commands import _format_query_results_table
 
         # Create mock document without kind and tags
         mock_doc = MagicMock()
@@ -1473,7 +1726,7 @@ class TestBuildTasksQueryCoverage:
         """Test _build_tasks_query with valid due_before date (lines 569-570)."""
         from datetime import date
 
-        from obsidian_rag.cli import _build_tasks_query
+        from obsidian_rag.cli_commands import _build_tasks_query
 
         mock_session = MagicMock()
         mock_query = MagicMock()
@@ -1483,7 +1736,7 @@ class TestBuildTasksQueryCoverage:
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
 
-        from obsidian_rag.cli import TaskDateFilters
+        from obsidian_rag.cli_commands import TaskDateFilters
 
         due_date = date(2026, 3, 15)
         date_filters = TaskDateFilters(due_before=due_date)
@@ -1495,7 +1748,7 @@ class TestBuildTasksQueryCoverage:
 
     def test_build_tasks_query_with_include_tags_filter(self):
         """Test _build_tasks_query with include_tags filter."""
-        from obsidian_rag.cli import _build_tasks_query, TaskDateFilters
+        from obsidian_rag.cli_commands import _build_tasks_query, TaskDateFilters
 
         mock_session = MagicMock()
         mock_query = MagicMock()
@@ -1520,7 +1773,7 @@ class TestApplyIncludeTagsCli:
 
     def test_apply_include_tags_cli_with_tags(self):
         """Test _apply_include_tags_cli applies filters for each tag."""
-        from obsidian_rag.cli import _apply_include_tags_cli
+        from obsidian_rag.cli_commands import _apply_include_tags_cli
 
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
@@ -1533,7 +1786,7 @@ class TestApplyIncludeTagsCli:
 
     def test_apply_include_tags_cli_with_empty_list(self):
         """Test _apply_include_tags_cli returns query unchanged with empty list."""
-        from obsidian_rag.cli import _apply_include_tags_cli
+        from obsidian_rag.cli_commands import _apply_include_tags_cli
 
         mock_query = MagicMock()
 
@@ -1544,7 +1797,7 @@ class TestApplyIncludeTagsCli:
 
     def test_apply_include_tags_cli_with_none(self):
         """Test _apply_include_tags_cli returns query unchanged with None."""
-        from obsidian_rag.cli import _apply_include_tags_cli
+        from obsidian_rag.cli_commands import _apply_include_tags_cli
 
         mock_query = MagicMock()
 
@@ -1559,7 +1812,7 @@ class TestApplyExcludeTagsCli:
 
     def test_apply_exclude_tags_cli_with_tags(self):
         """Test _apply_exclude_tags_cli applies not_(or_()) filter."""
-        from obsidian_rag.cli import _apply_exclude_tags_cli
+        from obsidian_rag.cli_commands import _apply_exclude_tags_cli
 
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
@@ -1572,7 +1825,7 @@ class TestApplyExcludeTagsCli:
 
     def test_apply_exclude_tags_cli_with_empty_list(self):
         """Test _apply_exclude_tags_cli returns query unchanged with empty list."""
-        from obsidian_rag.cli import _apply_exclude_tags_cli
+        from obsidian_rag.cli_commands import _apply_exclude_tags_cli
 
         mock_query = MagicMock()
 
@@ -1583,7 +1836,7 @@ class TestApplyExcludeTagsCli:
 
     def test_apply_exclude_tags_cli_with_none(self):
         """Test _apply_exclude_tags_cli returns query unchanged with None."""
-        from obsidian_rag.cli import _apply_exclude_tags_cli
+        from obsidian_rag.cli_commands import _apply_exclude_tags_cli
 
         mock_query = MagicMock()
 
@@ -1596,8 +1849,8 @@ class TestApplyExcludeTagsCli:
 class TestTasksCommandEarlyReturn:
     """Test tasks command early return (lines 529-530)."""
 
-    @patch("obsidian_rag.cli.DatabaseManager")
-    @patch("obsidian_rag.cli._build_tasks_query")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._build_tasks_query")
     def test_tasks_command_early_return_when_no_results(
         self, mock_build_query, mock_db_manager
     ):
@@ -1634,7 +1887,7 @@ class TestTasksCommandEarlyReturn:
 class TestCliDateFiltering:
     """Test CLI tasks command with date filtering."""
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_with_due_after(self, mock_db_manager):
         """Test tasks command with --due-after option."""
         from datetime import date
@@ -1660,7 +1913,7 @@ class TestCliDateFiltering:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_with_due_before_and_after(self, mock_db_manager):
         """Test tasks command with both --due-before and --due-after."""
         runner = CliRunner()
@@ -1687,7 +1940,7 @@ class TestCliDateFiltering:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_with_scheduled_dates(self, mock_db_manager):
         """Test tasks command with scheduled date options."""
         runner = CliRunner()
@@ -1720,7 +1973,7 @@ class TestCliDateFiltering:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_with_completion_dates(self, mock_db_manager):
         """Test tasks command with completion date options."""
         runner = CliRunner()
@@ -1753,7 +2006,7 @@ class TestCliDateFiltering:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_with_all_date_options(self, mock_db_manager):
         """Test tasks command with all six date options."""
         runner = CliRunner()
@@ -1828,7 +2081,7 @@ class TestCliDateFiltering:
 class TestCliTagFiltering:
     """Tests for CLI tag filtering with --include-tags and --exclude-tags."""
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_include_tags_single(self, mock_db_manager):
         """Test filtering with single include tag."""
         runner = CliRunner()
@@ -1852,7 +2105,7 @@ class TestCliTagFiltering:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_include_tags_multiple(self, mock_db_manager):
         """Test filtering with multiple include tags."""
         runner = CliRunner()
@@ -1878,7 +2131,7 @@ class TestCliTagFiltering:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_exclude_tags_single(self, mock_db_manager):
         """Test filtering with single exclude tag."""
         runner = CliRunner()
@@ -1902,7 +2155,7 @@ class TestCliTagFiltering:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_include_and_exclude_combined(self, mock_db_manager):
         """Test combining include and exclude tags."""
         runner = CliRunner()
@@ -1935,7 +2188,7 @@ class TestCliTagFiltering:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tag_prefix_stripped_cli(self, mock_db_manager):
         """Test that # prefix is stripped in CLI."""
         from obsidian_rag.mcp_server.tools.tasks import _strip_tag_prefix
@@ -1964,3 +2217,33 @@ class TestCliTagFiltering:
             result = runner.invoke(cli, ["tasks", "--include-tags", "#work"])
 
         assert result.exit_code == 0
+
+
+class TestCliSetupLoggingJsonFormat:
+    """Test _setup_logging with JSON format from cli.py."""
+
+    def test_setup_logging_json_format_cli(self):
+        """Test _setup_logging with JSON format from cli.py module (TASK-025)."""
+        import logging
+        import sys
+        from io import StringIO
+
+        from obsidian_rag.cli_commands import setup_logging
+
+        # Capture stderr
+        stderr_capture = StringIO()
+        original_stderr = sys.stderr
+        sys.stderr = stderr_capture
+
+        try:
+            setup_logging("INFO", "json")
+            logger = logging.getLogger("test_json_logger_cli")
+            logger.info("JSON test from cli")
+
+            output = stderr_capture.getvalue()
+            assert '"timestamp"' in output
+            assert '"level"' in output
+            assert '"message"' in output
+            assert "JSON test from cli" in output
+        finally:
+            sys.stderr = original_stderr

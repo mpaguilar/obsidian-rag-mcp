@@ -45,6 +45,11 @@ from obsidian_rag.mcp_server.tool_definitions import (
     list_vaults_tool,
     query_documents_tool,
 )
+from obsidian_rag.mcp_server.vault_tools import (
+    delete_vault,
+    get_vault,
+    update_vault,
+)
 
 # Global session manager instance
 _session_manager: SessionManager | None = None
@@ -144,9 +149,7 @@ def _create_vault_error_response(error_msg: str) -> dict[str, object]:
     }
 
 
-# ============================================================================
 # Tool Wrappers (access dependencies through registry)
-# ============================================================================
 
 
 def query_documents(
@@ -781,9 +784,7 @@ def _get_session_manager() -> SessionManager | None:
     return _session_manager
 
 
-# ============================================================================
 # Server Creation and Registration
-# ============================================================================
 
 
 def _register_tools(mcp: FastMCP) -> None:
@@ -810,6 +811,9 @@ def _register_tools(mcp: FastMCP) -> None:
 
     # Register vault tools
     mcp.tool()(list_vaults)
+    mcp.tool()(get_vault)
+    mcp.tool()(update_vault)
+    mcp.tool()(delete_vault)
 
     # Register ingest tool
     mcp.tool()(ingest)

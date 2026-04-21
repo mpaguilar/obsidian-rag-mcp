@@ -87,13 +87,7 @@ DEFAULT_CONFIG = {
         "enable_health_check": True,
         "stateless_http": False,
     },
-    "vaults": {
-        "Obsidian Vault": {
-            "container_path": "/data",
-            "host_path": "/data",
-            "description": "Default vault",
-        },
-    },
+    "vaults": {},
 }
 
 
@@ -138,11 +132,17 @@ def _get_config_file_path() -> Path | None:
 def _replace_env_var(match: re.Match) -> str:
     """Replace a single environment variable match.
 
+    Supports ${VAR} and ${VAR:-default} syntax. When a variable
+    is not set and no default is provided, returns an empty string
+    and logs a warning.
+
     Args:
         match: Regex match object containing the variable expression.
 
     Returns:
-        The replaced value.
+        The environment variable value, the default value, or an
+        empty string if the variable is not set and no default is
+        provided.
 
     """
     _msg = "_replace_env_var starting"
@@ -154,7 +154,16 @@ def _replace_env_var(match: re.Match) -> str:
         _msg = "_replace_env_var returning"
         log.debug(_msg)
         return str(result)
-    result = os.environ.get(var_expr, match.group(0))
+    result = os.environ.get(var_expr)
+    if result is None:
+        _msg = (
+            f"Environment variable '{var_expr}' is not set, "
+            f"no default provided; returning empty string"
+        )
+        log.warning(_msg)
+        _msg = "_replace_env_var returning"
+        log.debug(_msg)
+        return ""
     _msg = "_replace_env_var returning"
     log.debug(_msg)
     return str(result)
@@ -165,7 +174,9 @@ def _interpolate_env_vars(
 ) -> T:
     """Interpolate environment variables in configuration values.
 
-    Supports ${VAR} and ${VAR:-default} syntax.
+    Supports ${VAR} and ${VAR:-default} syntax. When a variable
+    referenced by ${VAR} is not set and no default is provided,
+    it is replaced with an empty string and a warning is logged.
 
     This is a homomorphic function that preserves the input type:
     - str input -> str output (with env var interpolation)

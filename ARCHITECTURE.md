@@ -165,7 +165,7 @@ Optional flashrank integration for improving chunk relevance:
 
 **Supported Providers:**
 - OpenAI (embeddings, analysis, chat) - uses `litellm`
-- OpenRouter (embeddings, chat) - uses `litellm` with `OPENAI_API_BASE` env var workaround
+- OpenRouter (embeddings, chat) - uses `litellm` with `openrouter/` prefix for native routing
 - HuggingFace (local embeddings) - uses `langchain.embeddings.HuggingFaceEmbeddings`
 - Extensible design for additional providers
 
@@ -173,7 +173,7 @@ Optional flashrank integration for improving chunk relevance:
 - `litellm`: Provider-agnostic LLM connectivity for OpenAI and OpenRouter endpoints
   - `OpenAIEmbeddingProvider`: Uses `litellm.embedding()`
   - `OpenAIChatProvider`: Uses `litellm.completion()`
-  - `OpenRouterEmbeddingProvider`: Uses `litellm.embedding()` with model name (no `openrouter/` prefix) and `OPENAI_API_BASE` env var set to OpenRouter's API endpoint. Workaround for litellm 1.82.1 bug where `openrouter/` prefix causes `api_base` to be ignored.
+  - `OpenRouterEmbeddingProvider`: Uses `litellm.embedding()` with `openrouter/` prefix for native routing via litellm 1.83+. Custom base_url passed as `api_base` parameter.
   - `OpenRouterChatProvider`: Uses `litellm.completion()` with `openrouter/` prefix
 - `langchain`: Local embedding models via HuggingFace
   - `HuggingFaceEmbeddingProvider`: Uses `HuggingFaceEmbeddings`
@@ -376,9 +376,9 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 
 **Vault Tools:**
 - `list_vaults`: List all vaults with document counts and metadata
-
-**Vault Tools:**
-- `list_vaults`: List all vaults with document counts and metadata
+- `get_vault`: Get a single vault by name or UUID with document count
+- `update_vault`: Update vault properties (description, host_path, container_path); container_path changes require `force=True` and delete associated data
+- `delete_vault`: Delete vault with cascade deletion of documents/tasks/chunks; requires `confirm=True`
 
 **Property Filter Operators:**
 - `equals`: Exact match (case-insensitive)
@@ -423,7 +423,7 @@ Pydantic models for request/response validation:
 - `TagListResponse`: Paginated list of unique tags
 
 **Vault Models:**
-- `VaultResponse`: Single vault with metadata and document count
+- `VaultResponse`: Single vault with metadata, document count, container_path, and created_at
 - `VaultListResponse`: Paginated vault list
 
 **Filter Models:**

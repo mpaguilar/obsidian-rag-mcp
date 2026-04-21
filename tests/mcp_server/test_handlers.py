@@ -875,3 +875,267 @@ class TestJsonStringSpecialCharacters:
         result = parse_json_str(json_str)
 
         assert result == {"field": None}
+
+
+class TestGetVaultHandler:
+    """Tests for _get_vault_handler function."""
+
+    @patch("obsidian_rag.mcp_server.handlers.get_vault")
+    def test_get_vault_handler_by_name(self, mock_get_vault):
+        """Handler returns model_dump when getting vault by name."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_vault_response = MagicMock()
+        mock_vault_response.model_dump.return_value = {
+            "id": "vault-123",
+            "name": "TestVault",
+            "document_count": 5,
+        }
+        mock_get_vault.return_value = mock_vault_response
+
+        from obsidian_rag.mcp_server.handlers import _get_vault_handler
+
+        result = _get_vault_handler(
+            db_manager=mock_db_manager,
+            name="TestVault",
+        )
+
+        mock_get_vault.assert_called_once_with(
+            session=mock_session,
+            name="TestVault",
+            vault_id=None,
+        )
+        assert result == {"id": "vault-123", "name": "TestVault", "document_count": 5}
+
+    @patch("obsidian_rag.mcp_server.handlers.get_vault")
+    def test_get_vault_handler_by_id(self, mock_get_vault):
+        """Handler returns model_dump when getting vault by ID."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_vault_response = MagicMock()
+        mock_vault_response.model_dump.return_value = {
+            "id": "vault-456",
+            "name": "AnotherVault",
+            "document_count": 10,
+        }
+        mock_get_vault.return_value = mock_vault_response
+
+        from obsidian_rag.mcp_server.handlers import _get_vault_handler
+
+        result = _get_vault_handler(
+            db_manager=mock_db_manager,
+            vault_id="vault-456",
+        )
+
+        mock_get_vault.assert_called_once_with(
+            session=mock_session,
+            name=None,
+            vault_id="vault-456",
+        )
+        assert result == {
+            "id": "vault-456",
+            "name": "AnotherVault",
+            "document_count": 10,
+        }
+
+    @patch("obsidian_rag.mcp_server.handlers.get_vault")
+    def test_get_vault_handler_not_found(self, mock_get_vault):
+        """Handler catches ValueError and returns error dict."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_get_vault.side_effect = ValueError("Vault 'NonExistent' not found")
+
+        from obsidian_rag.mcp_server.handlers import _get_vault_handler
+
+        result = _get_vault_handler(
+            db_manager=mock_db_manager,
+            name="NonExistent",
+        )
+
+        assert result == {"success": False, "error": "Vault 'NonExistent' not found"}
+
+
+class TestUpdateVaultHandler:
+    """Tests for _update_vault_handler function."""
+
+    @patch("obsidian_rag.mcp_server.handlers.update_vault")
+    def test_update_vault_handler_success(self, mock_update_vault):
+        """Handler returns model_dump on successful update."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_vault_response = MagicMock()
+        mock_vault_response.model_dump.return_value = {
+            "id": "vault-123",
+            "name": "TestVault",
+            "description": "Updated description",
+        }
+        mock_update_vault.return_value = mock_vault_response
+
+        from obsidian_rag.mcp_server.handlers import _update_vault_handler
+        from obsidian_rag.mcp_server.tools.vaults_params import VaultUpdateParams
+
+        params = VaultUpdateParams(
+            name="TestVault",
+            description="Updated description",
+        )
+
+        result = _update_vault_handler(
+            db_manager=mock_db_manager,
+            params=params,
+        )
+
+        mock_update_vault.assert_called_once_with(
+            session=mock_session,
+            params=params,
+        )
+        assert result == {
+            "id": "vault-123",
+            "name": "TestVault",
+            "description": "Updated description",
+        }
+
+    @patch("obsidian_rag.mcp_server.handlers.update_vault")
+    def test_update_vault_handler_force_required(self, mock_update_vault):
+        """Handler returns error dict when container_path change requires force."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        error_dict = {
+            "success": False,
+            "error": "Changing container_path will delete all documents, tasks, and chunks for this vault and require re-ingestion. Set force=True to confirm.",
+        }
+        mock_update_vault.return_value = error_dict
+
+        from obsidian_rag.mcp_server.handlers import _update_vault_handler
+        from obsidian_rag.mcp_server.tools.vaults_params import VaultUpdateParams
+
+        params = VaultUpdateParams(
+            name="TestVault",
+            container_path="/new/path",
+            force=False,
+        )
+
+        result = _update_vault_handler(
+            db_manager=mock_db_manager,
+            params=params,
+        )
+
+        assert result == error_dict
+
+    @patch("obsidian_rag.mcp_server.handlers.update_vault")
+    def test_update_vault_handler_not_found(self, mock_update_vault):
+        """Handler catches ValueError and returns error dict."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_update_vault.side_effect = ValueError("Vault 'NonExistent' not found")
+
+        from obsidian_rag.mcp_server.handlers import _update_vault_handler
+        from obsidian_rag.mcp_server.tools.vaults_params import VaultUpdateParams
+
+        params = VaultUpdateParams(name="NonExistent")
+
+        result = _update_vault_handler(
+            db_manager=mock_db_manager,
+            params=params,
+        )
+
+        assert result == {"success": False, "error": "Vault 'NonExistent' not found"}
+
+
+class TestDeleteVaultHandler:
+    """Tests for _delete_vault_handler function."""
+
+    @patch("obsidian_rag.mcp_server.handlers.delete_vault")
+    def test_delete_vault_handler_success(self, mock_delete_vault):
+        """Handler returns success dict when deletion confirmed."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        success_dict = {
+            "success": True,
+            "name": "TestVault",
+            "id": "vault-123",
+            "documents_deleted": 5,
+            "tasks_deleted": 10,
+            "chunks_deleted": 20,
+            "warning": "Vault config entry still exists.",
+        }
+        mock_delete_vault.return_value = success_dict
+
+        from obsidian_rag.mcp_server.handlers import _delete_vault_handler
+
+        result = _delete_vault_handler(
+            db_manager=mock_db_manager,
+            name="TestVault",
+            confirm=True,
+        )
+
+        mock_delete_vault.assert_called_once_with(
+            session=mock_session,
+            name="TestVault",
+            confirm=True,
+        )
+        assert result == success_dict
+
+    @patch("obsidian_rag.mcp_server.handlers.delete_vault")
+    def test_delete_vault_handler_not_confirmed(self, mock_delete_vault):
+        """Handler returns error dict when confirm is False."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        error_dict = {
+            "success": False,
+            "error": "confirm=True is required to delete a vault. This action is irreversible and will cascade-delete all associated documents, tasks, and chunks.",
+        }
+        mock_delete_vault.return_value = error_dict
+
+        from obsidian_rag.mcp_server.handlers import _delete_vault_handler
+
+        result = _delete_vault_handler(
+            db_manager=mock_db_manager,
+            name="TestVault",
+            confirm=False,
+        )
+
+        assert result == error_dict
+
+    @patch("obsidian_rag.mcp_server.handlers.delete_vault")
+    def test_delete_vault_handler_not_found(self, mock_delete_vault):
+        """Handler catches ValueError and returns error dict."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_delete_vault.side_effect = ValueError("Vault 'NonExistent' not found")
+
+        from obsidian_rag.mcp_server.handlers import _delete_vault_handler
+
+        result = _delete_vault_handler(
+            db_manager=mock_db_manager,
+            name="NonExistent",
+            confirm=True,
+        )
+
+        assert result == {"success": False, "error": "Vault 'NonExistent' not found"}

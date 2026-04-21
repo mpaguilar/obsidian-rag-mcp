@@ -1,0 +1,68 @@
+services:
+  obsidian-rag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_MODE: full
+    image: obsidian-rag-mcp
+    environment:
+      # Database configuration (required - set via environment variable)
+      OBSIDIAN_RAG_DATABASE_URL: ${OBSIDIAN_RAG_DATABASE_URL}
+      OBSIDIAN_RAG_DATABASE_POOL_SIZE: 5
+      OBSIDIAN_RAG_DATABASE_MAX_OVERFLOW: 10
+
+      # MCP server configuration
+      OBSIDIAN_RAG_MCP_TOKEN: ${OBSIDIAN_RAG_MCP_TOKEN:-changeme-token}
+      OBSIDIAN_RAG_MCP_HOST: 0.0.0.0
+      OBSIDIAN_RAG_MCP_PORT: 8000
+      OBSIDIAN_RAG_MCP_ENABLE_HEALTH_CHECK: true
+      OBSIDIAN_RAG_MCP_RATE_LIMIT_PER_SECOND: 10
+      OBSIDIAN_RAG_MCP_MAX_CONCURRENT_SESSIONS: 100
+
+      # Embedding provider configuration (default to openai)
+      OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER: ${OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_PROVIDER:-openai}
+      OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MODEL: ${OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_MODEL:-text-embedding-3-small}
+      OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_API_KEY: ${OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_API_KEY:-}
+      OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_BASE_URL: ${OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_BASE_URL:-}
+
+      # Chat provider configuration
+      OBSIDIAN_RAG_ENDPOINTS_CHAT_PROVIDER: ${OBSIDIAN_RAG_ENDPOINTS_CHAT_PROVIDER:-openai}
+      OBSIDIAN_RAG_ENDPOINTS_CHAT_MODEL: ${OBSIDIAN_RAG_ENDPOINTS_CHAT_MODEL:-gpt-4o-mini}
+      OBSIDIAN_RAG_ENDPOINTS_CHAT_API_KEY: ${OBSIDIAN_RAG_ENDPOINTS_CHAT_API_KEY:-}
+      OBSIDIAN_RAG_ENDPOINTS_CHAT_BASE_URL: ${OBSIDIAN_RAG_ENDPOINTS_CHAT_BASE_URL:-}
+
+      # Vector dimension (must match embedding model)
+      OBSIDIAN_RAG_DATABASE_VECTOR_DIMENSION: ${OBSIDIAN_RAG_DATABASE_VECTOR_DIMENSION:-1536}
+
+      # Ingestion settings
+      OBSIDIAN_RAG_INGESTION_BATCH_SIZE: 100
+      OBSIDIAN_RAG_INGESTION_MAX_FILE_SIZE_MB: 10
+      OBSIDIAN_RAG_INGESTION_MAX_TASKS_PER_DOC: 10000
+
+      # Chunking settings
+      OBSIDIAN_RAG_CHUNKING_TARGET_TOKENS: 512
+      OBSIDIAN_RAG_CHUNKING_OVERLAP_TOKENS: 50
+      OBSIDIAN_RAG_CHUNKING_MIN_TOKENS: 64
+      OBSIDIAN_RAG_CHUNKING_MAX_TOKENS: 2048
+
+      # Logging
+      OBSIDIAN_RAG_LOGGING_LEVEL: ${OBSIDIAN_RAG_LOGGING_LEVEL:-INFO}
+
+    volumes:
+      # Mount your obsidian vault(s) here
+      # Example: ./vaults/personal:/data/personal:ro
+      # Example: ./vaults/work:/data/work:ro
+      - ${VAULT_HOST_PATH:-./vaults}:/data/vaults:ro
+
+    ports:
+      - "18000:8000"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+
+    restart: unless-stopped

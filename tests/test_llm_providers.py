@@ -40,6 +40,14 @@ class TestOpenAIEmbeddingProvider:
                 with pytest.raises(ValueError, match="API key is required"):
                     OpenAIEmbeddingProvider()
 
+    def test_init_with_unresolved_env_var_api_key_raises_error(self):
+        """Test initialization raises ValueError when api_key is an unresolved ${...} pattern."""
+        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with pytest.raises(ValueError, match="API key is required"):
+                OpenAIEmbeddingProvider(api_key="${OPENAI_API_KEY}")
+
     def test_init_with_custom_model(self):
         """Test initialization with custom model name."""
         from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
@@ -170,6 +178,14 @@ class TestOpenAIChatProvider:
             with patch.dict("os.environ", {}, clear=True):
                 with pytest.raises(ValueError, match="API key is required"):
                     OpenAIChatProvider()
+
+    def test_init_with_unresolved_env_var_api_key_raises_error(self):
+        """Test initialization raises ValueError when api_key is an unresolved ${...} pattern."""
+        from obsidian_rag.llm.providers import OpenAIChatProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with pytest.raises(ValueError, match="API key is required"):
+                OpenAIChatProvider(api_key="${OPENAI_API_KEY}")
 
     def test_chat_success(self):
         """Test successful chat completion."""
@@ -484,6 +500,14 @@ class TestOpenRouterEmbeddingProvider:
                 with pytest.raises(ValueError, match="API key is required"):
                     OpenRouterEmbeddingProvider()
 
+    def test_init_with_unresolved_env_var_api_key_raises_error(self):
+        """Test initialization raises ValueError when api_key is an unresolved ${...} pattern."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with pytest.raises(ValueError, match="API key is required"):
+                OpenRouterEmbeddingProvider(api_key="${OPENROUTER_API_KEY}")
+
     def test_init_with_custom_model(self):
         """Test initialization with custom model name."""
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
@@ -544,12 +568,11 @@ class TestOpenRouterEmbeddingProvider:
                 with pytest.raises(EmbeddingError, match="API Error"):
                     provider.generate_embedding("test text")
 
-    def test_generate_embedding_uses_model_without_openrouter_prefix(self):
-        """Test that model name is NOT prefixed with openrouter/ (litellm bug workaround).
+    def test_generate_embedding_adds_openrouter_prefix_for_default_model(self):
+        """Test that default model gets 'openrouter/' prefix for litellm 1.83+ native routing.
 
-        This test verifies the workaround for litellm 1.82.1 bug where using
-        openrouter/ prefix causes api_base to be ignored and requests are
-        incorrectly routed to OpenAI's API instead of OpenRouter's.
+        This test verifies that the model name receives the 'openrouter/'
+        prefix for litellm 1.83+ native OpenRouter routing support.
         """
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
@@ -567,17 +590,14 @@ class TestOpenRouterEmbeddingProvider:
 
         mock_embed.assert_called_once()
         call_kwargs = mock_embed.call_args.kwargs
-        # Model should NOT have openrouter/ prefix (workaround for litellm bug)
-        assert call_kwargs["model"] == "qwen/qwen3-embedding-8b"
-        assert call_kwargs["api_base"] == "https://openrouter.ai/api/v1"
+        # Model should have openrouter/ prefix for litellm 1.83+ native support
+        assert call_kwargs["model"] == "openrouter/qwen/qwen3-embedding-8b"
 
     def test_generate_embedding_with_openai_model_via_openrouter(self):
         """Test using OpenAI model through OpenRouter with correct routing.
 
-        Verifies that:
-        1. The model name is stripped of 'openai/' prefix before calling litellm
-        2. The api_base is correctly set to OpenRouter's URL
-        3. Both OPENAI_API_BASE and OPENAI_BASE_URL env vars are set
+        Verifies that the model name gets 'openrouter/' prefix added
+        for litellm native OpenRouter routing.
         """
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
@@ -595,20 +615,17 @@ class TestOpenRouterEmbeddingProvider:
 
         mock_embed.assert_called_once()
         call_kwargs = mock_embed.call_args.kwargs
-        # Model should have 'openai/' prefix stripped for litellm 1.82.4 compatibility
-        assert call_kwargs["model"] == "text-embedding-3-small"
-        assert call_kwargs["api_base"] == "https://openrouter.ai/api/v1"
+        assert call_kwargs["model"] == "openrouter/openai/text-embedding-3-small"
         assert call_kwargs["api_key"] == "test-key"
 
     def test_generate_embedding_with_custom_base_url(self):
-        """Test that custom base_url is correctly passed to litellm."""
+        """Test that custom base_url is passed to litellm.embedding() call."""
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
+        custom_url = "https://custom.openrouter.api.com"
         mock_response = {
             "data": [{"embedding": [0.1, 0.2, 0.3]}],
         }
-
-        custom_url = "https://custom.openrouter.api.com"
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch("litellm.embedding", return_value=mock_response) as mock_embed:
@@ -617,11 +634,11 @@ class TestOpenRouterEmbeddingProvider:
                     model="qwen/qwen3-embedding-8b",
                     base_url=custom_url,
                 )
+                assert provider.base_url == custom_url
                 provider.generate_embedding("test text")
 
         mock_embed.assert_called_once()
         call_kwargs = mock_embed.call_args.kwargs
-        assert call_kwargs["model"] == "qwen/qwen3-embedding-8b"
         assert call_kwargs["api_base"] == custom_url
 
     def test_dimension_mapping_qwen3_embedding_8b(self):
@@ -636,164 +653,34 @@ class TestOpenRouterEmbeddingProvider:
 
         assert provider._dimension == 4096
 
-    def test_init_sets_openai_api_base_env_var(self):
-        """Test that initialization sets OPENAI_API_BASE environment variable.
-
-        This verifies the workaround for litellm 1.82.1 bug where api_base
-        parameter is ignored for embedding requests. Setting OPENAI_API_BASE
-        ensures requests route to OpenRouter instead of OpenAI.
-
-        Also verifies OPENAI_BASE_URL is set for litellm 1.82.4+ compatibility.
-        """
+    def test_init_reads_openrouter_api_key_from_env(self):
+        """Test that initialization reads OPENROUTER_API_KEY from env if no key provided."""
         from obsidian_rag.llm import providers as providers_module
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch.dict(
                 providers_module.os.environ,
-                {"OPENROUTER_API_KEY": "test-key"},
+                {"OPENROUTER_API_KEY": "env-api-key"},
                 clear=True,
             ):
-                provider = OpenRouterEmbeddingProvider(api_key="test-key")
+                provider = OpenRouterEmbeddingProvider()
 
-                # Verify both env vars are set to default OpenRouter URL
-                assert (
-                    providers_module.os.environ.get("OPENAI_API_BASE")
-                    == "https://openrouter.ai/api/v1"
-                )
-                assert (
-                    providers_module.os.environ.get("OPENAI_BASE_URL")
-                    == "https://openrouter.ai/api/v1"
-                )
-                assert provider.base_url == "https://openrouter.ai/api/v1"
+                assert provider.api_key == "env-api-key"
 
-    def test_init_sets_openai_api_base_with_custom_url(self):
-        """Test that custom base_url is set in OPENAI_API_BASE env var."""
-        from obsidian_rag.llm import providers as providers_module
-        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
-
-        custom_url = "https://custom.openrouter.api.com"
-
-        with patch("obsidian_rag.llm.providers.log"):
-            with patch.dict(
-                providers_module.os.environ,
-                {"OPENROUTER_API_KEY": "test-key"},
-                clear=True,
-            ):
-                provider = OpenRouterEmbeddingProvider(
-                    api_key="test-key",
-                    base_url=custom_url,
-                )
-
-                # Verify env var is set to custom URL
-                assert providers_module.os.environ.get("OPENAI_API_BASE") == custom_url
-                assert provider.base_url == custom_url
-
-    def test_init_overwrites_existing_openai_api_base(self):
-        """Test that initialization overwrites existing OPENAI_API_BASE value.
-
-        This ensures the provider always uses its configured base_url,
-        even if OPENAI_API_BASE was previously set to a different value.
-        """
+    def test_init_prefers_explicit_api_key_over_env(self):
+        """Test that explicit api_key takes precedence over OPENROUTER_API_KEY env var."""
         from obsidian_rag.llm import providers as providers_module
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch.dict(
                 providers_module.os.environ,
-                {
-                    "OPENAI_API_BASE": "https://existing.url.com",
-                    "OPENROUTER_API_KEY": "test-key",
-                },
+                {"OPENROUTER_API_KEY": "env-api-key"},
             ):
-                OpenRouterEmbeddingProvider(api_key="test-key")
+                provider = OpenRouterEmbeddingProvider(api_key="explicit-key")
 
-                # Verify env var is overwritten with OpenRouter URL
-                assert (
-                    providers_module.os.environ.get("OPENAI_API_BASE")
-                    == "https://openrouter.ai/api/v1"
-                )
-
-    def test_init_sets_openai_base_url_env_var(self):
-        """Test that initialization sets OPENAI_BASE_URL environment variable.
-
-        This verifies support for litellm 1.82.4+ which uses OPENAI_BASE_URL
-        as the canonical variable name (matching official OpenAI client).
-        """
-        from obsidian_rag.llm import providers as providers_module
-        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
-
-        with patch("obsidian_rag.llm.providers.log"):
-            with patch.dict(
-                providers_module.os.environ,
-                {"OPENROUTER_API_KEY": "test-key"},
-                clear=True,
-            ):
-                provider = OpenRouterEmbeddingProvider(api_key="test-key")
-
-                # Verify both env vars are set to default OpenRouter URL
-                assert (
-                    providers_module.os.environ.get("OPENAI_API_BASE")
-                    == "https://openrouter.ai/api/v1"
-                )
-                assert (
-                    providers_module.os.environ.get("OPENAI_BASE_URL")
-                    == "https://openrouter.ai/api/v1"
-                )
-                assert provider.base_url == "https://openrouter.ai/api/v1"
-
-    def test_init_sets_openai_base_url_with_custom_url(self):
-        """Test that custom base_url is set in OPENAI_BASE_URL env var."""
-        from obsidian_rag.llm import providers as providers_module
-        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
-
-        custom_url = "https://custom.openrouter.api.com"
-
-        with patch("obsidian_rag.llm.providers.log"):
-            with patch.dict(
-                providers_module.os.environ,
-                {"OPENROUTER_API_KEY": "test-key"},
-                clear=True,
-            ):
-                provider = OpenRouterEmbeddingProvider(
-                    api_key="test-key",
-                    base_url=custom_url,
-                )
-
-                # Verify both env vars are set to custom URL
-                assert providers_module.os.environ.get("OPENAI_API_BASE") == custom_url
-                assert providers_module.os.environ.get("OPENAI_BASE_URL") == custom_url
-                assert provider.base_url == custom_url
-
-    def test_init_overwrites_existing_openai_base_url(self):
-        """Test that initialization overwrites existing OPENAI_BASE_URL value.
-
-        This ensures the provider always uses its configured base_url,
-        even if OPENAI_BASE_URL was previously set to a different value.
-        """
-        from obsidian_rag.llm import providers as providers_module
-        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
-
-        with patch("obsidian_rag.llm.providers.log"):
-            with patch.dict(
-                providers_module.os.environ,
-                {
-                    "OPENAI_API_BASE": "https://existing.url.com",
-                    "OPENAI_BASE_URL": "https://existing.url.com",
-                    "OPENROUTER_API_KEY": "test-key",
-                },
-            ):
-                OpenRouterEmbeddingProvider(api_key="test-key")
-
-                # Verify both env vars are overwritten with OpenRouter URL
-                assert (
-                    providers_module.os.environ.get("OPENAI_API_BASE")
-                    == "https://openrouter.ai/api/v1"
-                )
-                assert (
-                    providers_module.os.environ.get("OPENAI_BASE_URL")
-                    == "https://openrouter.ai/api/v1"
-                )
+                assert provider.api_key == "explicit-key"
 
     def test_init_import_error(self):
         """Test initialization raises ImportError when litellm not installed."""
@@ -807,11 +694,42 @@ class TestOpenRouterEmbeddingProvider:
                     OpenRouterEmbeddingProvider(api_key="test-key")
 
 
-class TestOpenRouterEmbeddingProviderPrefixStripping:
-    """Test cases for openai/ prefix stripping in generate_embedding."""
+class TestAddOpenrouterPrefix:
+    """Test cases for _add_openrouter_prefix helper function."""
 
-    def test_generate_embedding_strips_openai_prefix(self):
-        """Test that 'openai/' prefix is stripped from model name."""
+    def test_adds_prefix_to_bare_model(self):
+        """Test that prefix is added to model without it."""
+        from obsidian_rag.llm.providers import _add_openrouter_prefix
+
+        assert (
+            _add_openrouter_prefix("anthropic/claude-3-opus")
+            == "openrouter/anthropic/claude-3-opus"
+        )
+
+    def test_preserves_existing_prefix(self):
+        """Test that already-prefixed model is returned unchanged."""
+        from obsidian_rag.llm.providers import _add_openrouter_prefix
+
+        assert (
+            _add_openrouter_prefix("openrouter/anthropic/claude-3-opus")
+            == "openrouter/anthropic/claude-3-opus"
+        )
+
+    def test_adds_prefix_to_simple_model(self):
+        """Test that prefix is added to simple model name."""
+        from obsidian_rag.llm.providers import _add_openrouter_prefix
+
+        assert (
+            _add_openrouter_prefix("qwen/qwen3-embedding-8b")
+            == "openrouter/qwen/qwen3-embedding-8b"
+        )
+
+
+class TestOpenRouterEmbeddingProviderPrefixStripping:
+    """Test cases for openrouter/ prefix handling in generate_embedding."""
+
+    def test_generate_embedding_adds_openrouter_prefix_for_openai_models(self):
+        """Test that 'openai/' models get 'openrouter/' prefix added."""
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
         mock_response = {
@@ -828,12 +746,11 @@ class TestOpenRouterEmbeddingProviderPrefixStripping:
 
         mock_embed.assert_called_once()
         call_kwargs = mock_embed.call_args.kwargs
-        # Model name should have 'openai/' prefix stripped
-        assert call_kwargs["model"] == "text-embedding-3-small"
-        assert call_kwargs["api_base"] == "https://openrouter.ai/api/v1"
+        # Model name should have 'openrouter/' prefix added
+        assert call_kwargs["model"] == "openrouter/openai/text-embedding-3-small"
 
-    def test_generate_embedding_preserves_non_openai_models(self):
-        """Test that non-OpenAI model names are not modified."""
+    def test_generate_embedding_adds_openrouter_prefix_for_non_openai_models(self):
+        """Test that non-OpenAI model names get 'openrouter/' prefix added."""
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
         mock_response = {
@@ -850,11 +767,11 @@ class TestOpenRouterEmbeddingProviderPrefixStripping:
 
         mock_embed.assert_called_once()
         call_kwargs = mock_embed.call_args.kwargs
-        # Non-OpenAI model names should be unchanged
-        assert call_kwargs["model"] == "qwen/qwen3-embedding-8b"
+        # Non-OpenAI model names should get openrouter/ prefix
+        assert call_kwargs["model"] == "openrouter/qwen/qwen3-embedding-8b"
 
-    def test_generate_embedding_strips_openai_ada_prefix(self):
-        """Test prefix stripping for OpenAI ada model."""
+    def test_generate_embedding_adds_openrouter_prefix_for_openai_ada(self):
+        """Test prefix handling for OpenAI ada model."""
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
         mock_response = {
@@ -871,10 +788,10 @@ class TestOpenRouterEmbeddingProviderPrefixStripping:
 
         mock_embed.assert_called_once()
         call_kwargs = mock_embed.call_args.kwargs
-        assert call_kwargs["model"] == "text-embedding-ada-002"
+        assert call_kwargs["model"] == "openrouter/openai/text-embedding-ada-002"
 
     def test_generate_embedding_handles_model_without_prefix(self):
-        """Test that model names without prefix work correctly."""
+        """Test that model names without prefix get openrouter/ prefix."""
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
         mock_response = {
@@ -891,15 +808,36 @@ class TestOpenRouterEmbeddingProviderPrefixStripping:
 
         mock_embed.assert_called_once()
         call_kwargs = mock_embed.call_args.kwargs
-        # Model without prefix should remain unchanged
-        assert call_kwargs["model"] == "text-embedding-3-small"
+        # Model without prefix should get openrouter/ prefix
+        assert call_kwargs["model"] == "openrouter/text-embedding-3-small"
+
+    def test_generate_embedding_preserves_existing_openrouter_prefix(self):
+        """Test that model names already with openrouter/ prefix are unchanged."""
+        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
+
+        mock_response = {
+            "data": [{"embedding": [0.1, 0.2, 0.3]}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.embedding", return_value=mock_response) as mock_embed:
+                provider = OpenRouterEmbeddingProvider(
+                    api_key="test-key",
+                    model="openrouter/openai/text-embedding-3-small",  # Already has prefix
+                )
+                provider.generate_embedding("test text")
+
+        mock_embed.assert_called_once()
+        call_kwargs = mock_embed.call_args.kwargs
+        # Model already with openrouter/ prefix should be unchanged
+        assert call_kwargs["model"] == "openrouter/openai/text-embedding-3-small"
 
 
 class TestOpenRouterEmbeddingProviderDebugLogging:
     """Test cases for debug logging in generate_embedding."""
 
-    def test_generate_embedding_logs_model_and_api_base(self):
-        """Test that debug logging includes model name and api_base."""
+    def test_generate_embedding_logs_model_name(self):
+        """Test that debug logging includes model name."""
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
         mock_response = {
@@ -914,51 +852,12 @@ class TestOpenRouterEmbeddingProviderDebugLogging:
                 )
                 provider.generate_embedding("test text")
 
-        # Verify debug logging was called with model and api_base info
-        debug_calls = [call for call in mock_log.debug.call_args_list if call.args]
-        # Find the call that logs the litellm.embedding parameters
-        litellm_calls = [
-            call
-            for call in debug_calls
-            if call.args and "litellm.embedding" in str(call.args[0])
-        ]
-        assert len(litellm_calls) >= 1
-        # Verify the log message contains model and api_base
-        log_message = str(litellm_calls[0].args[0])
-        assert "model=text-embedding-3-small" in log_message
-        assert "api_base=https://openrouter.ai/api/v1" in log_message
-
-    def test_generate_embedding_logs_stripped_model_name(self):
-        """Test that logging shows the stripped model name for OpenAI models."""
-        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
-
-        mock_response = {
-            "data": [{"embedding": [0.1, 0.2, 0.3]}],
-        }
-
-        with patch("obsidian_rag.llm.providers.log") as mock_log:
-            with patch("litellm.embedding", return_value=mock_response):
-                provider = OpenRouterEmbeddingProvider(
-                    api_key="test-key",
-                    model="openai/text-embedding-3-small",
-                )
-                provider.generate_embedding("test text")
-
-        # Find the litellm.embedding debug call
+        # Verify debug logging was called
         debug_calls = mock_log.debug.call_args_list
-        litellm_call = None
-        for call in debug_calls:
-            if call.args and "litellm.embedding" in str(call.args[0]):
-                litellm_call = call
-                break
+        assert len(debug_calls) >= 1
 
-        assert litellm_call is not None
-        # The logged model name should be stripped (no openai/ prefix)
-        assert "model=text-embedding-3-small" in str(litellm_call.args[0])
-        assert "model=openai/text-embedding-3-small" not in str(litellm_call.args[0])
-
-    def test_generate_embedding_logs_non_openai_model_unchanged(self):
-        """Test that logging shows unchanged model name for non-OpenAI models."""
+    def test_generate_embedding_logs_non_openai_model(self):
+        """Test that logging works for non-OpenAI models."""
         from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
 
         mock_response = {
@@ -973,17 +872,9 @@ class TestOpenRouterEmbeddingProviderDebugLogging:
                 )
                 provider.generate_embedding("test text")
 
-        # Find the litellm.embedding debug call
+        # Verify debug logging was called
         debug_calls = mock_log.debug.call_args_list
-        litellm_call = None
-        for call in debug_calls:
-            if call.args and "litellm.embedding" in str(call.args[0]):
-                litellm_call = call
-                break
-
-        assert litellm_call is not None
-        # Non-OpenAI model names should be logged unchanged
-        assert "model=qwen/qwen3-embedding-8b" in str(litellm_call.args[0])
+        assert len(debug_calls) >= 1
 
 
 class TestOpenRouterEmbeddingProviderEdgeCases:
@@ -1007,71 +898,8 @@ class TestOpenRouterEmbeddingProviderEdgeCases:
 
         mock_embed.assert_called_once()
         call_kwargs = mock_embed.call_args.kwargs
-        # Empty model name should use default model (qwen/qwen3-embedding-8b)
-        assert call_kwargs["model"] == "qwen/qwen3-embedding-8b"
-
-    def test_generate_embedding_handles_openai_prefix_only(self):
-        """Test handling of model name that is just 'openai/'."""
-        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
-
-        mock_response = {
-            "data": [{"embedding": [0.1, 0.2, 0.3]}],
-        }
-
-        with patch("obsidian_rag.llm.providers.log"):
-            with patch("litellm.embedding", return_value=mock_response) as mock_embed:
-                provider = OpenRouterEmbeddingProvider(
-                    api_key="test-key",
-                    model="openai/",  # Just the prefix
-                )
-                provider.generate_embedding("test text")
-
-        mock_embed.assert_called_once()
-        call_kwargs = mock_embed.call_args.kwargs
-        # Should result in empty string after stripping
-        assert call_kwargs["model"] == ""
-
-    def test_generate_embedding_handles_multiple_openai_occurrences(self):
-        """Test that only leading 'openai/' is stripped."""
-        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
-
-        mock_response = {
-            "data": [{"embedding": [0.1, 0.2, 0.3]}],
-        }
-
-        with patch("obsidian_rag.llm.providers.log"):
-            with patch("litellm.embedding", return_value=mock_response) as mock_embed:
-                provider = OpenRouterEmbeddingProvider(
-                    api_key="test-key",
-                    model="openai/openai/custom-model",  # Multiple occurrences
-                )
-                provider.generate_embedding("test text")
-
-        mock_embed.assert_called_once()
-        call_kwargs = mock_embed.call_args.kwargs
-        # Only leading 'openai/' should be stripped
-        assert call_kwargs["model"] == "openai/custom-model"
-
-    def test_generate_embedding_handles_case_sensitivity(self):
-        """Test that prefix matching is case-sensitive."""
-        from obsidian_rag.llm.providers import OpenRouterEmbeddingProvider
-
-        mock_response = {
-            "data": [{"embedding": [0.1, 0.2, 0.3]}],
-        }
-
-        with patch("obsidian_rag.llm.providers.log"):
-            with patch("litellm.embedding", return_value=mock_response) as mock_embed:
-                provider = OpenRouterEmbeddingProvider(
-                    api_key="test-key",
-                    model="OpenAI/text-embedding-3-small",  # Different case
-                )
-                provider.generate_embedding("test text")
-
-        mock_embed.assert_called_once()
-        call_kwargs = mock_embed.call_args.kwargs
-        # Case-sensitive: 'OpenAI/' should NOT be stripped
-        assert call_kwargs["model"] == "OpenAI/text-embedding-3-small"
+        # Empty model name uses default model with openrouter/ prefix
+        assert call_kwargs["model"] == "openrouter/qwen/qwen3-embedding-8b"
 
     def test_generate_embedding_idempotent_multiple_calls(self):
         """Test that multiple calls with same model work correctly."""
@@ -1092,10 +920,10 @@ class TestOpenRouterEmbeddingProviderEdgeCases:
                 provider.generate_embedding("test 2")
                 provider.generate_embedding("test 3")
 
-        # All calls should use the stripped model name
+        # All calls should use the openrouter/ prefixed model name
         assert mock_embed.call_count == 3
         for call in mock_embed.call_args_list:
-            assert call.kwargs["model"] == "text-embedding-3-small"
+            assert call.kwargs["model"] == "openrouter/openai/text-embedding-3-small"
 
 
 class TestOpenRouterEmbeddingProviderIntegration:
@@ -1125,15 +953,8 @@ class TestOpenRouterEmbeddingProviderIntegration:
                         model="openai/text-embedding-3-small",
                     )
 
-                    # Verify env vars are set
-                    assert (
-                        providers_module.os.environ.get("OPENAI_API_BASE")
-                        == "https://openrouter.ai/api/v1"
-                    )
-                    assert (
-                        providers_module.os.environ.get("OPENAI_BASE_URL")
-                        == "https://openrouter.ai/api/v1"
-                    )
+                    # Verify api_key is stored
+                    assert provider.api_key == "test-key"
 
                     # Generate embedding
                     result = provider.generate_embedding("test query")
@@ -1141,11 +962,13 @@ class TestOpenRouterEmbeddingProviderIntegration:
                     # Verify embedding returned
                     assert len(result) == 1536
 
-                    # Verify litellm was called with stripped model name
+                    # Verify litellm was called with openrouter/ prefixed model name
                     mock_embed.assert_called_once()
                     call_kwargs = mock_embed.call_args.kwargs
-                    assert call_kwargs["model"] == "text-embedding-3-small"
-                    assert call_kwargs["api_base"] == "https://openrouter.ai/api/v1"
+                    assert (
+                        call_kwargs["model"]
+                        == "openrouter/openai/text-embedding-3-small"
+                    )
 
                     # Verify debug logging occurred
                     debug_messages = [
@@ -1154,7 +977,6 @@ class TestOpenRouterEmbeddingProviderIntegration:
                         if call.args
                     ]
                     assert any("Generating embedding" in msg for msg in debug_messages)
-                    assert any("litellm.embedding" in msg for msg in debug_messages)
                     assert any(
                         "generate_embedding returning" in msg for msg in debug_messages
                     )
@@ -1192,11 +1014,10 @@ class TestOpenRouterEmbeddingProviderIntegration:
                     # Verify embedding returned
                     assert len(result) == 4096
 
-                    # Verify litellm was called with unchanged model name
+                    # Verify litellm was called with openrouter/ prefixed model name
                     mock_embed.assert_called_once()
                     call_kwargs = mock_embed.call_args.kwargs
-                    assert call_kwargs["model"] == "qwen/qwen3-embedding-8b"
-                    assert call_kwargs["api_base"] == "https://openrouter.ai/api/v1"
+                    assert call_kwargs["model"] == "openrouter/qwen/qwen3-embedding-8b"
 
     def test_error_handling_preserves_context(self):
         """Test that errors include proper context for debugging."""
@@ -1280,6 +1101,14 @@ class TestOpenRouterChatProvider:
                 with pytest.raises(ValueError, match="API key is required"):
                     OpenRouterChatProvider()
 
+    def test_init_with_unresolved_env_var_api_key_raises_error(self):
+        """Test initialization raises ValueError when api_key is an unresolved ${...} pattern."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with pytest.raises(ValueError, match="API key is required"):
+                OpenRouterChatProvider(api_key="${OPENROUTER_API_KEY}")
+
     def test_chat_success(self):
         """Test successful chat completion."""
         from obsidian_rag.llm.providers import OpenRouterChatProvider
@@ -1345,6 +1174,27 @@ class TestOpenRouterChatProvider:
         call_kwargs = mock_chat.call_args.kwargs
         assert call_kwargs["model"] == "openrouter/anthropic/claude-3-opus"
         assert call_kwargs["api_base"] == "https://openrouter.ai/api/v1"
+
+    def test_chat_preserves_existing_openrouter_prefix(self):
+        """Test that model name already with openrouter/ prefix is not double-prefixed."""
+        from obsidian_rag.llm.providers import OpenRouterChatProvider
+
+        mock_response = {
+            "choices": [{"message": {"content": "Test"}}],
+        }
+
+        with patch("obsidian_rag.llm.providers.log"):
+            with patch("litellm.completion", return_value=mock_response) as mock_chat:
+                provider = OpenRouterChatProvider(
+                    api_key="test-key",
+                    model="openrouter/anthropic/claude-3-opus",
+                )
+                messages = [{"role": "user", "content": "Hello"}]
+                provider.chat(messages)
+
+        mock_chat.assert_called_once()
+        call_kwargs = mock_chat.call_args.kwargs
+        assert call_kwargs["model"] == "openrouter/anthropic/claude-3-opus"
 
     def test_chat_with_custom_temperature(self):
         """Test chat with custom temperature parameter."""

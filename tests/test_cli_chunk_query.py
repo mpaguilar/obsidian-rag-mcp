@@ -10,8 +10,8 @@ from obsidian_rag.cli import cli
 class TestCLIChunkQuery:
     """Test cases for CLI chunk query options."""
 
-    @patch("obsidian_rag.cli._get_embedding_provider")
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_query_with_chunks_flag(self, mock_db_class, mock_get_provider):
         """Test query command with --chunks flag."""
         runner = CliRunner()
@@ -29,7 +29,7 @@ class TestCLIChunkQuery:
         mock_provider.generate_embedding.return_value = [0.1] * 1536
         mock_get_provider.return_value = mock_provider
 
-        with patch("obsidian_rag.cli.query_chunks") as mock_query:
+        with patch("obsidian_rag.cli_commands.query_chunks") as mock_query:
             mock_query.return_value = []
             result = runner.invoke(
                 cli,
@@ -44,8 +44,8 @@ class TestCLIChunkQuery:
             assert result.exit_code == 0
             mock_query.assert_called_once()
 
-    @patch("obsidian_rag.cli._get_embedding_provider")
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_query_with_rerank_flag(self, mock_db_class, mock_get_provider):
         """Test query command with --rerank flag."""
         runner = CliRunner()
@@ -63,8 +63,8 @@ class TestCLIChunkQuery:
         mock_provider.generate_embedding.return_value = [0.1] * 1536
         mock_get_provider.return_value = mock_provider
 
-        with patch("obsidian_rag.cli.query_chunks") as mock_query:
-            with patch("obsidian_rag.cli.rerank_chunk_results") as mock_rerank:
+        with patch("obsidian_rag.cli_commands.query_chunks") as mock_query:
+            with patch("obsidian_rag.cli_commands.rerank_chunk_results") as mock_rerank:
                 mock_query.return_value = []
                 mock_rerank.return_value = []
 
@@ -80,8 +80,8 @@ class TestCLIChunkQuery:
 
                 assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli._get_embedding_provider")
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_query_chunks_with_vault_filter(self, mock_db_class, mock_get_provider):
         """Test query command with --chunks and --vault flags."""
         runner = CliRunner()
@@ -99,7 +99,7 @@ class TestCLIChunkQuery:
         mock_provider.generate_embedding.return_value = [0.1] * 1536
         mock_get_provider.return_value = mock_provider
 
-        with patch("obsidian_rag.cli.query_chunks") as mock_query:
+        with patch("obsidian_rag.cli_commands.query_chunks") as mock_query:
             mock_query.return_value = []
             result = runner.invoke(
                 cli,
@@ -115,8 +115,8 @@ class TestCLIChunkQuery:
             assert result.exit_code == 0
             mock_query.assert_called_once()
 
-    @patch("obsidian_rag.cli._get_embedding_provider")
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_query_chunks_with_limit(self, mock_db_class, mock_get_provider):
         """Test query command with --chunks and --limit flags."""
         runner = CliRunner()
@@ -134,7 +134,7 @@ class TestCLIChunkQuery:
         mock_provider.generate_embedding.return_value = [0.1] * 1536
         mock_get_provider.return_value = mock_provider
 
-        with patch("obsidian_rag.cli.query_chunks") as mock_query:
+        with patch("obsidian_rag.cli_commands.query_chunks") as mock_query:
             mock_query.return_value = []
             result = runner.invoke(
                 cli,
@@ -149,8 +149,8 @@ class TestCLIChunkQuery:
 
             assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli._get_embedding_provider")
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_query_chunks_with_json_format(self, mock_db_class, mock_get_provider):
         """Test query command with --chunks and --format json flags."""
         runner = CliRunner()
@@ -182,7 +182,7 @@ class TestCLIChunkQuery:
         mock_result.similarity_score = 0.85
         mock_result.rerank_score = None
 
-        with patch("obsidian_rag.cli.query_chunks") as mock_query:
+        with patch("obsidian_rag.cli_commands.query_chunks") as mock_query:
             mock_query.return_value = [mock_result]
             result = runner.invoke(
                 cli,
@@ -198,8 +198,8 @@ class TestCLIChunkQuery:
             assert result.exit_code == 0
             assert "chunk_id" in result.output
 
-    @patch("obsidian_rag.cli._get_embedding_provider")
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_query_chunks_no_results(self, mock_db_class, mock_get_provider):
         """Test query command with --chunks when no results found."""
         runner = CliRunner()
@@ -217,7 +217,7 @@ class TestCLIChunkQuery:
         mock_provider.generate_embedding.return_value = [0.1] * 1536
         mock_get_provider.return_value = mock_provider
 
-        with patch("obsidian_rag.cli.query_chunks") as mock_query:
+        with patch("obsidian_rag.cli_commands.query_chunks") as mock_query:
             mock_query.return_value = []
             result = runner.invoke(
                 cli,
@@ -231,8 +231,8 @@ class TestCLIChunkQuery:
             assert result.exit_code == 0
             assert "No matching chunks found" in result.output
 
-    @patch("obsidian_rag.cli._get_embedding_provider")
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_query_chunks_with_rerank_results(self, mock_db_class, mock_get_provider):
         """Test query command with --chunks and --rerank with results."""
         runner = CliRunner()
@@ -277,8 +277,8 @@ class TestCLIChunkQuery:
         mock_result2.similarity_score = 0.80
         mock_result2.rerank_score = 0.90
 
-        with patch("obsidian_rag.cli.query_chunks") as mock_query:
-            with patch("obsidian_rag.cli.rerank_chunk_results") as mock_rerank:
+        with patch("obsidian_rag.cli_commands.query_chunks") as mock_query:
+            with patch("obsidian_rag.cli_commands.rerank_chunk_results") as mock_rerank:
                 mock_query.return_value = [mock_result1, mock_result2]
                 mock_rerank.return_value = [mock_result1, mock_result2]
 
@@ -295,8 +295,8 @@ class TestCLIChunkQuery:
                 assert result.exit_code == 0
                 mock_rerank.assert_called_once()
 
-    @patch("obsidian_rag.cli._get_embedding_provider")
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands._get_embedding_provider")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_query_chunks_table_format_with_all_fields(
         self, mock_db_class, mock_get_provider
     ):
@@ -330,7 +330,7 @@ class TestCLIChunkQuery:
         mock_result.similarity_score = 0.85
         mock_result.rerank_score = 0.92  # Present - should trigger branch 507->509
 
-        with patch("obsidian_rag.cli.query_chunks") as mock_query:
+        with patch("obsidian_rag.cli_commands.query_chunks") as mock_query:
             mock_query.return_value = [mock_result]
             result = runner.invoke(
                 cli,
@@ -352,7 +352,7 @@ class TestFormatChunkResultsTable:
 
     def test_format_table_with_token_count_and_rerank_score(self):
         """Test table formatting includes token_count and rerank_score when present."""
-        from obsidian_rag.cli import _format_chunk_results_table
+        from obsidian_rag.cli_commands import _format_chunk_results_table
 
         # Create mock result with all optional fields
         mock_result = Mock()
@@ -375,7 +375,7 @@ class TestFormatChunkResultsTable:
 
     def test_format_table_without_optional_fields(self):
         """Test table formatting excludes optional fields when None."""
-        from obsidian_rag.cli import _format_chunk_results_table
+        from obsidian_rag.cli_commands import _format_chunk_results_table
 
         mock_result = Mock()
         mock_result.chunk_id = "chunk-1"

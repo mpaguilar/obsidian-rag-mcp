@@ -99,11 +99,11 @@ class TestInterpolateEnvVars:
         result = _interpolate_env_vars(123)
         assert result == 123
 
-    def test_preserves_original_when_var_not_found(self, monkeypatch):
-        """Test preserving original pattern when env var not found."""
+    def test_returns_empty_when_var_not_found(self, monkeypatch):
+        """Test returning empty string when env var not found and no default."""
         monkeypatch.delenv("UNKNOWN_VAR", raising=False)
         result = _interpolate_env_vars("prefix-${UNKNOWN_VAR}-suffix")
-        assert result == "prefix-${UNKNOWN_VAR}-suffix"
+        assert result == "prefix--suffix"
 
     def test_interpolate_int_unchanged(self):
         """Test that int values are returned unchanged."""
@@ -363,6 +363,34 @@ class TestReplaceEnvVar:
         assert match is not None
         result = _replace_env_var(match)
         assert result == "default"
+
+    def test_replace_env_var_not_set_no_default(self, monkeypatch):
+        """Test returning empty string when env var not set and no default."""
+        from obsidian_rag.config import _replace_env_var
+        from re import compile
+
+        monkeypatch.delenv("MISSING_VAR", raising=False)
+        pattern = compile(r"\$\{([^}]+)\}")
+        match = pattern.match("${MISSING_VAR}")
+        assert match is not None
+        result = _replace_env_var(match)
+        assert result == ""
+
+    def test_replace_env_var_not_set_logs_warning(self, monkeypatch, caplog):
+        """Test that warning is logged when env var not set and no default."""
+        from obsidian_rag.config import _replace_env_var
+        from re import compile
+
+        monkeypatch.delenv("MISSING_VAR", raising=False)
+        pattern = compile(r"\$\{([^}]+)\}")
+        match = pattern.match("${MISSING_VAR}")
+        assert match is not None
+
+        with caplog.at_level("WARNING", logger="obsidian_rag.config"):
+            _replace_env_var(match)
+
+        assert "MISSING_VAR" in caplog.text
+        assert "not set" in caplog.text
 
 
 class TestDatabaseConfigVectorDimension:
@@ -991,8 +1019,8 @@ class TestSettingsVaultMethods:
         )
 
         names = settings.get_vault_names()
-        # DEFAULT_CONFIG already has "Obsidian Vault", so we have 3 total
-        assert sorted(names) == ["Obsidian Vault", "Vault1", "Vault2"]
+        # Only explicitly configured vaults should appear
+        assert sorted(names) == ["Vault1", "Vault2"]
 
 
 class TestSettingsEndpointEnvVarParsing:

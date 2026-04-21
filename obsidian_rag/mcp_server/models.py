@@ -115,16 +115,20 @@ class VaultResponse(BaseModel):
         id: Unique vault identifier (UUID).
         name: Vault name.
         description: Optional vault description.
+        container_path: Path inside container/Docker.
         host_path: Path on host system for link construction.
         document_count: Number of documents in the vault.
+        created_at: Timestamp when the vault was created.
 
     """
 
     id: uuid.UUID
     name: str
     description: str | None
+    container_path: str
     host_path: str
     document_count: int
+    created_at: datetime
 
 
 class VaultListResponse(BaseModel):
@@ -343,8 +347,10 @@ def create_vault_response(
         id=vault.id,
         name=vault.name,
         description=vault.description,
+        container_path=vault.container_path,
         host_path=vault.host_path,
         document_count=document_count,
+        created_at=vault.created_at,
     )
     _msg = "create_vault_response returning"
     log.debug(_msg)

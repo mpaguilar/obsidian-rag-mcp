@@ -24,40 +24,68 @@ A production-ready **Retrieval-Augmented Generation (RAG)** pipeline with **Mode
 - **API Layer**: FastMCP server with Bearer token authentication, CORS middleware, and rate limiting
 - **Configuration**: Layered config system (CLI flags → Environment variables → YAML → Defaults) with Pydantic validation
 
-## Quick Start
+## Quick Start (Docker Compose)
 
 ```bash
-# 1. Install
-pip install obsidian-rag
+# 1. Clone the repository
+git clone <repository-url>
+cd obsidian-rag
 
-# 2. Configure (create .obsidian-rag.yaml)
-echo "database:
-  url: postgresql://localhost/obsidian_rag
-endpoints:
-  embedding:
-    provider: openai
-    model: text-embedding-3-small
-    api_key: \${OPENAI_API_KEY}" > .obsidian-rag.yaml
+# 2. Copy and edit environment configuration
+cp .env.example .env
+# Edit .env with your database URL and API keys
 
-# 3. Setup database
-createdb obsidian_rag
-psql -d obsidian_rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
+# 3. Build and start services
+docker-compose up -d
 
 # 4. Ingest your vault
-obsidian-rag ingest /path/to/obsidian/vault
+docker-compose exec obsidian-rag \
+  obsidian-rag ingest /data/vaults/my-vault --vault "My Vault"
 
-# 5. Search
-obsidian-rag query "project planning ideas"
+# 5. Query via MCP client or CLI
+docker-compose exec obsidian-rag \
+  obsidian-rag query "project planning ideas"
 ```
+
+**Prerequisites:**
+- PostgreSQL 14+ with pg_vector extension (external or managed)
+- Docker and Docker Compose
+- LLM API key (OpenAI, OpenRouter, or HuggingFace for local)
 
 ## Installation
 
 ### Requirements
 
-- Python 3.12+
 - PostgreSQL 14+ with pg_vector extension
+- Docker and Docker Compose (recommended)
+- Python 3.12+ (for local development only)
 
-### Install from Source
+### Docker Compose (Recommended)
+
+This is the easiest way to run Obsidian RAG with all dependencies:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd obsidian-rag
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your settings (see Configuration section)
+
+# Build and start
+docker-compose up -d
+
+# View logs
+docker-compose logs -f obsidian-rag
+
+# Stop services
+docker-compose down
+```
+
+### Local Installation (Development)
+
+For local development or running without Docker:
 
 ```bash
 # Clone the repository
@@ -74,6 +102,8 @@ pip install -e ".[all]"         # All optional dependencies
 ```
 
 ### Database Setup
+
+If using an external PostgreSQL instance (not managed by Docker Compose):
 
 1. Create a PostgreSQL database:
 
@@ -94,6 +124,17 @@ alembic upgrade head
 ```
 
 ## Usage
+
+**Note:** When using Docker Compose, prefix all CLI commands with `docker-compose exec obsidian-rag`:
+
+```bash
+# Example with Docker Compose
+docker-compose exec obsidian-rag obsidian-rag ingest /data/vaults/my-vault
+
+# Or enter the container shell first
+docker-compose exec obsidian-rag bash
+obsidian-rag ingest /data/vaults/my-vault
+```
 
 ### Ingest Documents
 
@@ -211,6 +252,18 @@ The **Model Context Protocol (MCP)** server exposes all RAG functionality via HT
 - **Type-Safe API**: Pydantic models ensure request/response validation
 
 ### Running the MCP Server
+
+**Via Docker Compose (Recommended):**
+
+```bash
+# Start the MCP server
+docker-compose up -d obsidian-rag
+
+# Server will be available at http://localhost:8000
+# Health check: http://localhost:8000/health
+```
+
+**Local Development:**
 
 ```bash
 # Run directly
@@ -454,17 +507,62 @@ See the [LLM Providers](#llm-providers) section for detailed configuration of ea
 
 ### Docker Support
 
-Build and run the MCP server with Docker:
+Obsidian RAG includes Docker Compose configuration for easy deployment.
+
+**Prerequisites:**
+- PostgreSQL database with pg_vector extension (external or managed)
+- Docker and Docker Compose
+
+**Quick Start:**
 
 ```bash
-# Build image
-docker build -t obsidian-rag-mcp .
+# Copy example environment file
+cp .env.example .env
 
-# Run with MCP-only dependencies
-docker run -p 8000:8000 \
-  -e OBSIDIAN_RAG_MCP_TOKEN=secret \
-  -e OBSIDIAN_RAG_DATABASE_URL=postgresql://host.docker.internal/obsidian_rag \
-  obsidian-rag-mcp
+# Edit .env with your configuration:
+# - OBSIDIAN_RAG_DATABASE_URL (required)
+# - OBSIDIAN_RAG_MCP_TOKEN (required)
+# - OBSIDIAN_RAG_ENDPOINTS_EMBEDDING_API_KEY (for semantic search)
+# - VAULT_HOST_PATH (path to your vault files)
+
+# Build and start
+docker-compose up -d
+
+# Verify services are running
+docker-compose ps
+
+# View logs
+docker-compose logs -f obsidian-rag
+```
+
+**CLI Commands via Docker Compose:**
+
+```bash
+# Ingest documents
+docker-compose exec obsidian-rag \
+  obsidian-rag ingest /data/vaults/personal --vault "Personal"
+
+# Query documents
+docker-compose exec obsidian-rag \
+  obsidian-rag query "project planning"
+
+# List tasks
+docker-compose exec obsidian-rag \
+  obsidian-rag tasks --status not_completed
+```
+
+**Environment Variables:**
+
+All configuration is done via environment variables in the `.env` file. See the [Environment Variables](#environment-variables) section for the complete list.
+
+**Volumes:**
+
+Mount your vault files to `/data/vaults` inside the container:
+
+```yaml
+# In docker-compose.yml or via environment:
+volumes:
+  - /path/to/your/vault:/data/vaults:ro
 ```
 
 ## Configuration
@@ -821,27 +919,33 @@ Vault names must follow these rules:
 
 ### Docker Path Mapping
 
-When running in Docker, paths inside the container may differ from host paths. Use `container_path` for the path inside Docker and `host_path` for the actual host filesystem path:
+When running via Docker Compose, configure vault paths using the `VAULT_HOST_PATH` environment variable and vault configuration:
 
 ```yaml
+# .env
+VAULT_HOST_PATH=/home/user/Documents/Obsidian
+
+# .obsidian-rag.yaml (mounted or configured via env vars)
 vaults:
   "Personal":
-    # Path inside Docker container where files are mounted
-    container_path: "/vaults/personal"
-    # Actual path on host system (used for Obsidian URIs)
+    container_path: "/data/vaults/personal"
     host_path: "/home/user/Documents/Obsidian/Personal"
     description: "Personal notes"
+
+  "Work":
+    container_path: "/data/vaults/work"
+    host_path: "/home/user/Documents/Obsidian/Work"
+    description: "Work notes"
 ```
 
-**Docker run example:**
+**Docker Compose mounts the entire vaults directory:**
 
-```bash
-docker run -p 8000:8000 \
-  -v /home/user/Documents/Obsidian/Personal:/vaults/personal \
-  -v /home/user/Documents/Obsidian/Work:/vaults/work \
-  -e OBSIDIAN_RAG_MCP_TOKEN=secret \
-  obsidian-rag-mcp
+```yaml
+volumes:
+  - ${VAULT_HOST_PATH}:/data/vaults:ro
 ```
+
+This allows multiple vaults to be accessed from a single mount point.
 
 ### Default Vault
 

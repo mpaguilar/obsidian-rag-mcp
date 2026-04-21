@@ -148,8 +148,11 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         if api_key is None:
             api_key = os.environ.get("OPENAI_API_KEY")
 
-        if not api_key:
-            _msg = "OpenAI API key is required"
+        if not api_key or api_key.startswith("${"):
+            _msg = (
+                "OpenAI API key is required. Set OPENAI_API_KEY "
+                "environment variable or configure api_key in config file."
+            )
             log.error(_msg)
             raise ValueError(_msg)
 
@@ -516,8 +519,11 @@ class OpenAIChatProvider(ChatProvider):
         if api_key is None:
             api_key = os.environ.get("OPENAI_API_KEY")
 
-        if not api_key:
-            _msg = "OpenAI API key is required"
+        if not api_key or api_key.startswith("${"):
+            _msg = (
+                "OpenAI API key is required. Set OPENAI_API_KEY "
+                "environment variable or configure api_key in config file."
+            )
             log.error(_msg)
             raise ValueError(_msg)
 
@@ -580,6 +586,25 @@ class OpenAIChatProvider(ChatProvider):
             return result
 
 
+def _add_openrouter_prefix(model: str) -> str:
+    """Add 'openrouter/' prefix to model name for litellm 1.83+ native routing.
+
+    If the model name already starts with 'openrouter/', it is returned
+    unchanged to avoid double-prefixing.
+
+    Args:
+        model: Model name (e.g., 'anthropic/claude-3-opus' or
+            'openrouter/anthropic/claude-3-opus').
+
+    Returns:
+        Model name with 'openrouter/' prefix added if not already present.
+
+    """
+    if model.startswith("openrouter/"):
+        return model
+    return f"openrouter/{model}"
+
+
 class OpenRouterEmbeddingProvider(EmbeddingProvider):
     """OpenRouter embedding provider implementation.
 
@@ -631,8 +656,11 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
         if api_key is None:
             api_key = os.environ.get("OPENROUTER_API_KEY")
 
-        if not api_key:
-            _msg = "OpenRouter API key is required"
+        if not api_key or api_key.startswith("${"):
+            _msg = (
+                "OpenRouter API key is required. Set OPENROUTER_API_KEY "
+                "environment variable or configure api_key in config file."
+            )
             log.error(_msg)
             raise ValueError(_msg)
 
@@ -640,15 +668,6 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
         self.api_key = api_key
         self.base_url = base_url or self.DEFAULT_BASE_URL
         self.litellm = litellm
-
-        # Workaround for litellm 1.82.1 bug: api_base parameter is ignored for embeddings
-        # Set OPENAI_API_BASE env var so litellm routes to OpenRouter instead of OpenAI
-        # See: https://github.com/BerriAI/litellm/issues/16045
-        os.environ["OPENAI_API_BASE"] = self.base_url
-
-        # Also set OPENAI_BASE_URL for litellm 1.82.4+ compatibility
-        # OPENAI_BASE_URL is the newer canonical variable name
-        os.environ["OPENAI_BASE_URL"] = self.base_url
 
         _msg = f"OpenRouter embedding provider initialized with model: {self.model}"
         log.debug(_msg)
@@ -687,36 +706,26 @@ class OpenRouterEmbeddingProvider(EmbeddingProvider):
 
         Notes:
             Uses litellm.embedding() for provider-agnostic LLM connectivity.
-            Strips 'openai/' prefix from model names to work around litellm
-            1.82.4 bug where the prefix causes requests to be routed to OpenAI's
-            API instead of respecting OPENAI_API_BASE/OPENAI_BASE_URL env vars.
-            Both env vars are set in __init__ to ensure correct routing.
+            Prepends 'openrouter/' prefix to model names for litellm 1.83+
+            native OpenRouter routing support.
 
         """
         _msg = f"Generating embedding with OpenRouter model: {self.model}"
         log.debug(_msg)
 
         try:
-            # Workaround for litellm 1.82.4 bug: strip 'openai/' prefix from model
-            # names. When litellm sees 'openai/text-embedding-3-small', it routes
-            # to OpenAI's API (platform.openai.com) instead of using the configured
-            # base_url or OPENAI_API_BASE/OPENAI_BASE_URL env vars.
-            # Stripping the prefix ensures requests route to OpenRouter's API.
-            model_name = self.model
-            if model_name.startswith("openai/"):
-                model_name = model_name[7:]  # Strip 'openai/' prefix
+            # litellm 1.83+ natively supports OpenRouter routing via the
+            # 'openrouter/' prefix. This replaces the previous workaround that
+            # stripped 'openai/' and set OPENAI_API_BASE/OPENAI_BASE_URL env vars.
+            model_name = _add_openrouter_prefix(self.model)
 
-            # Debug logging to help diagnose routing issues
-            _msg = f"Calling litellm.embedding with model={model_name}, api_base={self.base_url}"
+            _msg = f"Calling litellm.embedding with model={model_name}"
             log.debug(_msg)
 
             response = self.litellm.embedding(
                 model=model_name,
                 input=[text],
                 api_key=self.api_key,
-                # Note: api_base parameter is still passed for forward compatibility,
-                # but litellm 1.82.x ignores it for embeddings. OPENAI_API_BASE and
-                # OPENAI_BASE_URL env vars set in __init__ ensure correct routing.
                 api_base=self.base_url,
                 # OpenRouter requires explicit encoding_format, unlike OpenAI
                 encoding_format="float",
@@ -799,8 +808,11 @@ class OpenRouterChatProvider(ChatProvider):
         if api_key is None:
             api_key = os.environ.get("OPENROUTER_API_KEY")
 
-        if not api_key:
-            _msg = "OpenRouter API key is required"
+        if not api_key or api_key.startswith("${"):
+            _msg = (
+                "OpenRouter API key is required. Set OPENROUTER_API_KEY "
+                "environment variable or configure api_key in config file."
+            )
             log.error(_msg)
             raise ValueError(_msg)
 
@@ -833,11 +845,15 @@ class OpenRouterChatProvider(ChatProvider):
         _msg = f"Sending chat request to OpenRouter model: {self.model}"
         log.debug(_msg)
 
+        # litellm 1.83+ natively supports OpenRouter routing via the
+        # 'openrouter/' prefix. Avoid double-prefixing if already present.
+        model_name = _add_openrouter_prefix(self.model)
+
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
 
         request_params: CompletionRequestParams = {
-            "model": f"openrouter/{self.model}",
+            "model": model_name,
             "messages": messages,
             "temperature": cast("float", temperature)
             if temperature is not None

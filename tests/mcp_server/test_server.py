@@ -646,9 +646,38 @@ class TestRegisterTools:
 
         _register_tools(mock_mcp)
 
-        # Should register 7 tools (get_tasks + 4 document tools + list_vaults + ingest)
+        # Should register 10 tools (get_tasks + 4 document tools + 4 vault tools + ingest)
+        # get_tasks + query_documents + get_documents_by_tag + get_documents_by_property +
+        # get_all_tags + list_vaults + get_vault + update_vault + delete_vault + ingest
         # health_check is registered via custom_route
-        assert mock_mcp.tool.call_count == 7
+        assert mock_mcp.tool.call_count == 10
+
+    def test_register_vault_tools(self):
+        """Test _register_tools registers vault tools."""
+        from obsidian_rag.mcp_server.server import _register_tools
+
+        mock_mcp = MagicMock()
+        # Store registered tool functions
+        registered_tools = []
+
+        def capture_tool(func):
+            """Decorator that captures the registered function."""
+            registered_tools.append(func)
+            return func
+
+        # Make mcp.tool() return our capture decorator
+        mock_mcp.tool.return_value = capture_tool
+
+        _register_tools(mock_mcp)
+
+        # Extract tool names
+        tool_names = [tool.__name__ for tool in registered_tools]
+
+        # Verify all vault tools are registered
+        assert "list_vaults" in tool_names
+        assert "get_vault" in tool_names
+        assert "update_vault" in tool_names
+        assert "delete_vault" in tool_names
 
 
 class TestHealthCheckHandler:

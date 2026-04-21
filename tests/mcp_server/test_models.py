@@ -365,7 +365,9 @@ class MockVault:
         self.id: uuid.UUID = uuid.uuid4()
         self.name: str = "Test Vault"
         self.description: str = "Test description"
+        self.container_path: str = "/data/test"
         self.host_path: str = "/test/path"
+        self.created_at: datetime = datetime.now()
 
 
 class MockDocument:
@@ -493,36 +495,46 @@ class TestVaultResponse:
     def test_vault_response_creation(self):
         """Test creating a VaultResponse with all fields."""
         vault_id = uuid.uuid4()
+        now = datetime.now()
         response = VaultResponse(
             id=vault_id,
             name="Personal Vault",
             description="My personal knowledge base",
+            container_path="/data/personal",
             host_path="/home/user/personal",
             document_count=42,
+            created_at=now,
         )
 
         assert response.id == vault_id
         assert response.name == "Personal Vault"
         assert response.description == "My personal knowledge base"
+        assert response.container_path == "/data/personal"
         assert response.host_path == "/home/user/personal"
         assert response.document_count == 42
+        assert response.created_at == now
 
     def test_vault_response_minimal(self):
         """Test creating a VaultResponse with minimal fields."""
         vault_id = uuid.uuid4()
+        now = datetime.now()
         response = VaultResponse(
             id=vault_id,
             name="Work",
             description=None,
+            container_path="/data/work",
             host_path="/data/work",
             document_count=0,
+            created_at=now,
         )
 
         assert response.id == vault_id
         assert response.name == "Work"
         assert response.description is None
+        assert response.container_path == "/data/work"
         assert response.host_path == "/data/work"
         assert response.document_count == 0
+        assert response.created_at == now
 
 
 class TestCreateVaultResponse:
@@ -538,8 +550,10 @@ class TestCreateVaultResponse:
         assert response.id == vault.id
         assert response.name == vault.name
         assert response.description == vault.description
+        assert response.container_path == vault.container_path
         assert response.host_path == vault.host_path
         assert response.document_count == document_count
+        assert response.created_at == vault.created_at
 
     def test_create_vault_response_zero_documents(self):
         """Test creating a VaultResponse with zero documents."""
@@ -549,6 +563,8 @@ class TestCreateVaultResponse:
         response = create_vault_response(vault, document_count)  # type: ignore[arg-type]
 
         assert response.document_count == 0
+        assert response.container_path == vault.container_path
+        assert response.created_at == vault.created_at
 
     def test_create_vault_response_large_count(self):
         """Test creating a VaultResponse with large document count."""
@@ -558,3 +574,5 @@ class TestCreateVaultResponse:
         response = create_vault_response(vault, document_count)  # type: ignore[arg-type]
 
         assert response.document_count == 999999
+        assert response.container_path == vault.container_path
+        assert response.created_at == vault.created_at

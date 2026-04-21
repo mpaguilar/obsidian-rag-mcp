@@ -37,7 +37,7 @@ def mock_settings():
 class TestCliDateFilteringIntegration:
     """Integration tests for CLI date filtering."""
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_due_before_filter(self, mock_db_manager, mock_settings):
         """Test CLI --due-before filter returns correct tasks."""
         today = date.today()
@@ -58,7 +58,7 @@ class TestCliDateFilteringIntegration:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_due_after_filter(self, mock_db_manager, mock_settings):
         """Test CLI --due-after filter returns correct tasks."""
         today = date.today()
@@ -79,7 +79,7 @@ class TestCliDateFilteringIntegration:
 
         assert result.exit_code == 0
 
-    @patch("obsidian_rag.cli.DatabaseManager")
+    @patch("obsidian_rag.cli_commands.DatabaseManager")
     def test_tasks_date_range_filter(self, mock_db_manager, mock_settings):
         """Test CLI with both --due-after and --due-before."""
         today = date.today()

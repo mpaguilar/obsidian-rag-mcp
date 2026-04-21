@@ -24,7 +24,15 @@ from obsidian_rag.mcp_server.tools.tasks_params import (
     GetTasksFilterParams,
     GetTasksRequest,
 )
-from obsidian_rag.mcp_server.tools.vaults import list_vaults as list_vaults_tool
+from obsidian_rag.mcp_server.tools.vaults import (
+    delete_vault,
+    get_vault,
+    update_vault,
+)
+from obsidian_rag.mcp_server.tools.vaults import (
+    list_vaults as list_vaults_tool,
+)
+from obsidian_rag.mcp_server.tools.vaults_params import VaultUpdateParams
 from obsidian_rag.services.ingestion import IngestionService, IngestVaultOptions
 
 log = logging.getLogger(__name__)
@@ -475,6 +483,128 @@ def _get_tasks_handler(
         _msg = "_get_tasks_handler returning"
         log.debug(_msg)
         return result.model_dump()
+
+
+def _get_vault_handler(
+    db_manager: DatabaseManager,
+    *,
+    name: str | None = None,
+    vault_id: str | None = None,
+) -> dict[str, object]:
+    """Handle get_vault tool call.
+
+    Args:
+        db_manager: Database manager for sessions.
+        name: Vault name to lookup (preferred if both provided).
+        vault_id: Vault UUID string to lookup.
+
+    Returns:
+        VaultResponse as dictionary on success, or error dict on failure.
+
+    Notes:
+        Catches ValueError from get_vault tool and returns error dict.
+
+    """
+    _msg = "_get_vault_handler starting"
+    log.debug(_msg)
+
+    try:
+        with db_manager.get_session() as session:
+            result = get_vault(
+                session=session,
+                name=name,
+                vault_id=vault_id,
+            )
+            _msg = "_get_vault_handler returning"
+            log.debug(_msg)
+            return result.model_dump()
+    except ValueError as err:
+        _msg = f"_get_vault_handler error: {err}"
+        log.error(_msg)
+        return {"success": False, "error": str(err)}
+
+
+def _update_vault_handler(
+    db_manager: DatabaseManager,
+    params: VaultUpdateParams,
+) -> dict[str, object]:
+    """Handle update_vault tool call.
+
+    Args:
+        db_manager: Database manager for sessions.
+        params: Vault update parameters.
+
+    Returns:
+        VaultResponse as dictionary on success, or error dict on failure.
+
+    Notes:
+        Catches ValueError from update_vault tool and returns error dict.
+        Returns error dict directly from tool when force is required.
+
+    """
+    _msg = "_update_vault_handler starting"
+    log.debug(_msg)
+
+    try:
+        with db_manager.get_session() as session:
+            result = update_vault(
+                session=session,
+                params=params,
+            )
+            # Check if result is an error dict (when force is required)
+            if isinstance(result, dict):
+                _msg = "_update_vault_handler returning (error dict)"
+                log.debug(_msg)
+                return result
+            # Otherwise it's a VaultResponse
+            _msg = "_update_vault_handler returning"
+            log.debug(_msg)
+            return result.model_dump()
+    except ValueError as err:
+        _msg = f"_update_vault_handler error: {err}"
+        log.error(_msg)
+        return {"success": False, "error": str(err)}
+
+
+def _delete_vault_handler(
+    db_manager: DatabaseManager,
+    *,
+    name: str,
+    confirm: bool,
+) -> dict[str, object]:
+    """Handle delete_vault tool call.
+
+    Args:
+        db_manager: Database manager for sessions.
+        name: Vault name to delete.
+        confirm: Must be True to proceed with deletion.
+
+    Returns:
+        Success dict with deletion counts if confirmed, or error dict.
+
+    Notes:
+        Catches ValueError from delete_vault tool and returns error dict.
+        Returns error dict directly when confirm is not True.
+
+    """
+    _msg = "_delete_vault_handler starting"
+    log.debug(_msg)
+
+    try:
+        with db_manager.get_session() as session:
+            result = delete_vault(
+                session=session,
+                name=name,
+                confirm=confirm,
+            )
+            # Result is always a dict (success or error)
+            _msg = "_delete_vault_handler returning"
+            log.debug(_msg)
+            return result
+    except ValueError as err:
+        _msg = f"_delete_vault_handler error: {err}"
+        log.error(_msg)
+        return {"success": False, "error": str(err)}
 
 
 # Annotated types for MCP tool parameters that may be passed as JSON strings

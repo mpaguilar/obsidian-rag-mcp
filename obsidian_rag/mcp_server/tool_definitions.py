@@ -17,12 +17,16 @@ from obsidian_rag.mcp_server.handlers import (
     QueryFilterParams,
     _convert_property_filters,
     _create_tag_filter,
+    _delete_vault_handler,
     _get_all_tags_handler,
     _get_tasks_handler,
+    _get_vault_handler,
     _list_vaults_handler,
+    _update_vault_handler,
 )
 from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
 from obsidian_rag.mcp_server.tools.tasks_params import GetTasksRequest
+from obsidian_rag.mcp_server.tools.vaults_params import VaultUpdateParams
 
 log = logging.getLogger(__name__)
 
@@ -480,3 +484,97 @@ def get_tasks_tool(
     log.info(_msg)
 
     return _get_tasks_handler(db_manager, request)
+
+
+def get_vault_tool(
+    db_manager: DatabaseManager,
+    *,
+    name: str | None = None,
+    vault_id: str | None = None,
+) -> dict[str, object]:
+    """Tool implementation for getting a single vault by name or ID.
+
+    Retrieves vault details including document count. Either name or vault_id
+    must be provided, with name taking precedence if both are given.
+
+    Args:
+        db_manager: Database manager for session management.
+        name: Vault name to lookup (preferred if both provided).
+        vault_id: Vault UUID string to lookup.
+
+    Returns:
+        Vault response as dictionary on success, or error dict on failure:
+        - Success: {"id": ..., "name": ..., "description": ...}
+        - Error: {"success": False, "error": "..."}
+
+    Notes:
+        This is a module-level function for testability.
+        The @mcp.tool() decorator is applied in the registration function.
+
+    """
+    _msg = "Tool get_vault called"
+    log.info(_msg)
+    return _get_vault_handler(db_manager, name=name, vault_id=vault_id)
+
+
+def update_vault_tool(
+    db_manager: DatabaseManager,
+    params: VaultUpdateParams,
+) -> dict[str, object]:
+    """Tool implementation for updating a vault's properties.
+
+    The name field in params is used for lookup only and cannot be changed.
+    Changing container_path requires force=True as it deletes all documents.
+
+    Args:
+        db_manager: Database manager for session management.
+        params: Vault update parameters including name for lookup.
+
+    Returns:
+        Vault response as dictionary on success, or error dict on failure:
+        - Success: {"id": ..., "name": ..., "description": ...}
+        - Error: {"success": False, "error": "..."}
+
+    Notes:
+        This is a module-level function for testability.
+        The @mcp.tool() decorator is applied in the registration function.
+        Changing container_path is destructive - it deletes all documents,
+        tasks, and chunks for the vault.
+
+    """
+    _msg = "Tool update_vault called"
+    log.info(_msg)
+    return _update_vault_handler(db_manager, params)
+
+
+def delete_vault_tool(
+    db_manager: DatabaseManager,
+    *,
+    name: str,
+    confirm: bool,
+) -> dict[str, object]:
+    """Tool implementation for deleting a vault and all associated data.
+
+    This operation is irreversible and cascade-deletes all associated documents,
+    tasks, and chunks. Requires explicit confirmation via confirm=True parameter.
+
+    Args:
+        db_manager: Database manager for session management.
+        name: Vault name to delete.
+        confirm: Must be True to proceed with deletion.
+
+    Returns:
+        Success dict with deletion counts if confirmed:
+        {"success": True, "name": ..., "documents_deleted": ..., ...}
+        Error dict if not confirmed or vault not found:
+        {"success": False, "error": "..."}
+
+    Notes:
+        This is a module-level function for testability.
+        The @mcp.tool() decorator is applied in the registration function.
+        The vault configuration entry in the config file is NOT deleted.
+
+    """
+    _msg = "Tool delete_vault called"
+    log.info(_msg)
+    return _delete_vault_handler(db_manager, name=name, confirm=confirm)

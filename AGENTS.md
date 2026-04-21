@@ -15,7 +15,11 @@ This project provides a CLI tool and library for:
 ```
 obsidian_rag/                    # Main package
 ├── __init__.py
-├── cli.py                       # CLI entry point
+├── cli.py                       # CLI entry point (Click command definitions only)
+├── cli_commands.py              # CLI business logic (extracted from cli.py)
+├── cli_dates.py                 # CLI date parsing utilities
+├── cli_ingest.py                # CLI ingest path resolution helpers
+├── cli_vault_commands.py        # CLI vault command implementations
 ├── config.py                    # Configuration management
 ├── database/                    # Database layer
 │   ├── __init__.py
@@ -35,6 +39,7 @@ obsidian_rag/                    # Main package
 │   ├── server.py                # FastMCP server setup and tool wrappers
 │   ├── session_manager.py       # Session lifecycle and metrics tracking
 │   ├── tool_definitions.py      # Tool implementations and MCPToolRegistry
+│   ├── vault_tools.py           # Vault MCP tool wrappers
 │   └── tools/                   # MCP tools
 │       ├── __init__.py
 │       ├── documents.py         # Document query tools (public API)
@@ -43,7 +48,10 @@ obsidian_rag/                    # Main package
 │       ├── documents_postgres.py # PostgreSQL-specific queries
 │       ├── documents_tags.py    # Tag filtering logic
 │       ├── tasks.py             # Task query tools
-│       └── vaults.py            # Vault query tools
+│       ├── tasks_dates.py       # Date parsing for task filters
+│       ├── tasks_params.py      # Task filter parameter dataclasses
+│       ├── vaults.py            # Vault query tools (list, get, update, delete)
+│       └── vaults_params.py     # Vault update parameter dataclass
 ├── parsing/                     # Document parsing
 │   ├── __init__.py
 │   ├── frontmatter.py           # FrontMatter extraction
@@ -64,9 +72,13 @@ obsidian_rag/                    # Main package
 ## CLI Commands
 
 - `obsidian-rag [--log-level LEVEL] <command>` - Global options include `--log-level` (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-- `obsidian-rag ingest --vault <name> <path>` - Ingest documents from vault path (vault must be configured)
+- `obsidian-rag ingest --vault <name> [PATH]` - Ingest documents from vault path. PATH is optional when vault has `container_path` configured; if provided, PATH overrides the configured container_path
 - `obsidian-rag query <search>` - Semantic search documents
 - `obsidian-rag tasks [options]` - Query tasks
+- `obsidian-rag vault list [--format json|table] [--limit N] [--offset N]` - List all vaults
+- `obsidian-rag vault get --name NAME [--id UUID]` - Get vault details by name or UUID
+- `obsidian-rag vault update --name NAME [--description DESC] [--host-path PATH] [--container-path PATH] [--force]` - Update vault properties
+- `obsidian-rag vault delete --name NAME --confirm` - Delete vault and cascade-delete all associated data
 
 ### Vault Support
 
@@ -744,3 +756,61 @@ Used global registry pattern to maintain FastMCP compatibility while achieving t
 - All ruff checks pass
 - All mypy type checks pass
 - All files under 1000 lines
+
+### 028.vault-management (Completed 2026-04-21)
+
+**Objective:** Add vault management capabilities (get, update, delete) to both MCP tools and CLI, enhance `VaultResponse` with missing fields, refactor `cli.py` to comply with the 1000-line limit, and implement ingest command improvements (Phase 8) to make PATH argument optional.
+
+**Changes Made:**
+- **Created `obsidian_rag/cli_commands.py`**: Extracted all business logic from `cli.py` (ingestion execution, query execution, task query execution, output formatting). `cli.py` reduced from 1126 to ~350 lines.
+- **Created `obsidian_rag/cli_vault_commands.py`**: CLI vault command implementations (vault_list_command, vault_get_command, vault_update_command, vault_delete_command).
+- **Created `obsidian_rag/cli_ingest.py`** (Phase 8): New module with path resolution helpers `_resolve_ingest_path()` and `_validate_path_matches_vault()` to support optional PATH argument in ingest command.
+- **Created `obsidian_rag/mcp_server/vault_tools.py`**: Vault MCP tool wrappers (get_vault, update_vault, delete_vault) to keep server.py under 1000 lines.
+- **Created `obsidian_rag/mcp_server/tools/vaults_params.py`**: VaultUpdateParams dataclass following the tasks_params.py pattern.
+- **Updated `obsidian_rag/mcp_server/models.py`**: Added `container_path: str` and `created_at: datetime` to VaultResponse model. Removed duplicate Pydantic VaultUpdateParams (using dataclass from vaults_params.py instead).
+- **Updated `obsidian_rag/mcp_server/tools/vaults.py`**: Added get_vault (by name or UUID), update_vault (partial update with force flag for container_path changes), delete_vault (with confirm flag and cascade counts). Added helper functions: _lookup_vault_by_name, _has_vault_changed, _check_container_path_update, _delete_vault_documents, _is_container_path_changing, _apply_vault_updates, _handle_flush_with_integrity_check, _count_vault_cascade_targets.
+- **Updated `obsidian_rag/mcp_server/handlers.py`**: Added _get_vault_handler, _update_vault_handler, _delete_vault_handler.
+- **Updated `obsidian_rag/mcp_server/tool_definitions.py`**: Added get_vault_tool, update_vault_tool, delete_vault_tool delegation functions.
+- **Updated `obsidian_rag/mcp_server/server.py`**: Registered vault tools in _register_tools().
+- **Updated `obsidian_rag/cli.py`**: Added vault command group with list, get, update, delete subcommands. Moved all business logic to cli_commands.py. Removed duplicate _setup_logging function. Made PATH argument optional in `ingest` command with updated docstring and help text (Phase 8).
+- **Updated `obsidian_rag/cli_commands.py`** (Phase 8): Updated `_run_ingest_command()` to accept `path: str | None` and delegate to `_resolve_ingest_path()` for path resolution and validation.
+- **Updated test files**: Added vault-specific tests across test_tools_vaults.py, test_handlers.py, test_server.py, test_vault_tools.py, test_vaults_params.py, test_cli_vault.py. Added Phase 8 tests: `TestResolveIngestPath` class (10 tests) and `TestIngestCommandOptionalPath` class (6 tests) in test_cli.py.
+
+**Key Design Decisions:**
+- **CLI refactoring**: cli.py now contains only Click command definitions; all business logic is in cli_commands.py and cli_vault_commands.py. This brings cli.py from 1126 lines to ~350 lines.
+- **server.py line limit**: Vault tool wrappers extracted to vault_tools.py to keep server.py at exactly 1000 lines.
+- **VaultUpdateParams as dataclass**: Following the tasks_params.py pattern, VaultUpdateParams is a dataclass in vaults_params.py rather than a Pydantic model. The initial implementation had a duplicate Pydantic version in models.py which was removed during verification.
+- **Container_path change requires force**: Changing container_path deletes all documents/tasks/chunks for the vault. The force parameter signals acceptance of data loss.
+- **Delete requires confirm**: The delete_vault MCP tool requires confirm=True to guard against accidental LLM-triggered deletion.
+- **Config sync warning**: Database updates do NOT propagate to config file. Delete response includes warning about config entry persistence.
+- **Phase 8 - Optional PATH**: The PATH argument in `ingest` command is now optional. When not provided, the vault's `container_path` from configuration is used. When provided, it must match the vault's `container_path` exactly (backward compatible with existing behavior).
+
+**Vault Tool Features:**
+- `get_vault(name=..., vault_id=...)`: Look up by name (primary) or UUID (secondary)
+- `update_vault(name, description, host_path, container_path, force)`: Partial update semantics; container_path changes require force=True
+- `delete_vault(name, confirm)`: Cascade deletes all documents/tasks/chunks; returns cascade counts
+
+**Phase 8 - Ingest Command Improvements:**
+- `obsidian-rag ingest --vault "Personal"` - Uses `container_path` from vault config (new)
+- `obsidian-rag ingest /path --vault "Personal"` - Explicit path override (existing, backward compatible)
+- Validates that vault exists in configuration
+- Validates that resolved path exists on filesystem
+- Validates that resolved path is a directory
+- Clear error messages for all validation failures
+
+**Verification:**
+- All 1464 tests pass (1 skipped)
+- 100% code coverage (4641 statements, 876 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All source files under 1000 lines (config.py at 1223 is pre-existing exception)
+
+**Additional Changes (Verification Phase):**
+- **Docker Compose support**: Added `docker-compose.yml` and `.env.example` for easy deployment
+- **litellm upgrade to 1.83.0+**: Upgraded from 1.82.5 to 1.83.0+ with native OpenRouter routing via `openrouter/` prefix. Removed OPENAI_API_BASE/OPENAI_BASE_URL env var workaround.
+- **`_add_openrouter_prefix()` helper**: Extracted shared prefix-deduplication logic for both OpenRouterEmbeddingProvider and OpenRouterChatProvider
+- **API key `${` detection**: All four provider constructors now detect unresolved `${VAR}` patterns in API keys and raise descriptive ValueError
+- **Custom base_url fix**: OpenRouterEmbeddingProvider now passes `api_base=self.base_url` to litellm.embedding() (was silently ignored before)
+- **Default vault removal**: DEFAULT_CONFIG vaults changed from default "Obsidian Vault" to empty `{}`
+- **Env var interpolation**: Unset variables without defaults now return empty string + warning log (instead of preserving `${VAR}` pattern)
+- **README.md**: Updated with Docker Compose quick start instructions
