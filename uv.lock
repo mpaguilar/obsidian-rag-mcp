@@ -1788,7 +1788,7 @@ wheels = [
 
 [[package]]
 name = "obsidian-rag"
-version = "0.28.1"
+version = "0.30.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

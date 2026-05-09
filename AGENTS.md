@@ -161,6 +161,29 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 030.sql-error (Completed 2026-05-09)
+
+**Objective:** Fix incorrect use of PostgreSQL `unnest()` set-returning function in `_extract_tags_postgresql()` that could cause SQL errors in some PostgreSQL configurations. PostgreSQL does not allow SRFs in SELECT or WHERE scalar positions — they must appear in FROM.
+
+**Changes Made:**
+- **Updated `obsidian_rag/mcp_server/tools/documents.py`** (lines 396-410): Rewrote `_extract_tags_postgresql()` to use `func.unnest(Document.tags).table_valued(column("tag"))` instead of `func.unnest(Document.tags)` in SELECT and WHERE clauses. Added `column` import from `sqlalchemy`. Changed SELECT from `func.distinct(func.unnest(Document.tags)).label("tag")` to `func.distinct(tag_tbl.c.tag).label("tag")`. Changed WHERE pattern filter from `func.lower(func.unnest(Document.tags)).ilike(...)` to `func.lower(tag_tbl.c.tag).ilike(...)`.
+
+**SQL Comparison:**
+- **Before (broken):** `unnest()` in SELECT and WHERE — SRF in scalar position
+- **After (correct):** `unnest()` in FROM via `table_valued()` — generates proper cross-join lateral: `FROM documents, unnest(documents.tags) AS anon_1(tag)`
+
+**Key Design Decision:**
+Used `table_valued(column("tag"))` pattern (available in SQLAlchemy >= 1.4) to generate a proper FROM-clause unnest. The alias column (`tag_tbl.c.tag`) is then referenced in SELECT and WHERE instead of the bare `func.unnest()`. This is the standard PostgreSQL pattern for array unnesting in a query and eliminates the SRF execution error.
+
+**No breaking changes:** The function returns identical results to callers. No schema changes, no API changes, no database migration needed.
+
+**Verification:**
+- All 1464 tests pass (1 skipped)
+- 100% code coverage (4642 statements, 876 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All source files under 1000 lines (config.py at 1223 is pre-existing exception)
+
 ### 027.task-tags (Completed 2026-04-15)
 
 **Objective:** Implement defensive tag prefix stripping and remove legacy `tags` parameter from MCP task tools. Tags are stored in the database without the `#` prefix, but LLM clients may include it when passing filter values. This checkpoint ensures tag filters work correctly regardless of whether the `#` prefix is included.
