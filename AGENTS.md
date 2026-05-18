@@ -184,6 +184,40 @@ Used `table_valued(column("tag"))` pattern (available in SQLAlchemy >= 1.4) to g
 - All mypy type checks pass
 - All source files under 1000 lines (config.py at 1223 is pre-existing exception)
 
+### 031.sql-errors (Completed 2026-05-17)
+
+**Objective:** Fix three SQL generation bugs in PostgreSQL document tag extraction and filtering: `table_valued()` column name rendering failure causing `UndefinedColumn`, empty `or_()` crash, and fragile text-concatenation NOT expression.
+
+**Changes Made:**
+- **Updated `obsidian_rag/mcp_server/tools/documents.py`** (lines 384-416): Replaced `func.unnest(Document.tags).table_valued(column("tag"))` pattern in `_extract_tags_postgresql()` with a subquery approach using `sa_select(func.unnest(Document.tags).label("tag")).select_from(Document).subquery("tag_subq")`. The `table_valued()` method does not render column names for `unnest()`, producing `AS anon_1` instead of `AS anon_1(tag)`, causing `UndefinedColumn: column anon_1.tag does not exist`. The subquery wraps `unnest()` in a SELECT that properly labels the column as "tag", making it accessible as `tag_subq.c.tag`.
+- **Updated `obsidian_rag/mcp_server/tools/documents_tags.py`** (lines 301-308): Two fixes to `apply_postgresql_exclude_tags()`: (1) Added guard `if not exclude_lower: return query` after `_strip_tag_list()` to handle edge case where all exclude tags become empty after `#` prefix stripping, and (2) Replaced fragile text concatenation `text("NOT (") + or_() + text(")")` with clean `~or_(*exclude_conditions)` SQLAlchemy negation operator.
+- **Created `tests/mcp_server/test_tools_documents_select_from.py`**: Rewritten for subquery approach with `TestExtractTagsPostgresqlSubquery` class (5 tests) verifying: happy path returns tags, filters out None tags, pattern filter adds second `.filter()` call, outer query does NOT call `.select_from()` (key behavioral change), and empty results.
+- **Created `tests/mcp_server/test_tools_documents_subquery_sql.py`**: SQL compilation tests (4 tests) verifying the subquery generates correct SQL structure: `unnest` in subquery with `AS tag` alias, `ILIKE` pattern filtering through `tag_subq.c.tag`, column accessibility, and no `table_valued` artifacts.
+- **Updated `tests/mcp_server/test_tools_documents_tags.py`**: Added `TestApplyPostgresqlExcludeTagsEdgeCases` class with 3 tests covering all-hash exclude_tags, mixed valid/hash tags, and `~or_()` pattern verification.
+- **Updated `tests/mcp_server/test_tools_documents.py`**: Added `TestGetAllTagsSQLGeneration` class with 2 integration tests for `get_all_tags` through the PostgreSQL path.
+- **Updated `tests/mcp_server/test_tools_documents_postgres.py`**: Added `TestQueryDocumentsExcludeTagsIntegration` class with 2 integration tests for `query_documents` with exclude_tags through the PostgreSQL path.
+- **Refactored `tests/mcp_server/test_tools_documents_postgres_complete.py`**: Extracted `TestExtractTagsPostgresqlSelectFrom` class and `_create_vault_name_mock_query` helper to keep file under 1000 lines and reduce complexity.
+
+**Key Design Decisions:**
+- **Subquery approach** replaces `table_valued()` because `func.unnest(...).table_valued(column("tag"))` is buggy — SQLAlchemy does not render `(tag)` column name for the `unnest()` function, producing `AS anon_1` without a column alias, causing `UndefinedColumn` when referencing `anon_1.tag`. The subquery `SELECT unnest(documents.tags) AS tag FROM documents` properly labels the column.
+- **Filter change**: Uses `tag_subq.c.tag.isnot(None)` instead of `Document.tags.isnot(None)` — filters NULL tags from the unnested result, not the array column itself.
+- Empty `exclude_lower` guard prevents `or_()` with zero arguments, which produces invalid SQL `NOT ()`
+- `~or_()` operator is SQLAlchemy's standard negation pattern, producing clean `NOT (a OR b)` SQL
+- Test approach follows existing mocking patterns with MagicMock-based query chains, PostgreSQL dialect mocking, and SQL compilation tests for real SQL structure verification
+
+**SQL Comparison (tag extraction):**
+- **Before (broken):** `table_valued(column("tag"))` → `unnest(documents.tags) AS anon_1` (no column name) → `anon_1.tag` fails with UndefinedColumn
+- **After (correct):** `sa_select(func.unnest(...).label("tag")).subquery("tag_subq")` → `(SELECT unnest(documents.tags) AS tag FROM documents) AS tag_subq` → `tag_subq.tag` works correctly
+
+**No breaking changes:** No schema changes, no migration needed, no API changes. Same behavior for valid inputs; fixes only address edge cases and defensive code paths.
+
+**Verification:**
+- All 1480 tests pass (1 skipped)
+- 100% code coverage (4645 statements, 878 branches)
+- All ruff checks pass
+- All mypy type checks pass on source code
+- All source files under 1000 lines (config.py at 1223 is pre-existing exception)
+
 ### 027.task-tags (Completed 2026-04-15)
 
 **Objective:** Implement defensive tag prefix stripping and remove legacy `tags` parameter from MCP task tools. Tags are stored in the database without the `#` prefix, but LLM clients may include it when passing filter values. This checkpoint ensures tag filters work correctly regardless of whether the `#` prefix is included.

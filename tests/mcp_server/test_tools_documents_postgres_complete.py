@@ -6,8 +6,6 @@ Tests for all PostgreSQL-specific functions that were marked with pragma: no cov
 import uuid
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from obsidian_rag.mcp_server.tools.documents_params import (
     DocumentQueryParams,
     PaginationParams,
@@ -48,6 +46,7 @@ def create_mock_query_chain(results=None, count=0):
     """Create a mock query chain for SQLAlchemy queries."""
     mock_query = MagicMock()
     mock_query.filter.return_value = mock_query
+    mock_query.join.return_value = mock_query
     mock_query.order_by.return_value = mock_query
     mock_query.count.return_value = count
     mock_query.offset.return_value.limit.return_value.all.return_value = results or []
@@ -62,7 +61,7 @@ class TestQueryDocumentsPostgresqlComplete:
         from obsidian_rag.mcp_server.tools.documents_postgres import (
             query_documents_postgresql,
         )
-        from obsidian_rag.mcp_server.models import PropertyFilter, TagFilter
+        from obsidian_rag.mcp_server.models import TagFilter
 
         mock_session = create_mock_session()
         mock_doc = create_mock_document()
@@ -276,6 +275,13 @@ class TestQueryDocumentsPostgresqlComplete:
         assert result.next_offset == 5
 
 
+def _create_vault_name_mock_query(session, mock_doc, count=1):
+    """Create a properly mocked query for vault name filtering tests."""
+    mock_query = create_mock_query_chain(results=[mock_doc], count=count)
+    session.query.return_value = mock_query
+    return mock_query
+
+
 class TestGetDocumentsByPropertyPostgresqlComplete:
     """Complete tests for get_documents_by_property_postgresql function."""
 
@@ -319,35 +325,7 @@ class TestGetDocumentsByPropertyPostgresqlComplete:
         mock_session = create_mock_session()
         mock_doc = create_mock_document()
 
-        # Use a proper mock class that returns int for count()
-        class MockQuery:
-            def __init__(self):
-                self._count = 1
-                self._results = [mock_doc]
-
-            def join(self, *args, **kwargs):
-                return self
-
-            def filter(self, *args, **kwargs):
-                return self
-
-            def order_by(self, *args, **kwargs):
-                return self
-
-            def count(self):
-                return self._count
-
-            def offset(self, n):
-                return self
-
-            def limit(self, n):
-                return self
-
-            def all(self):
-                return self._results
-
-        mock_query = MockQuery()
-        mock_session.query.return_value = mock_query
+        _create_vault_name_mock_query(mock_session, mock_doc, count=1)
 
         property_filters = PropertyFilterParams(
             include_filters=None,
@@ -853,10 +831,10 @@ class TestGetDocumentsByPropertyPostgresPath:
 
 
 class TestExtractTagsPostgresqlWithPattern:
-    """Tests for _extract_tags_postgresql with pattern (lines 341-368)."""
+    """Tests for _extract_tags_postgresql with pattern using subquery approach."""
 
     def test_extract_tags_postgresql_with_pattern(self):
-        """Test _extract_tags_postgresql with pattern filtering (lines 341-368)."""
+        """Test _extract_tags_postgresql with pattern filtering (subquery approach)."""
         from obsidian_rag.mcp_server.tools.documents import _extract_tags_postgresql
 
         mock_session = MagicMock()
@@ -940,3 +918,6 @@ class TestGetAllTagsPostgresPath:
             mock_extract.assert_called_once_with(mock_session, None)
             assert result.total_count == 3
             assert result.tags == ["work", "personal", "ideas"]
+
+
+

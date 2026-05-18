@@ -823,7 +823,10 @@ class TestGetAllTags:
     def _configure_mock_for_tags(self, db_session, tags):
         """Configure mock to return specific tags."""
         rows = self._create_mock_tag_rows(tags)
-        db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = rows
+        select_mock = db_session.query.return_value
+        select_mock.filter.return_value = select_mock
+        select_mock.order_by.return_value = select_mock
+        select_mock.all.return_value = rows
 
     def test_get_all_tags_basic(self, db_session, sample_documents):
         """Test getting all unique tags."""
@@ -960,10 +963,10 @@ class TestGetDocumentsByPropertyAdditional:
 
 
 class TestExtractTagsPostgresql:
-    """Tests for _extract_tags_postgresql function (TASK-096)."""
+    """Tests for _extract_tags_postgresql function using subquery approach."""
 
     def test_extract_tags_postgresql_with_pattern(self):
-        """Test _extract_tags_postgresql with pattern filtering (lines 377-390)."""
+        """Test _extract_tags_postgresql with pattern filtering (subquery approach)."""
         from obsidian_rag.mcp_server.tools.documents import _extract_tags_postgresql
 
         mock_session = MagicMock()
@@ -1004,7 +1007,10 @@ class TestGetAllTagsAdditional:
     def _configure_mock_for_tags(self, db_session, tags):
         """Configure mock to return specific tags."""
         rows = self._create_mock_tag_rows(tags)
-        db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = rows
+        select_mock = db_session.query.return_value
+        select_mock.filter.return_value = select_mock
+        select_mock.order_by.return_value = select_mock
+        select_mock.all.return_value = rows
 
     def test_get_all_tags_execution_path(self, db_session, sample_documents):
         """Test get_all_tags execution path (line 455)."""
@@ -1245,3 +1251,56 @@ class TestQueryDocumentsQueryText:
         # Verify query_chunks was called but rerank was not
         mock_query_chunks.assert_called_once()
         assert len(result.results) == 1
+
+
+class TestGetAllTagsSQLGeneration:
+    """Integration tests for get_all_tags SQL generation path."""
+
+    def test_get_all_tags_postgresql_generates_valid_sql(self):
+        """Verify get_all_tags with PostgreSQL dialect generates valid SQL via _extract_tags_postgresql."""
+        from obsidian_rag.mcp_server.tools.documents import get_all_tags
+
+        mock_session = MagicMock()
+        mock_bind = MagicMock()
+        mock_bind.dialect.name = "postgresql"
+        mock_session.bind = mock_bind
+
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+
+        mock_row = MagicMock()
+        mock_row.tag = "personal"
+        mock_query.all.return_value = [mock_row]
+
+        mock_session.query.return_value = mock_query
+
+        result = get_all_tags(mock_session, pattern=None, limit=20, offset=0)
+
+        assert result.total_count == 1
+        assert "personal" in result.tags
+
+    def test_get_all_tags_with_pattern_postgresql_path(self):
+        """Verify pattern filtering works end-to-end in PostgreSQL path."""
+        from obsidian_rag.mcp_server.tools.documents import get_all_tags
+
+        mock_session = MagicMock()
+        mock_bind = MagicMock()
+        mock_bind.dialect.name = "postgresql"
+        mock_session.bind = mock_bind
+
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+
+        mock_row = MagicMock()
+        mock_row.tag = "work-project"
+        mock_query.all.return_value = [mock_row]
+
+        mock_session.query.return_value = mock_query
+
+        result = get_all_tags(mock_session, pattern="work*", limit=20, offset=0)
+
+        assert "work-project" in result.tags
+        expected_filter_call_count = 2  # isnot(None) + pattern
+        assert mock_query.filter.call_count == expected_filter_call_count

@@ -392,18 +392,25 @@ def _extract_tags_postgresql(session: "Session", pattern: str | None) -> list[st
         Sorted list of unique tags.
 
     """
-    from sqlalchemy import column, func
+    from sqlalchemy import func
+    from sqlalchemy import select as sa_select
 
-    tag_tbl = func.unnest(Document.tags).table_valued(column("tag"))
+    tag_subq = (
+        sa_select(
+            func.unnest(Document.tags).label("tag"),
+        )
+        .select_from(Document)
+        .subquery("tag_subq")
+    )
 
     tags_query = session.query(
-        func.distinct(tag_tbl.c.tag).label("tag"),
-    ).filter(Document.tags.isnot(None))
+        func.distinct(tag_subq.c.tag).label("tag"),
+    ).filter(tag_subq.c.tag.isnot(None))
 
     if pattern is not None:
         like_pattern = _glob_to_like(pattern)
         tags_query = tags_query.filter(
-            func.lower(tag_tbl.c.tag).ilike(func.lower(like_pattern)),
+            func.lower(tag_subq.c.tag).ilike(func.lower(like_pattern)),
         )
 
     tags_query = tags_query.order_by("tag")

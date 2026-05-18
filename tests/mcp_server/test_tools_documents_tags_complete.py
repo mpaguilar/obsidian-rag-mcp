@@ -88,17 +88,13 @@ class TestApplyPostgresqlExcludeTagsComplete:
         tag_filter = TagFilter(exclude_tags=["archived", "deleted"])
 
         with patch("obsidian_rag.mcp_server.tools.documents_tags.or_") as mock_or:
-            with patch(
-                "obsidian_rag.mcp_server.tools.documents_tags.text"
-            ) as mock_text:
-                mock_or.return_value = "or_condition"
-                mock_text.side_effect = lambda x: x
+            mock_or.return_value = MagicMock()
 
-                result = apply_postgresql_exclude_tags(mock_query, tag_filter)
+            result = apply_postgresql_exclude_tags(mock_query, tag_filter)
 
-                mock_or.assert_called_once()
-                mock_query.filter.assert_called_once()
-                assert result is mock_query
+            mock_or.assert_called_once()
+            mock_query.filter.assert_called_once()
+            assert result is mock_query
 
     def test_apply_postgresql_exclude_tags_empty(self):
         """Test apply_postgresql_exclude_tags with empty exclude_tags."""

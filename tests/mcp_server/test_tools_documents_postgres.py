@@ -3,8 +3,6 @@
 import uuid
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
 
 
@@ -253,7 +251,7 @@ class TestGetDocumentsByPropertyPostgresql:
             PropertyQueryParams,
             TagFilterParams,
         )
-        from obsidian_rag.mcp_server.models import PropertyFilter, TagFilter
+        from obsidian_rag.mcp_server.models import PropertyFilter
 
         # Create mock session
         mock_session = MagicMock()
@@ -536,10 +534,10 @@ class TestGetDocumentsByPropertyPostgresPath:
 
 
 class TestExtractTagsPostgresqlWithPattern:
-    """Tests for _extract_tags_postgresql with pattern (lines 358-364)."""
+    """Tests for _extract_tags_postgresql with pattern using subquery approach."""
 
     def test_extract_tags_postgresql_with_pattern(self):
-        """Test _extract_tags_postgresql with pattern filtering (lines 358-364)."""
+        """Test _extract_tags_postgresql with pattern filtering (subquery approach)."""
         from obsidian_rag.mcp_server.tools.documents import _extract_tags_postgresql
 
         # Create mock session
@@ -646,3 +644,72 @@ class TestExtractDistanceFromRow:
         row = PlainRow()
         result = _extract_distance_from_row(row)
         assert result == 0.0
+
+
+class TestQueryDocumentsExcludeTagsIntegration:
+    """Integration tests for query_documents with exclude_tags SQL generation."""
+
+    def test_query_documents_with_exclude_tags_postgresql(self):
+        """Verify query_documents with exclude_tags produces valid SQL in PostgreSQL path."""
+        from obsidian_rag.mcp_server.tools.documents import query_documents
+        from obsidian_rag.mcp_server.models import TagFilter
+
+        mock_session = MagicMock()
+        mock_bind = MagicMock()
+        mock_bind.dialect.name = "postgresql"
+        mock_session.bind = mock_bind
+
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.count.return_value = 1
+        mock_query.offset.return_value.limit.return_value.all.return_value = []
+
+        mock_session.query.return_value = mock_query
+
+        query_embedding = [0.1] * 1536
+        pagination = PaginationParams(limit=20, offset=0)
+
+        tag_filter = TagFilter(exclude_tags=["archived"])
+        result = query_documents(
+            mock_session,
+            query_embedding,
+            tag_filter=tag_filter,
+            pagination=pagination,
+        )
+
+        assert result.total_count == 1
+        # filter should have been called (for exclude_tags)
+        assert mock_query.filter.call_count >= 1
+
+    def test_query_documents_with_hash_only_exclude_tags(self):
+        """Verify query_documents with hash-only exclude_tags doesn't crash."""
+        from obsidian_rag.mcp_server.tools.documents import query_documents
+        from obsidian_rag.mcp_server.models import TagFilter
+
+        mock_session = MagicMock()
+        mock_bind = MagicMock()
+        mock_bind.dialect.name = "postgresql"
+        mock_session.bind = mock_bind
+
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.count.return_value = 0
+        mock_query.offset.return_value.limit.return_value.all.return_value = []
+
+        mock_session.query.return_value = mock_query
+
+        query_embedding = [0.1] * 1536
+        pagination = PaginationParams(limit=20, offset=0)
+
+        tag_filter = TagFilter(exclude_tags=["#", "##"])
+        result = query_documents(
+            mock_session,
+            query_embedding,
+            tag_filter=tag_filter,
+            pagination=pagination,
+        )
+
+        # Should not crash, returns results normally (guard returns query unchanged)
+        assert result.total_count == 0

@@ -8,7 +8,7 @@ import fnmatch
 import logging
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import func, or_, text
+from sqlalchemy import func, or_
 
 from obsidian_rag.database.models import Document
 from obsidian_rag.mcp_server.tools.tasks import _strip_tag_list
@@ -298,12 +298,14 @@ def apply_postgresql_exclude_tags(
 
     stripped = _strip_tag_list(tag_filter.exclude_tags)
     exclude_lower = [t.lower() for t in stripped]
+    if not exclude_lower:
+        return query
     # Document must NOT have ANY exclude tags
     exclude_conditions = [
         func.lower(func.array_to_string(Document.tags, ",")).contains(tag)
         for tag in exclude_lower
     ]
-    query = query.filter(text("NOT (") + or_(*exclude_conditions) + text(")"))
+    query = query.filter(~or_(*exclude_conditions))
     return query
 
 
