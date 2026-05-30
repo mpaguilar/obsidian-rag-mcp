@@ -17,6 +17,7 @@ from obsidian_rag.services.ingestion import (
     IngestVaultOptions,
 )
 from obsidian_rag.services.ingestion_cleanup import _delete_batch
+from obsidian_rag.services.tag_merging import _merge_tags
 
 if TYPE_CHECKING:
     from obsidian_rag.config import Settings
@@ -876,6 +877,293 @@ class TestIngestVault:
 class TestIngestSingleFile:
     """Test _ingest_single_file method."""
 
+    def test_ingest_single_file_merges_document_tags(
+        self,
+        ingestion_service: IngestionService,
+        tmp_path: Path,
+    ) -> None:
+        """Test end-to-end tag merging during new document ingestion."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
+
+        file_info = MagicMock()
+        file_info.path = tmp_path / "test.md"
+        file_info.name = "test.md"
+        file_info.content = "---\ntags: [Work, Urgent]\n---\n- [ ] do thing #personal"
+        file_info.checksum = "abc123"
+        file_info.created_at = datetime.now(timezone.utc)
+        file_info.modified_at = datetime.now(timezone.utc)
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] do thing #personal"
+        mock_task.status = "not_completed"
+        mock_task.description = "do thing"
+        mock_task.tags = ["personal"]
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = None
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.custom_metadata = {}
+
+        with patch(
+            "obsidian_rag.services.ingestion.parse_frontmatter"
+        ) as mock_parse_fm:
+            mock_parse_fm.return_value = (
+                ["Work", "Urgent"],
+                {},
+                "- [ ] do thing #personal",
+            )
+
+            with patch(
+                "obsidian_rag.services.ingestion.parse_tasks_from_content"
+            ) as mock_parse_tasks:
+                mock_parse_tasks.return_value = [(1, mock_task)]
+
+                with patch(
+                    "obsidian_rag.services.ingestion.should_chunk_document"
+                ) as mock_should_chunk:
+                    mock_should_chunk.return_value = False
+
+                    ingestion_service._ingest_single_file(
+                        file_info,
+                        vault_id=uuid.uuid4(),
+                        vault_config=vault_config,
+                    )
+
+        calls = mock_session.add.call_args_list
+        task_calls = [c for c in calls if isinstance(c[0][0], Task)]
+        assert len(task_calls) > 0
+        created_task = task_calls[0][0][0]
+        assert created_task.tags == ["work", "urgent", "personal"]
+
+    def test_ingest_single_file_update_merges_tags(
+        self,
+        ingestion_service: IngestionService,
+        tmp_path: Path,
+    ) -> None:
+        """Mock existing document with old tags being updated to new document-level tags."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_existing_doc = MagicMock()
+        mock_existing_doc.id = uuid.uuid4()
+        mock_existing_doc.checksum_md5 = "old_checksum"
+        mock_existing_doc.tags = ["old"]
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = (
+            mock_existing_doc
+        )
+
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
+
+        file_info = MagicMock()
+        file_info.path = tmp_path / "test.md"
+        file_info.name = "test.md"
+        file_info.content = "---\ntags: [Updated]\n---\n- [ ] do thing #inline"
+        file_info.checksum = "new_checksum"
+        file_info.created_at = datetime.now(timezone.utc)
+        file_info.modified_at = datetime.now(timezone.utc)
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] do thing #inline"
+        mock_task.status = "not_completed"
+        mock_task.description = "do thing"
+        mock_task.tags = ["inline"]
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = None
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.custom_metadata = {}
+
+        with patch(
+            "obsidian_rag.services.ingestion.parse_frontmatter"
+        ) as mock_parse_fm:
+            mock_parse_fm.return_value = (
+                ["Updated"],
+                {},
+                "- [ ] do thing #inline",
+            )
+
+            with patch(
+                "obsidian_rag.services.ingestion.parse_tasks_from_content"
+            ) as mock_parse_tasks:
+                mock_parse_tasks.return_value = [(1, mock_task)]
+
+                with patch(
+                    "obsidian_rag.services.ingestion.should_chunk_document"
+                ) as mock_should_chunk:
+                    mock_should_chunk.return_value = False
+
+                    result, chunks_created, is_empty = (
+                        ingestion_service._ingest_single_file(
+                            file_info,
+                            vault_id=uuid.uuid4(),
+                            vault_config=vault_config,
+                        )
+                    )
+
+                    assert result == "updated"
+
+        calls = mock_session.add.call_args_list
+        task_calls = [c for c in calls if isinstance(c[0][0], Task)]
+        assert len(task_calls) > 0
+        created_task = task_calls[0][0][0]
+        assert created_task.tags == ["updated", "inline"]
+
+    def test_ingest_single_file_no_document_tags(
+        self,
+        ingestion_service: IngestionService,
+        tmp_path: Path,
+    ) -> None:
+        """Mock parse_frontmatter returning (None, {}, 'content') and task with ['personal']."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
+
+        file_info = MagicMock()
+        file_info.path = tmp_path / "test.md"
+        file_info.name = "test.md"
+        file_info.content = "- [ ] do thing #personal"
+        file_info.checksum = "abc123"
+        file_info.created_at = datetime.now(timezone.utc)
+        file_info.modified_at = datetime.now(timezone.utc)
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] do thing #personal"
+        mock_task.status = "not_completed"
+        mock_task.description = "do thing"
+        mock_task.tags = ["personal"]
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = None
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.custom_metadata = {}
+
+        with patch(
+            "obsidian_rag.services.ingestion.parse_frontmatter"
+        ) as mock_parse_fm:
+            mock_parse_fm.return_value = (None, {}, "- [ ] do thing #personal")
+
+            with patch(
+                "obsidian_rag.services.ingestion.parse_tasks_from_content"
+            ) as mock_parse_tasks:
+                mock_parse_tasks.return_value = [(1, mock_task)]
+
+                with patch(
+                    "obsidian_rag.services.ingestion.should_chunk_document"
+                ) as mock_should_chunk:
+                    mock_should_chunk.return_value = False
+
+                    ingestion_service._ingest_single_file(
+                        file_info,
+                        vault_id=uuid.uuid4(),
+                        vault_config=vault_config,
+                    )
+
+        calls = mock_session.add.call_args_list
+        task_calls = [c for c in calls if isinstance(c[0][0], Task)]
+        assert len(task_calls) > 0
+        created_task = task_calls[0][0][0]
+        assert created_task.tags == ["personal"]
+
+    def test_ingest_single_file_no_task_tags(
+        self,
+        ingestion_service: IngestionService,
+        tmp_path: Path,
+    ) -> None:
+        """Mock parse_frontmatter returning (['Work'], {}, 'content') and task with no inline tags."""
+        mock_session = MagicMock()
+        mock_session_context = MagicMock()
+        mock_session_context.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_context.__exit__ = MagicMock(return_value=None)
+        ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        vault_config = VaultConfig(
+            container_path=str(tmp_path),
+            host_path=str(tmp_path),
+        )
+
+        file_info = MagicMock()
+        file_info.path = tmp_path / "test.md"
+        file_info.name = "test.md"
+        file_info.content = "---\ntags: [Work]\n---\n- [ ] do thing"
+        file_info.checksum = "abc123"
+        file_info.created_at = datetime.now(timezone.utc)
+        file_info.modified_at = datetime.now(timezone.utc)
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] do thing"
+        mock_task.status = "not_completed"
+        mock_task.description = "do thing"
+        mock_task.tags = None
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = None
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.custom_metadata = {}
+
+        with patch(
+            "obsidian_rag.services.ingestion.parse_frontmatter"
+        ) as mock_parse_fm:
+            mock_parse_fm.return_value = (
+                ["Work"],
+                {},
+                "- [ ] do thing",
+            )
+
+            with patch(
+                "obsidian_rag.services.ingestion.parse_tasks_from_content"
+            ) as mock_parse_tasks:
+                mock_parse_tasks.return_value = [(1, mock_task)]
+
+                with patch(
+                    "obsidian_rag.services.ingestion.should_chunk_document"
+                ) as mock_should_chunk:
+                    mock_should_chunk.return_value = False
+
+                    ingestion_service._ingest_single_file(
+                        file_info,
+                        vault_id=uuid.uuid4(),
+                        vault_config=vault_config,
+                    )
+
+        calls = mock_session.add.call_args_list
+        task_calls = [c for c in calls if isinstance(c[0][0], Task)]
+        assert len(task_calls) > 0
+        created_task = task_calls[0][0][0]
+        assert created_task.tags == ["work"]
+
     @patch("obsidian_rag.services.ingestion.should_chunk_document")
     def test_create_document_with_embedding(
         self,
@@ -1119,6 +1407,175 @@ class TestTaskOperations:
 
         # Verify new task is created
         mock_session.add.assert_called_once()
+
+    def test_create_tasks_merges_document_tags(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Verify created Task merges document and task tags."""
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.id = "doc-id"
+        mock_document.tags = ["Work", "Urgent"]
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] do thing #personal"
+        mock_task.status = "not_completed"
+        mock_task.description = "do thing"
+        mock_task.tags = ["personal"]
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = None
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.custom_metadata = {}
+
+        ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
+
+        created_task = mock_session.add.call_args[0][0]
+        assert created_task.tags == ["work", "urgent", "personal"]
+
+    def test_create_tasks_with_none_document_tags(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """doc tags None, task tags present -> task tags only."""
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.id = "doc-id"
+        mock_document.tags = None
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] do thing"
+        mock_task.status = "not_completed"
+        mock_task.description = "do thing"
+        mock_task.tags = ["personal"]
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = None
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.custom_metadata = {}
+
+        ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
+
+        created_task = mock_session.add.call_args[0][0]
+        assert created_task.tags == ["personal"]
+
+    def test_create_tasks_with_empty_document_tags(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """doc tags empty, task tags present -> task tags only."""
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.id = "doc-id"
+        mock_document.tags = []
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] do thing"
+        mock_task.status = "not_completed"
+        mock_task.description = "do thing"
+        mock_task.tags = ["personal"]
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = None
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.custom_metadata = {}
+
+        ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
+
+        created_task = mock_session.add.call_args[0][0]
+        assert created_task.tags == ["personal"]
+
+    def test_create_tasks_document_tags_only(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """doc tags present, task tags None -> doc tags only lowercased."""
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.id = "doc-id"
+        mock_document.tags = ["Work"]
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] do thing"
+        mock_task.status = "not_completed"
+        mock_task.description = "do thing"
+        mock_task.tags = None
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = None
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.custom_metadata = {}
+
+        ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
+
+        created_task = mock_session.add.call_args[0][0]
+        assert created_task.tags == ["work"]
+
+    def test_create_tasks_case_insensitive_merge(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Duplicate tags across doc/task are deduplicated."""
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.id = "doc-id"
+        mock_document.tags = ["Work"]
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] do thing #work"
+        mock_task.status = "not_completed"
+        mock_task.description = "do thing"
+        mock_task.tags = ["work"]
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = None
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.custom_metadata = {}
+
+        ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
+
+        created_task = mock_session.add.call_args[0][0]
+        assert created_task.tags == ["work"]
+
+    def test_update_tasks_merges_document_tags(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Verify _update_tasks() also uses merged tags since it calls _create_tasks()."""
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.id = "doc-id"
+        mock_document.tags = ["Updated"]
+
+        mock_existing_task = MagicMock()
+        mock_existing_task.id = uuid.uuid4()
+
+        mock_new_task = MagicMock()
+        mock_new_task.raw_text = "- [ ] new task"
+        mock_new_task.status = "not_completed"
+        mock_new_task.description = "new task"
+        mock_new_task.tags = ["inline"]
+        mock_new_task.repeat = None
+        mock_new_task.scheduled = None
+        mock_new_task.due = None
+        mock_new_task.completion = None
+        mock_new_task.priority = "normal"
+        mock_new_task.custom_metadata = {}
+
+        mock_session.query.return_value.filter_by.return_value.all.return_value = [mock_existing_task]
+        mock_session.query.return_value.filter.return_value.first.return_value = None
+
+        ingestion_service._update_tasks(mock_session, mock_document, [(1, mock_new_task)])  # type: ignore[arg-type]
+
+        # Verify the new task was created with merged tags
+        created_task = mock_session.add.call_args[0][0]
+        assert created_task.tags == ["updated", "inline"]
 
 
 class TestDeleteOrphanedDocuments:
@@ -1989,3 +2446,85 @@ class TestEmptyDocumentTracking:
             # Should track empty document
             assert stats["empty_documents"] == 1
             assert stats["new"] == 1
+
+
+def test_merge_tags_both_none():
+    """both None -> returns None"""
+    assert _merge_tags(None, None) is None
+
+
+def test_merge_tags_both_empty():
+    """both [] -> returns None"""
+    assert _merge_tags([], []) is None
+
+
+def test_merge_tags_no_overlap_both_lowercase():
+    """["a"], ["b"] -> ["a", "b"]"""
+    assert _merge_tags(["a"], ["b"]) == ["a", "b"]
+
+
+def test_merge_tags_full_overlap():
+    """["work"], ["work"] -> ["work"]"""
+    assert _merge_tags(["work"], ["work"]) == ["work"]
+
+
+def test_merge_tags_partial_overlap():
+    """["work", "urgent"], ["work", "personal"] -> ["work", "urgent", "personal"]"""
+    assert _merge_tags(["work", "urgent"], ["work", "personal"]) == [
+        "work",
+        "urgent",
+        "personal",
+    ]
+
+
+def test_merge_tags_doc_only_task_none():
+    """["Work"], None -> ["work"]"""
+    assert _merge_tags(["Work"], None) == ["work"]
+
+
+def test_merge_tags_task_only_doc_none():
+    """None, ["personal"] -> ["personal"]"""
+    assert _merge_tags(None, ["personal"]) == ["personal"]
+
+
+def test_merge_tags_doc_only_task_empty():
+    """["Work"], [] -> ["work"]"""
+    assert _merge_tags(["Work"], []) == ["work"]
+
+
+def test_merge_tags_case_insensitive_dedup():
+    """["Work"], ["work"] -> ["work"]"""
+    assert _merge_tags(["Work"], ["work"]) == ["work"]
+
+
+def test_merge_tags_mixed_case_multiple():
+    """["Work", "Urgent"], ["work", "urgent"] -> ["work", "urgent"]"""
+    assert _merge_tags(["Work", "Urgent"], ["work", "urgent"]) == [
+        "work",
+        "urgent",
+    ]
+
+
+def test_merge_tags_doc_uppercase_result_lowercase():
+    """["IMPORTANT"] -> ["important"]"""
+    assert _merge_tags(["IMPORTANT"], None) == ["important"]
+
+
+def test_merge_tags_empty_string_filtered():
+    """["", "work"], [""] -> ["work"]"""
+    assert _merge_tags(["", "work"], [""]) == ["work"]
+
+
+def test_merge_tags_strips_hash_prefix():
+    """None, ["#personal"] -> ["personal"]"""
+    assert _merge_tags(None, ["#personal"]) == ["personal"]
+
+
+def test_merge_tags_task_hash_only_returns_none():
+    """None, ["#"] -> None (empty after lstrip)."""
+    assert _merge_tags(None, ["#"]) is None
+
+
+def test_merge_tags_doc_preserved_task_hash_only():
+    """["work"], ["#"] -> ["work"] (task tag filtered out)."""
+    assert _merge_tags(["work"], ["#"]) == ["work"]

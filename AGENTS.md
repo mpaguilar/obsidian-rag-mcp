@@ -60,7 +60,9 @@ obsidian_rag/                    # Main package
 └── services/                    # Service layer
     ├── __init__.py
     ├── ingestion.py             # Document ingestion service
-    └── ingestion_cleanup.py     # Document deletion operations
+    ├── ingestion_chunks.py      # Chunk creation service
+    ├── ingestion_cleanup.py     # Document deletion operations
+    └── tag_merging.py           # Document/task tag merging utilities
 ```
 
 ## Requirements
@@ -814,7 +816,31 @@ Used global registry pattern to maintain FastMCP compatibility while achieving t
 - All mypy type checks pass
 - All files under 1000 lines
 
-### 028.vault-management (Completed 2026-04-21)
+### 032.tag-ingestion (Completed 2026-05-30)
+
+**Objective:** Merge document-level frontmatter tags into task tags during ingestion (lowercased, case-insensitive dedup) and align CLI task tag filtering with MCP tag filtering behavior (also check Document.tags). This ensures tasks inherit document-level tags and are queryable by them.
+
+**Changes Made:**
+- **Created `obsidian_rag/services/tag_merging.py`**: New module containing `_merge_tags()` helper that merges document-level and task-level tags with case-insensitive dedup, lowercase normalization, and defensive `#` prefix stripping. Returns `None` only if both inputs are None/empty. Extracted to separate module to keep `ingestion.py` under 1000 lines.
+- **Updated `obsidian_rag/services/ingestion.py`** (line 922): Changed `_create_tasks()` to use `tags=_merge_tags(document.tags, parsed_task.tags)` instead of `parsed_task.tags` directly. Added debug logging for document tag count (lines 911-913). `_update_tasks()` inherits the fix automatically since it calls `_create_tasks()` at line 958.
+- **Updated `obsidian_rag/cli_commands.py`** (lines 716-733): Added `_build_tag_condition_cli()` helper using `or_(Task.tags.contains([tag]), func.lower(func.array_to_string(Document.tags, ",")).contains(tag))` pattern. Updated `_apply_include_tags_cli()` (line 685) and `_apply_exclude_tags_cli()` (line 712) to use the new helper, adding Document.tags matching alongside existing Task.tags matching.
+- **Updated tests**: Added 15+ `_merge_tags` unit tests covering all edge cases (None, empty, dedup, case-insensitive, hash stripping, empty string filtering). Added 6 `_create_tasks`/`_update_tasks` tests verifying tag merging at ingestion. Added 4 `_ingest_single_file` integration tests for end-to-end tag merging. Added 10+ CLI tests for `_build_tag_condition_cli`, document tag matching in include/exclude filters, and end-to-end CLI integration tests.
+
+**Key Design Decisions:**
+- **`_merge_tags()` extraction**: Moved to `obsidian_rag/services/tag_merging.py` to keep `ingestion.py` at 990 lines (under 1000 limit). `ingestion_cleanup.py` pattern already established this extraction pattern.
+- **Case-insensitive dedup**: Uses `set[str]` of lowercased values for O(n+m) performance. Preserves insertion order (document tags first, then task-specific tags).
+- **Defensive `#` handling**: `_add_unique_tags()` strips leading `#` from task tags (shouldn't be present from `parse_task_line()`, but defensive). `_filter_tags()` filters empty strings before processing.
+- **CLI Document.tags matching**: `_build_tag_condition_cli()` uses `Task.tags.contains` (exact element match) for Task.tags (existing CLI behavior) and `func.lower(func.array_to_string(...))` for Document.tags (matching MCP `_build_tag_condition()` pattern). Hybrid approach preserves backward compatibility.
+- **No schema changes**: No new columns, no Alembic migration needed. Existing tasks get document-level tags on re-ingestion; REQ-003's CLI fix provides backward-compatible query support for pre-existing data.
+
+**No breaking changes:** Task.tags values are now lowercased (visible change in CLI/MCP output). No schema changes, no API changes.
+
+**Verification:**
+- All 1518 tests pass (1 skipped)
+- 100% code coverage (4677 statements, 892 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All source files under 1000 lines (ingestion.py at 990, cli_commands.py at 952, tag_merging.py at 77)
 
 **Objective:** Add vault management capabilities (get, update, delete) to both MCP tools and CLI, enhance `VaultResponse` with missing fields, refactor `cli.py` to comply with the 1000-line limit, and implement ingest command improvements (Phase 8) to make PATH argument optional.
 

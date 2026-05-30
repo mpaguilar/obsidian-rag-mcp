@@ -24,6 +24,7 @@ from obsidian_rag.parsing.scanner import (
 from obsidian_rag.parsing.tasks import parse_tasks_from_content
 from obsidian_rag.services.ingestion_chunks import create_chunks_with_embeddings
 from obsidian_rag.services.ingestion_cleanup import delete_orphaned_documents
+from obsidian_rag.services.tag_merging import _merge_tags
 
 if TYPE_CHECKING:
     from obsidian_rag.config import Settings
@@ -697,18 +698,6 @@ class IngestionService:
             model_name,
         )
 
-    def _is_document_empty(self, content: str) -> bool:
-        """Check if document content is empty.
-
-        Args:
-            content: The document content.
-
-        Returns:
-            True if content is empty or whitespace-only.
-
-        """
-        return not content or not content.strip()
-
     def _generate_embedding(self, text: str) -> list[float] | None:
         """Generate embedding for text using the configured provider.
 
@@ -789,9 +778,7 @@ class IngestionService:
         model_name = self.settings.chunking.tokenizer_model
 
         # Determine document handling based on content
-        is_empty = self._is_document_empty(content)
-        model_name = self.settings.chunking.tokenizer_model
-        chunk_size = self.settings.chunking.chunk_size
+        is_empty = not content or not content.strip()
         should_chunk = should_chunk_document(content, chunk_size, model_name)
 
         if is_empty:
@@ -871,7 +858,7 @@ class IngestionService:
         model_name = self.settings.chunking.tokenizer_model
 
         # Determine document handling
-        is_empty = self._is_document_empty(content)
+        is_empty = not content or not content.strip()
         should_chunk = should_chunk_document(content, chunk_size, model_name)
 
         # Delete old chunks
@@ -921,6 +908,10 @@ class IngestionService:
         _msg = f"_create_tasks starting for {len(parsed_tasks)} tasks"
         log.debug(_msg)
 
+        doc_tag_count = len(document.tags) if document.tags else 0
+        _msg = f"_create_tasks merging {doc_tag_count} document tags into tasks"
+        log.debug(_msg)
+
         for line_number, parsed_task in parsed_tasks:
             task = Task(
                 document_id=document.id,
@@ -928,7 +919,7 @@ class IngestionService:
                 raw_text=parsed_task.raw_text,
                 status=parsed_task.status,
                 description=parsed_task.description,
-                tags=parsed_task.tags,
+                tags=_merge_tags(document.tags, parsed_task.tags),
                 repeat=parsed_task.repeat,
                 scheduled=parsed_task.scheduled,
                 due=parsed_task.due,

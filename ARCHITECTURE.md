@@ -513,6 +513,7 @@ File System → Scanner → FrontMatter Parser → Task Parser → Database
 3. If changed or new:
    - FrontMatter extracted and parsed
    - Tasks extracted from content
+   - **Document-level tags merged into task tags** (case-insensitive dedup, lowercased) via `tag_merging.py`
    - Vector embeddings generated via LLM provider
    - Document and tasks stored in PostgreSQL
 4. If deleted from filesystem: hard delete from database

@@ -15,11 +15,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import click
-from sqlalchemy import not_, or_
+from sqlalchemy import func, not_, or_
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Query
+    from sqlalchemy.sql.elements import ColumnElement
 
 from obsidian_rag.cli_ingest import _resolve_ingest_path
 from obsidian_rag.config import Settings
@@ -664,6 +665,9 @@ def _apply_include_tags_cli(
 ) -> "Query[Any]":
     """Apply include tag filter to CLI tasks query.
 
+    Checks both Task.tags and Document.tags for tag matches,
+    matching MCP tool behavior.
+
     Args:
         query: The base query to filter.
         include_tags: List of tags that tasks must have.
@@ -675,10 +679,10 @@ def _apply_include_tags_cli(
     if not include_tags:
         return query
     stripped = _strip_tag_list(include_tags)
-    if not stripped:  # pragma: no cover - defensive edge case
+    if not stripped:
         return query
     for tag in stripped:
-        query = query.filter(Task.tags.contains([tag.lower()]))
+        query = query.filter(_build_tag_condition_cli(tag.lower()))
     return query
 
 
@@ -686,6 +690,9 @@ def _apply_exclude_tags_cli(
     query: "Query[Any]", exclude_tags: list[str] | None
 ) -> "Query[Any]":
     """Apply exclude tag filter to CLI tasks query.
+
+    Excludes tasks whose Task.tags OR parent Document.tags
+    contain any of the excluded tags.
 
     Args:
         query: The base query to filter.
@@ -698,11 +705,32 @@ def _apply_exclude_tags_cli(
     if not exclude_tags:
         return query
     stripped = _strip_tag_list(exclude_tags)
-    if not stripped:  # pragma: no cover - defensive edge case
+    if not stripped:
         return query
-    # Exclude tasks that have ANY of the excluded tags
-    conditions = [Task.tags.contains([tag.lower()]) for tag in stripped]
+    # Exclude tasks that match ANY of the excluded tags
+    # on either Task.tags OR Document.tags
+    conditions = [_build_tag_condition_cli(tag.lower()) for tag in stripped]
     return query.filter(not_(or_(*conditions)))
+
+
+def _build_tag_condition_cli(tag: str) -> "ColumnElement[bool]":
+    """Build SQL condition for a single tag match on Task.tags OR Document.tags.
+
+    Matches the MCP tool's _build_tag_condition() pattern:
+    checks both Task.tags and Document.tags using array_to_string
+    for substring matching.
+
+    Args:
+        tag: Tag string to match (should already be lowercased).
+
+    Returns:
+        SQLAlchemy condition for tag matching.
+
+    """
+    return or_(
+        Task.tags.contains([tag]),
+        func.lower(func.array_to_string(Document.tags, ",")).contains(tag),
+    )
 
 
 def _build_tasks_query(
