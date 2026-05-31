@@ -93,6 +93,7 @@ class IngestOptions:
     dry_run: bool
     no_delete: bool
     verbose: bool
+    force: bool = False
 
 
 @dataclass
@@ -218,6 +219,7 @@ def _report_ingest_results(
     deleted: int,
     *,
     no_delete: bool,
+    force: bool = False,
 ) -> None:
     """Report ingestion results.
 
@@ -227,6 +229,7 @@ def _report_ingest_results(
         elapsed_time: Time taken to process in seconds.
         deleted: Number of orphaned documents deleted.
         no_delete: Whether deletion was skipped.
+        force: If True, indicate that all documents were re-processed.
 
     """
     _msg = "_report_ingest_results starting"
@@ -247,6 +250,10 @@ def _report_ingest_results(
         )
 
     click.echo(result_msg)
+    if force:
+        click.echo(
+            "Force re-ingestion: all documents re-processed (unchanged count expected to be 0)"
+        )
     click.echo(f"Completed in {elapsed_time:.1f} seconds")
     _msg = "_report_ingest_results returning"
     log.debug(_msg)
@@ -281,6 +288,11 @@ def _run_ingestion(
     if options.no_delete:
         click.echo("Deletion phase skipped (--no-delete flag)")
 
+    if options.force:
+        click.echo(
+            "Force re-ingestion enabled: all documents will be re-processed regardless of checksums"
+        )
+
     files = _scan_vault(vault_path)
     if not files:
         click.echo("No markdown files found in the specified path.")
@@ -309,6 +321,7 @@ def _run_ingestion(
         dry_run=options.dry_run,
         progress_callback=partial(progress_callback, verbose=options.verbose),
         no_delete=options.no_delete,
+        force=options.force,
     )
     result = ingestion_service.ingest_vault(vault_path, ingest_options)
 
@@ -320,7 +333,12 @@ def _run_ingestion(
         "errors": result.errors,
     }
     _report_ingest_results(
-        result.total, stats, elapsed_time, result.deleted, no_delete=options.no_delete
+        result.total,
+        stats,
+        elapsed_time,
+        result.deleted,
+        no_delete=options.no_delete,
+        force=options.force,
     )
 
 
@@ -927,6 +945,7 @@ def _run_ingest_command(
     dry_run: bool,
     no_delete: bool,
     verbose: bool,
+    force: bool = False,
 ) -> None:
     """Execute the ingest command.
 
@@ -937,6 +956,7 @@ def _run_ingest_command(
         dry_run: Whether to perform a dry run.
         no_delete: Whether to skip deletion.
         verbose: Whether to show verbose output.
+        force: Whether to re-ingest all documents regardless of checksums.
 
     """
     settings = ctx.obj["settings"]
@@ -947,6 +967,7 @@ def _run_ingest_command(
         dry_run=dry_run,
         no_delete=no_delete,
         verbose=verbose,
+        force=force,
     )
 
     _run_ingestion(settings, vault_path, vault, options)

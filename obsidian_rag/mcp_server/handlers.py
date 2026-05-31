@@ -125,6 +125,7 @@ class IngestHandlerParams:
     vault_name: str
     path_override: str | None
     no_delete: bool = False
+    force: bool = False
 
 
 def _get_documents_by_tag_handler(
@@ -340,6 +341,7 @@ def _ingest_handler(params: IngestHandlerParams) -> dict[str, object]:
         vault=params.vault_name,
         dry_run=False,
         no_delete=params.no_delete,
+        force=params.force,
     )
     result = ingestion_service.ingest_vault(path, options)
 

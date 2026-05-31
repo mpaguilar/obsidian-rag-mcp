@@ -33,6 +33,7 @@ obsidian_rag/                    # Main package
 │   ├── __init__.py
 │   ├── __main__.py              # Server entry point
 │   ├── handlers.py              # Request handlers for tools
+│   ├── ingest_helpers.py        # Ingest helper functions (request ID, dedup)
 │   ├── ingest_tracker.py        # Request tracking for ingest tool deduplication
 │   ├── middleware.py            # HTTP request/response logging middleware
 │   ├── models.py                # Pydantic request/response models
@@ -162,6 +163,40 @@ ruff check obsidian_rag/ tests/
 > **Technical Implementation Details**: For architecture patterns, component details, and data flow, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
 
 ## Checkpoint History
+
+### 033.full-reset-ingest (Completed 2026-05-31)
+
+**Objective:** Add a `force` flag to the ingestion pipeline that re-ingests all documents regardless of checksums, exposed via CLI `--force` and MCP `force=True` parameter.
+
+**Changes Made:**
+- **Updated `obsidian_rag/services/ingestion.py`** (lines 46, 369, 483, 549, 615, 621-625): Added `force: bool = False` field to `IngestVaultOptions` dataclass. Added `force` parameter to `_process_files_with_stats()`, `_ingest_single_file()`, and `ingest_vault()`. The checksum comparison in `_ingest_single_file` uses `if not force and existing.checksum_md5 == file_info.checksum` — when `force=True`, the check is bypassed and all documents take the `_update_document` path with debug log "Force re-ingestion enabled - updating document regardless of checksum".
+- **Updated `obsidian_rag/cli.py`** (lines 100-104, 112, 140): Added `--force` Click option (`is_flag=True`) to the `ingest` command with help text "Re-ingest all documents regardless of checksums."
+- **Updated `obsidian_rag/cli_commands.py`** (lines 96, 222, 253-255, 324, 948, 970): Added `force: bool = False` to `IngestOptions` dataclass, `_run_ingest_command()`, `_report_ingest_results()`. Added force confirmation message "Force re-ingestion enabled: all documents will be re-processed regardless of checksums" in `_run_ingestion()`. Added force-aware result reporting in `_report_ingest_results()` with message "Force re-ingestion: all documents re-processed (unchanged count expected to be 0)".
+- **Updated `obsidian_rag/mcp_server/handlers.py`** (lines 128, 344): Added `force: bool = False` to `IngestHandlerParams` dataclass and `_ingest_handler()` passes it to `IngestVaultOptions`.
+- **Updated `obsidian_rag/mcp_server/server.py`** (lines 327, 338-339, 366, 376, 390): Added `force: bool = False` keyword parameter to `ingest()` MCP tool. Refactored `_generate_request_id`, `_check_and_handle_duplicate`, and `_create_vault_error_response` to new `ingest_helpers.py` module to keep server.py under 1000 lines.
+- **Created `obsidian_rag/mcp_server/ingest_helpers.py`**: Extracted ingest helper functions from server.py (37 lines, 100% coverage). `_generate_request_id()` includes `force` in params dict. `_check_and_handle_duplicate()` accepts `force` parameter and includes it in the request tracking dict.
+- **Created `tests/test_services_ingestion_force.py`**: 10 integration tests for force flag behavior in ingestion service.
+- **Updated `tests/test_services_ingestion.py`**: 9 force-related unit tests for IngestVaultOptions, _ingest_single_file, _process_files_with_stats, ingest_vault.
+- **Updated `tests/test_cli.py`**: 17 CLI force tests (help text, flag propagation, confirmation messages, result reporting).
+- **Updated `tests/mcp_server/test_server.py`**: 7 MCP force tests (request ID differentiation, parameter propagation, cache isolation).
+- **Updated `tests/mcp_server/test_server_handlers.py`**: 2 handler force tests (dataclass field, IngestVaultOptions propagation).
+
+**Key Design Decisions:**
+- **`no_delete` pattern mirroring**: `force` propagates through the exact same chain as `no_delete` — CLI flag → `IngestOptions` → `IngestVaultOptions` → `_process_files_with_stats` → `_ingest_single_file`.
+- **Checksum skip**: `if not force and existing.checksum_md5 == file_info.checksum` — minimal change, force=True bypasses check and falls through to `_update_document`.
+- **MCP request deduplication**: `force` is included in the MD5 hash params dict, ensuring force and non-force requests produce different IDs (REQ-004).
+- **Debug logging**: Force path logs "Force re-ingestion enabled - updating document regardless of checksum" vs normal "Updating existing document".
+- **Keyword-only parameters**: All boolean `force` parameters use keyword-only syntax (after `*`) to comply with FBT001.
+- **No schema changes**: No Alembic migration needed, no config file changes, no breaking changes (default `force=False`).
+
+**No breaking changes:** Default `force=False` preserves all existing behavior. All existing parameters and signatures remain unchanged.
+
+**Verification:**
+- All 1563 tests pass (1 skipped)
+- 100% code coverage (4690 statements, 896 branches)
+- All ruff checks pass
+- All mypy type checks pass on source code
+- All source files under 1000 lines (config.py at 1223 is pre-existing exception)
 
 ### 030.sql-error (Completed 2026-05-09)
 

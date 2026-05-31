@@ -247,6 +247,25 @@ class TestIngestionResult:
         assert data["message"] == "Test message"
 
 
+class TestIngestVaultOptions:
+    """Test IngestVaultOptions dataclass."""
+
+    def test_ingest_vault_options_has_force_field(self) -> None:
+        """Test IngestVaultOptions accepts force=True."""
+        options = IngestVaultOptions(
+            vault=VaultConfig(container_path="/test", host_path="/test"),
+            force=True,
+        )
+        assert options.force is True
+
+    def test_ingest_vault_options_force_defaults_to_false(self) -> None:
+        """Test IngestVaultOptions force defaults to False."""
+        options = IngestVaultOptions(
+            vault=VaultConfig(container_path="/test", host_path="/test"),
+        )
+        assert options.force is False
+
+
 class TestIngestionServiceInit:
     """Test IngestionService initialization."""
 
@@ -418,6 +437,29 @@ class TestIngestVault:
             assert result.unchanged == 0
             assert result.errors == 0
             assert "No markdown files found" in result.message
+
+    def test_ingest_vault_force_passes_to_process_files(self) -> None:
+        """Test ingest_vault passes force through to _process_files_with_stats."""
+        service = IngestionService(
+            db_manager=MagicMock(),
+            embedding_provider=MagicMock(),
+            settings=MagicMock(),
+        )
+
+        vault_config = VaultConfig(container_path="/test/vault", host_path="/test/vault")
+
+        with patch.object(service, "_resolve_vault_config", return_value=vault_config):
+            with patch.object(service, "_get_or_create_vault", return_value=uuid.uuid4()):
+                with patch.object(service, "_get_file_info_list", return_value=([], 0)):
+                    # When no files, returns early; we just verify no crash with force=True
+                    options = IngestVaultOptions(
+                        vault=vault_config,
+                        force=True,
+                    )
+                    result = service.ingest_vault(Path("/test/vault"), options)
+
+        assert result.total == 0
+        assert "No markdown files" in result.message
 
     def test_ingest_vault_with_provided_file_infos(
         self,
@@ -2448,6 +2490,48 @@ class TestEmptyDocumentTracking:
             assert stats["new"] == 1
 
 
+def test_process_files_with_stats_force_passes_to_ingest_single_file() -> None:
+    """Test _process_files_with_stats passes force to _ingest_single_file."""
+    from obsidian_rag.services.ingestion import IngestionService
+    from obsidian_rag.config import VaultConfig
+    from obsidian_rag.parsing.scanner import FileInfo
+    from pathlib import Path
+    import uuid
+    from unittest.mock import MagicMock, patch
+
+    service = IngestionService(
+        db_manager=MagicMock(),
+        embedding_provider=MagicMock(),
+        settings=MagicMock(),
+    )
+
+    file_info = FileInfo(
+        path=Path("/test/vault/note.md"),
+        name="note.md",
+        content="content",
+        checksum="abc123",
+        created_at=None,
+        modified_at=None,
+    )
+
+    vault_config = VaultConfig(container_path="/test/vault", host_path="/test/vault")
+
+    with patch.object(service, "_ingest_single_file", return_value=("updated", 0, False)) as mock_ingest:
+        stats = service._process_files_with_stats(
+            [file_info],
+            vault_id=uuid.uuid4(),
+            vault_config=vault_config,
+            dry_run=False,
+            progress_callback=None,
+            force=True,
+        )
+
+    assert stats["updated"] == 1
+    mock_ingest.assert_called_once()
+    call_kwargs = mock_ingest.call_args
+    assert call_kwargs.kwargs.get("force") is True
+
+
 def test_merge_tags_both_none():
     """both None -> returns None"""
     assert _merge_tags(None, None) is None
@@ -2528,3 +2612,234 @@ def test_merge_tags_task_hash_only_returns_none():
 def test_merge_tags_doc_preserved_task_hash_only():
     """["work"], ["#"] -> ["work"] (task tag filtered out)."""
     assert _merge_tags(["work"], ["#"]) == ["work"]
+
+
+def test_ingest_single_file_force_true_skips_checksum() -> None:
+    """Test force=True re-ingests unchanged documents."""
+    from obsidian_rag.services.ingestion import IngestionService
+    from obsidian_rag.config import VaultConfig
+    from obsidian_rag.parsing.scanner import FileInfo
+    from pathlib import Path
+    import uuid
+    from unittest.mock import MagicMock, patch
+
+    service = IngestionService(
+        db_manager=MagicMock(),
+        embedding_provider=MagicMock(),
+        settings=MagicMock(),
+    )
+
+    file_info = FileInfo(
+        path=Path("/test/vault/note.md"),
+        name="note.md",
+        content="content",
+        checksum="abc123",
+        created_at=None,
+        modified_at=None,
+    )
+
+    existing = MagicMock()
+    existing.checksum_md5 = "abc123"  # Same checksum
+    existing.id = uuid.uuid4()
+
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter_by.return_value.first.return_value = existing
+    service.db_manager.get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
+    service.db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch.object(service, "_update_document", return_value=0) as mock_update:
+        with patch.object(service, "_update_tasks"):
+            result = service._ingest_single_file(
+                file_info,
+                vault_id=uuid.uuid4(),
+                vault_config=VaultConfig(container_path="/test/vault", host_path="/test/vault"),
+                force=True,
+            )
+
+    assert result[0] == "updated"
+    mock_update.assert_called_once()
+
+
+def test_ingest_single_file_force_false_preserves_checksum_check() -> None:
+    """Test force=False preserves unchanged behavior."""
+    from obsidian_rag.services.ingestion import IngestionService
+    from obsidian_rag.config import VaultConfig
+    from obsidian_rag.parsing.scanner import FileInfo
+    from pathlib import Path
+    import uuid
+    from unittest.mock import MagicMock
+
+    service = IngestionService(
+        db_manager=MagicMock(),
+        embedding_provider=MagicMock(),
+        settings=MagicMock(),
+    )
+
+    file_info = FileInfo(
+        path=Path("/test/vault/note.md"),
+        name="note.md",
+        content="content",
+        checksum="abc123",
+        created_at=None,
+        modified_at=None,
+    )
+
+    existing = MagicMock()
+    existing.checksum_md5 = "abc123"  # Same checksum
+
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter_by.return_value.first.return_value = existing
+    service.db_manager.get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
+    service.db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+    result = service._ingest_single_file(
+        file_info,
+        vault_id=uuid.uuid4(),
+        vault_config=VaultConfig(container_path="/test/vault", host_path="/test/vault"),
+        force=False,
+    )
+
+    assert result[0] == "unchanged"
+
+
+def test_ingest_single_file_force_true_different_checksum() -> None:
+    """Test force=True with different checksum still updates."""
+    from obsidian_rag.services.ingestion import IngestionService
+    from obsidian_rag.config import VaultConfig
+    from obsidian_rag.parsing.scanner import FileInfo
+    from pathlib import Path
+    import uuid
+    from unittest.mock import MagicMock, patch
+
+    service = IngestionService(
+        db_manager=MagicMock(),
+        embedding_provider=MagicMock(),
+        settings=MagicMock(),
+    )
+
+    file_info = FileInfo(
+        path=Path("/test/vault/note.md"),
+        name="note.md",
+        content="content",
+        checksum="new_checksum",
+        created_at=None,
+        modified_at=None,
+    )
+
+    file_info = FileInfo(
+        path=Path("/test/vault/note.md"),
+        name="note.md",
+        content="content",
+        checksum="new_checksum",
+        created_at=datetime.now(timezone.utc),
+        modified_at=datetime.now(timezone.utc),
+    )
+
+    existing = MagicMock()
+    existing.checksum_md5 = "old_checksum"
+    existing.id = uuid.uuid4()
+
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter_by.return_value.first.return_value = existing
+    service.db_manager.get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
+    service.db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch.object(service, "_update_document", return_value=0) as mock_update:
+        with patch.object(service, "_update_tasks"):
+            result = service._ingest_single_file(
+                file_info,
+                vault_id=uuid.uuid4(),
+                vault_config=VaultConfig(container_path="/test/vault", host_path="/test/vault"),
+                force=True,
+            )
+
+    assert result[0] == "updated"
+    mock_update.assert_called_once()
+
+
+def test_ingest_single_file_force_true_new_document() -> None:
+    """Test force=True has no effect on new documents."""
+    from obsidian_rag.services.ingestion import IngestionService
+    from obsidian_rag.config import VaultConfig
+    from obsidian_rag.parsing.scanner import FileInfo
+    from pathlib import Path
+    import uuid
+    from unittest.mock import MagicMock, patch
+
+    service = IngestionService(
+        db_manager=MagicMock(),
+        embedding_provider=MagicMock(),
+        settings=MagicMock(),
+    )
+
+    file_info = FileInfo(
+        path=Path("/test/vault/note.md"),
+        name="note.md",
+        content="content",
+        checksum="abc123",
+        created_at=datetime.now(timezone.utc),
+        modified_at=datetime.now(timezone.utc),
+    )
+
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    service.db_manager.get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
+    service.db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch("obsidian_rag.services.ingestion.should_chunk_document", return_value=False):
+        with patch.object(service, "_create_document") as mock_create:
+            mock_create.return_value = (MagicMock(), 0)
+            with patch.object(service, "_create_tasks"):
+                with patch.object(service, "_create_chunks_for_new_document", return_value=0):
+                    result = service._ingest_single_file(
+                        file_info,
+                        vault_id=uuid.uuid4(),
+                        vault_config=VaultConfig(container_path="/test/vault", host_path="/test/vault"),
+                        force=True,
+                    )
+
+    assert result[0] == "new"
+
+
+def test_ingest_single_file_force_true_dry_run_unaffected() -> None:
+    """Test dry-run returns 'new' regardless of force."""
+    from obsidian_rag.services.ingestion import IngestionService
+    from obsidian_rag.config import VaultConfig
+    from obsidian_rag.parsing.scanner import FileInfo
+    from pathlib import Path
+    import uuid
+    from unittest.mock import MagicMock
+
+    service = IngestionService(
+        db_manager=MagicMock(),
+        embedding_provider=MagicMock(),
+        settings=MagicMock(),
+    )
+
+    file_info = FileInfo(
+        path=Path("/test/vault/note.md"),
+        name="note.md",
+        content="content",
+        checksum="abc123",
+        created_at=None,
+        modified_at=None,
+    )
+
+    file_info = FileInfo(
+        path=Path("/test/vault/note.md"),
+        name="note.md",
+        content="content",
+        checksum="abc123",
+        created_at=datetime.now(timezone.utc),
+        modified_at=datetime.now(timezone.utc),
+    )
+
+    result = service._ingest_single_file(
+        file_info,
+        vault_id=uuid.uuid4(),
+        vault_config=VaultConfig(container_path="/test/vault", host_path="/test/vault"),
+        dry_run=True,
+        force=True,
+    )
+
+    assert result[0] == "new"

@@ -43,6 +43,7 @@ class IngestVaultOptions:
         progress_callback: Optional callback for progress updates.
         file_infos: Optional pre-scanned file info objects.
         no_delete: If True, skip deletion of orphaned documents.
+        force: If True, re-ingest all documents regardless of checksums.
 
     """
 
@@ -51,6 +52,7 @@ class IngestVaultOptions:
     progress_callback: Callable[[int, int, int, int], None] | None = None
     file_infos: list[FileInfo] | None = None
     no_delete: bool = False
+    force: bool = False
 
 
 @dataclass
@@ -140,11 +142,9 @@ class IngestionService:
         """
         _msg = "IngestionService initializing"
         log.debug(_msg)
-
         self.db_manager = db_manager
         self.embedding_provider = embedding_provider
         self.settings = settings
-
         _msg = "IngestionService initialized"
         log.debug(_msg)
 
@@ -366,6 +366,7 @@ class IngestionService:
         vault_config: VaultConfig,
         dry_run: bool,
         progress_callback: Callable[[int, int, int, int], None] | None,
+        force: bool = False,
     ) -> dict[str, int]:
         """Process files and collect statistics.
 
@@ -375,6 +376,7 @@ class IngestionService:
             vault_config: Vault configuration.
             dry_run: If True, don't write to database.
             progress_callback: Optional progress callback.
+            force: If True, re-ingest all documents regardless of checksums.
 
         Returns:
             Dictionary with statistics including chunks_created and empty_documents.
@@ -397,6 +399,7 @@ class IngestionService:
                     vault_id=vault_id,
                     vault_config=vault_config,
                     dry_run=dry_run,
+                    force=force,
                 )
                 stats[result] += 1
                 stats["chunks_created"] += chunks_created
@@ -477,6 +480,7 @@ class IngestionService:
             vault_config=vault_config,
             dry_run=options.dry_run,
             progress_callback=options.progress_callback,
+            force=options.force,
         )
 
         # Collect filesystem paths for deletion detection (relative paths)
@@ -542,6 +546,7 @@ class IngestionService:
         vault_id: uuid.UUID | None,
         vault_config: VaultConfig,
         dry_run: bool = False,
+        force: bool = False,
     ) -> tuple[str, int, bool]:
         """Ingest a single file.
 
@@ -550,6 +555,7 @@ class IngestionService:
             vault_id: Vault ID (UUID) or None if dry_run.
             vault_config: Vault configuration.
             dry_run: If True, don't write to database.
+            force: If True, re-ingest all documents regardless of checksums.
 
         Returns:
             Tuple of (status, chunks_created, is_empty) where:
@@ -606,13 +612,17 @@ class IngestionService:
 
             if existing:
                 # Check if document has changed
-                if existing.checksum_md5 == file_info.checksum:
+                if not force and existing.checksum_md5 == file_info.checksum:
                     _msg = "Document unchanged - skipping"
                     log.debug(_msg)
                     return ("unchanged", 0, is_empty)
 
                 # Update existing document
-                _msg = "Updating existing document"
+                _msg = (
+                    "Force re-ingestion enabled - updating document regardless of checksum"
+                    if force
+                    else "Updating existing document"
+                )
                 log.debug(_msg)
                 parsed_data = (tags, metadata, content)
                 chunks_created = self._update_document(

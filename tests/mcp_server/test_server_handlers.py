@@ -333,6 +333,65 @@ class TestCreateTagFilter:
         assert result.include_tags == ["tag1"]
 
 
+class TestIngestHandlerForce:
+    """Tests for _ingest_handler force parameter."""
+
+    def test_ingest_handler_params_has_force_field(self):
+        """Test IngestHandlerParams accepts force field."""
+        from obsidian_rag.mcp_server.handlers import IngestHandlerParams
+        from unittest.mock import MagicMock
+
+        params = IngestHandlerParams(
+            settings=MagicMock(),
+            db_manager=MagicMock(),
+            embedding_provider=None,
+            vault_name="test",
+            path_override=None,
+            no_delete=False,
+            force=True,
+        )
+        assert params.force is True
+
+    def test_ingest_handler_passes_force_to_ingest_vault_options(self):
+        """Test _ingest_handler passes force to IngestVaultOptions."""
+        from obsidian_rag.mcp_server.handlers import _ingest_handler, IngestHandlerParams
+        from obsidian_rag.services.ingestion import IngestVaultOptions
+        from unittest.mock import MagicMock, patch
+        from pathlib import Path
+
+        params = IngestHandlerParams(
+            settings=MagicMock(),
+            db_manager=MagicMock(),
+            embedding_provider=None,
+            vault_name="test",
+            path_override=None,
+            no_delete=False,
+            force=True,
+        )
+
+        mock_settings = MagicMock()
+        vault_config = MagicMock()
+        vault_config.container_path = "/test/vault"
+        mock_settings.get_vault.return_value = vault_config
+        params.settings = mock_settings
+
+        with patch("obsidian_rag.mcp_server.handlers._validate_ingest_path", return_value=Path("/test/vault")):
+            with patch("obsidian_rag.mcp_server.handlers.IngestionService") as mock_service:
+                mock_instance = MagicMock()
+                mock_result = MagicMock()
+                mock_result.to_dict.return_value = {"total": 0}
+                mock_instance.ingest_vault.return_value = mock_result
+                mock_service.return_value = mock_instance
+
+                _ingest_handler(params)
+
+        mock_instance.ingest_vault.assert_called_once()
+        call_args = mock_instance.ingest_vault.call_args
+        ingest_options = call_args.args[1]
+        assert isinstance(ingest_options, IngestVaultOptions)
+        assert ingest_options.force is True
+
+
 class TestValidateIngestPathSuccess:
     """Tests for _validate_ingest_path success path."""
 

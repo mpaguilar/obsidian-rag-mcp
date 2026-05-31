@@ -97,6 +97,11 @@ def cli(
     help="Skip deletion of documents not found in filesystem.",
 )
 @click.option("--verbose", is_flag=True, help="Show detailed progress.")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Re-ingest all documents regardless of checksums.",
+)
 def ingest(
     path: str | None,
     *,
@@ -104,6 +109,7 @@ def ingest(
     dry_run: bool,
     no_delete: bool,
     verbose: bool,
+    force: bool,
 ) -> None:
     """Ingest documents from an Obsidian vault.
 
@@ -113,6 +119,8 @@ def ingest(
 
     By default, documents that exist in the database but not on the filesystem
     will be deleted. Use --no-delete to preserve orphaned documents.
+
+    Use --force to re-ingest all documents regardless of checksums.
     """
     if path:
         _msg = f"Starting ingestion from: {path}"
@@ -129,6 +137,7 @@ def ingest(
         dry_run=dry_run,
         no_delete=no_delete,
         verbose=verbose,
+        force=force,
     )
 
 

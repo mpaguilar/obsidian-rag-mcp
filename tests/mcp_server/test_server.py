@@ -1313,21 +1313,21 @@ class TestIngestRequestTracking:
 
     def test_generate_request_id_deterministic(self):
         """Test that request ID generation is deterministic."""
-        from obsidian_rag.mcp_server.server import _generate_request_id
+        from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
 
-        id1 = _generate_request_id("vault1", "/path", no_delete=False)
-        id2 = _generate_request_id("vault1", "/path", no_delete=False)
+        id1 = _generate_request_id("vault1", "/path", no_delete=False, force=False)
+        id2 = _generate_request_id("vault1", "/path", no_delete=False, force=False)
         assert id1 == id2
         assert len(id1) == 32  # MD5 hex length
 
     def test_generate_request_id_different_params(self):
         """Test that different parameters produce different IDs."""
-        from obsidian_rag.mcp_server.server import _generate_request_id
+        from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
 
-        id1 = _generate_request_id("vault1", "/path", no_delete=False)
-        id2 = _generate_request_id("vault2", "/path", no_delete=False)
-        id3 = _generate_request_id("vault1", "/other", no_delete=False)
-        id4 = _generate_request_id("vault1", "/path", no_delete=True)
+        id1 = _generate_request_id("vault1", "/path", no_delete=False, force=False)
+        id2 = _generate_request_id("vault2", "/path", no_delete=False, force=False)
+        id3 = _generate_request_id("vault1", "/other", no_delete=False, force=False)
+        id4 = _generate_request_id("vault1", "/path", no_delete=True, force=False)
 
         assert id1 != id2
         assert id1 != id3
@@ -1335,10 +1335,10 @@ class TestIngestRequestTracking:
 
     def test_generate_request_id_with_none_path(self):
         """Test request ID generation with None path."""
-        from obsidian_rag.mcp_server.server import _generate_request_id
+        from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
 
-        id1 = _generate_request_id("vault1", None, no_delete=False)
-        id2 = _generate_request_id("vault1", None, no_delete=False)
+        id1 = _generate_request_id("vault1", None, no_delete=False, force=False)
+        id2 = _generate_request_id("vault1", None, no_delete=False, force=False)
         assert id1 == id2
         assert len(id1) == 32
 
@@ -1457,9 +1457,9 @@ class TestIngestRequestTracking:
     @patch("obsidian_rag.mcp_server.server._ingest_handler")
     def test_ingest_error_cached(self, mock_handler, mock_get_registry):
         """Test that errors are properly tracked and not re-processed."""
+        from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
         from obsidian_rag.mcp_server.server import (
             _clear_ingest_tracker,
-            _generate_request_id,
             _get_ingest_tracker,
             ingest,
         )
@@ -1482,7 +1482,7 @@ class TestIngestRequestTracking:
 
         # Get tracker and verify error was recorded
         tracker = _get_ingest_tracker()
-        request_id = _generate_request_id("test-vault", "/path", no_delete=False)
+        request_id = _generate_request_id("test-vault", "/path", no_delete=False, force=False)
 
         async def check_error():
             entry = tracker._requests.get(request_id)
@@ -1516,7 +1516,7 @@ class TestIngestRequestTracking:
         mock_handler.return_value = {"total": 10, "message": "Done"}
 
         # Set log level to INFO to capture our log messages
-        with caplog.at_level(logging.INFO, logger="obsidian_rag.mcp_server.server"):
+        with caplog.at_level(logging.INFO, logger="obsidian_rag.mcp_server.ingest_helpers"):
             # First call
             ingest("test-vault", "/path", no_delete=False)
 
@@ -1632,9 +1632,9 @@ class TestVaultErrorHandling:
 
         async def check_not_cached():
             # Generate same request ID
-            from obsidian_rag.mcp_server.server import _generate_request_id
+            from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
 
-            request_id = _generate_request_id("TestVault", "/path", no_delete=False)
+            request_id = _generate_request_id("TestVault", "/path", no_delete=False, force=False)
             return request_id in tracker._requests
 
         import asyncio
@@ -1713,7 +1713,7 @@ class TestVaultErrorHelperFunctions:
 
     def test_is_vault_not_found_error_returns_true_for_vault_error(self):
         """Test _is_vault_not_found_error returns True for vault not found."""
-        from obsidian_rag.mcp_server.server import _is_vault_not_found_error
+        from obsidian_rag.mcp_server.ingest_helpers import _is_vault_not_found_error
 
         error = ValueError("Vault 'Test' not found in configuration. Available: Other")
         result = _is_vault_not_found_error(error)
@@ -1721,7 +1721,7 @@ class TestVaultErrorHelperFunctions:
 
     def test_is_vault_not_found_error_returns_false_for_other_errors(self):
         """Test _is_vault_not_found_error returns False for non-vault errors."""
-        from obsidian_rag.mcp_server.server import _is_vault_not_found_error
+        from obsidian_rag.mcp_server.ingest_helpers import _is_vault_not_found_error
 
         error1 = ValueError("Some other error")
         error2 = ValueError("not found in configuration")  # Missing "Vault"
@@ -1733,10 +1733,10 @@ class TestVaultErrorHelperFunctions:
 
     def test_handle_vault_not_found_returns_error_dict(self):
         """Test _handle_vault_not_found returns proper error response."""
+        from obsidian_rag.mcp_server.ingest_helpers import _handle_vault_not_found
         from obsidian_rag.mcp_server.server import (
             _clear_ingest_tracker,
             _get_ingest_tracker,
-            _handle_vault_not_found,
         )
 
         _clear_ingest_tracker()
@@ -1759,10 +1759,10 @@ class TestVaultErrorHelperFunctions:
 
     def test_handle_vault_not_found_clears_tracker(self):
         """Test _handle_vault_not_found clears the request from tracker."""
+        from obsidian_rag.mcp_server.ingest_helpers import _handle_vault_not_found
         from obsidian_rag.mcp_server.server import (
             _clear_ingest_tracker,
             _get_ingest_tracker,
-            _handle_vault_not_found,
         )
 
         _clear_ingest_tracker()
@@ -1796,8 +1796,8 @@ class TestVaultErrorHelperFunctions:
 
     def test_check_and_handle_duplicate_returns_none_for_new_request(self):
         """Test _check_and_handle_duplicate returns None for new requests."""
+        from obsidian_rag.mcp_server.ingest_helpers import _check_and_handle_duplicate
         from obsidian_rag.mcp_server.server import (
-            _check_and_handle_duplicate,
             _clear_ingest_tracker,
             _get_ingest_tracker,
         )
@@ -1811,6 +1811,7 @@ class TestVaultErrorHelperFunctions:
             vault_name="TestVault",
             path="/test/path",
             no_delete=False,
+            force=False,
         )
 
         # Should return None for new requests (should_process=True)
@@ -1820,8 +1821,8 @@ class TestVaultErrorHelperFunctions:
 
     def test_check_and_handle_duplicate_returns_cached_result(self):
         """Test _check_and_handle_duplicate returns cached result for duplicate."""
+        from obsidian_rag.mcp_server.ingest_helpers import _check_and_handle_duplicate
         from obsidian_rag.mcp_server.server import (
-            _check_and_handle_duplicate,
             _clear_ingest_tracker,
             _get_ingest_tracker,
         )
@@ -1845,6 +1846,7 @@ class TestVaultErrorHelperFunctions:
             vault_name="TestVault",
             path="/test/path",
             no_delete=False,
+            force=False,
         )
 
         assert result is not None
@@ -1855,8 +1857,8 @@ class TestVaultErrorHelperFunctions:
 
     def test_check_and_handle_duplicate_handles_none_cached_result(self):
         """Test _check_and_handle_duplicate handles None cached_result gracefully."""
+        from obsidian_rag.mcp_server.ingest_helpers import _check_and_handle_duplicate
         from obsidian_rag.mcp_server.server import (
-            _check_and_handle_duplicate,
             _clear_ingest_tracker,
             _get_ingest_tracker,
         )
@@ -1885,6 +1887,7 @@ class TestVaultErrorHelperFunctions:
             vault_name="TestVault",
             path="/test/path",
             no_delete=False,
+            force=False,
         )
 
         # When cached_result is None, it should return None (proceed with processing)
@@ -2363,3 +2366,174 @@ class TestQueryDocumentsJsonString:
             mock_tool.assert_called_once()
             call_kwargs = mock_tool.call_args.kwargs
             assert call_kwargs["filters"] is not None
+
+
+class TestIngestForceParameter:
+    """Tests for force parameter in ingest tool."""
+
+    def test_generate_request_id_force_produces_different_id(self):
+        """Test force=True vs force=False produces different request IDs."""
+        from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
+
+        id_no_force = _generate_request_id(
+            "test-vault", None, no_delete=False, force=False
+        )
+        id_force = _generate_request_id(
+            "test-vault", None, no_delete=False, force=True
+        )
+
+        assert id_no_force != id_force
+
+    def test_generate_request_id_force_same_params_same_id(self):
+        """Test identical params including force produce same ID."""
+        from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
+
+        id1 = _generate_request_id(
+            "test-vault", "/path", no_delete=True, force=True
+        )
+        id2 = _generate_request_id(
+            "test-vault", "/path", no_delete=True, force=True
+        )
+
+        assert id1 == id2
+
+    def test_check_and_handle_duplicate_accepts_force(self):
+        """Test _check_and_handle_duplicate accepts force parameter."""
+        from obsidian_rag.mcp_server.ingest_helpers import _check_and_handle_duplicate
+        from obsidian_rag.mcp_server.server import (
+            _clear_ingest_tracker,
+            _get_ingest_tracker,
+        )
+
+        _clear_ingest_tracker()
+        tracker = _get_ingest_tracker()
+        result = _check_and_handle_duplicate(
+            tracker,
+            "test-id",
+            "test-vault",
+            None,
+            no_delete=False,
+            force=True,
+        )
+        assert result is None
+        _clear_ingest_tracker()
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.server._ingest_handler")
+    def test_ingest_tool_accepts_force_parameter(
+        self, mock_handler, mock_get_registry
+    ):
+        """Test ingest() accepts force parameter and passes to IngestHandlerParams."""
+        from obsidian_rag.mcp_server.handlers import IngestHandlerParams
+        from obsidian_rag.mcp_server.server import (
+            _clear_ingest_tracker,
+            ingest,
+        )
+
+        _clear_ingest_tracker()
+
+        mock_registry = MagicMock()
+        mock_registry.settings = MagicMock()
+        mock_registry.db_manager = MagicMock()
+        mock_registry.embedding_provider = None
+        mock_get_registry.return_value = mock_registry
+
+        mock_handler.return_value = {"total": 0}
+
+        ingest("test-vault", force=True)
+
+        # Verify _ingest_handler was called
+        mock_handler.assert_called_once()
+        call_params = mock_handler.call_args.args[0]
+        assert isinstance(call_params, IngestHandlerParams)
+        assert call_params.force is True
+
+        _clear_ingest_tracker()
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.server._ingest_handler")
+    def test_ingest_tool_force_generates_different_request_id(
+        self, mock_handler, mock_get_registry
+    ):
+        """Test ingest with force=True vs False generates different request IDs."""
+        import hashlib
+        import json
+
+        from obsidian_rag.mcp_server.server import (
+            _clear_ingest_tracker,
+            ingest,
+        )
+
+        _clear_ingest_tracker()
+
+        mock_registry = MagicMock()
+        mock_registry.settings = MagicMock()
+        mock_registry.db_manager = MagicMock()
+        mock_registry.embedding_provider = None
+        mock_get_registry.return_value = mock_registry
+
+        mock_handler.return_value = {"total": 0}
+
+        generated_ids = []
+
+        def capture_id(*args, **kwargs):
+            params = {
+                "vault_name": kwargs.get("vault_name") or args[0],
+                "path": kwargs.get("path") if "path" in kwargs else args[1],
+                "no_delete": kwargs.get("no_delete"),
+                "force": kwargs.get("force"),
+            }
+            params_json = json.dumps(params, sort_keys=True, separators=(",", ":"))
+            request_id = hashlib.md5(params_json.encode()).hexdigest()
+            generated_ids.append(request_id)
+            return request_id
+
+        with patch(
+            "obsidian_rag.mcp_server.server._generate_request_id",
+            side_effect=capture_id,
+        ):
+            ingest("test-vault", force=False)
+            ingest("test-vault", force=True)
+
+        assert len(generated_ids) == 2
+        assert generated_ids[0] != generated_ids[1]
+
+        _clear_ingest_tracker()
+
+    def test_ingest_force_not_cached_for_non_force(self):
+        """Test force=True request does not return non-force cached result."""
+        from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
+        from obsidian_rag.mcp_server.ingest_tracker import IngestRequestTracker
+
+        # First call without force
+        id_no_force = _generate_request_id(
+            "test-vault", None, no_delete=False, force=False
+        )
+        tracker = IngestRequestTracker()
+        asyncio.run(tracker.complete_request(id_no_force, {"cached": True}))
+
+        # Second call with force should have different ID
+        id_force = _generate_request_id(
+            "test-vault", None, no_delete=False, force=True
+        )
+        assert id_no_force != id_force
+
+        # Verify tracker doesn't return cached result for force request
+        should_process, cached = asyncio.run(tracker.start_request(id_force, {}))
+        assert should_process is True
+        assert cached is None
+
+    def test_ingest_handler_params_force_field(self):
+        """Test IngestHandlerParams with force=True."""
+        from obsidian_rag.mcp_server.handlers import IngestHandlerParams
+
+        params = IngestHandlerParams(
+            settings=MagicMock(),
+            db_manager=MagicMock(),
+            embedding_provider=None,
+            vault_name="test",
+            path_override=None,
+            no_delete=False,
+            force=True,
+        )
+        assert params.force is True
