@@ -360,6 +360,7 @@ class GetTasksToolInput:
 
     Attributes:
         status: List of statuses to filter by.
+            Valid values: "not_completed", "completed", "in_progress", "cancelled".
         tag_filters: Tag filter parameters with include/exclude lists and match mode.
             Tags should NOT include the '#' prefix. Use plain tag names like
             "personal/expenses" instead of "#personal/expenses".
