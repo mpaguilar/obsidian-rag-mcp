@@ -19,6 +19,7 @@ obsidian_rag/                    # Main package
 ├── cli_commands.py              # CLI business logic (extracted from cli.py)
 ├── cli_dates.py                 # CLI date parsing utilities
 ├── cli_ingest.py                # CLI ingest path resolution helpers
+├── cli_query_exact.py           # CLI exact document query implementation
 ├── cli_vault_commands.py        # CLI vault command implementations
 ├── config.py                    # Configuration management
 ├── database/                    # Database layer
@@ -32,6 +33,7 @@ obsidian_rag/                    # Main package
 ├── mcp_server/                  # MCP server layer
 │   ├── __init__.py
 │   ├── __main__.py              # Server entry point
+│   ├── document_tools.py       # Document retrieval MCP tool wrappers
 │   ├── handlers.py              # Request handlers for tools
 │   ├── ingest_helpers.py        # Ingest helper functions (request ID, dedup)
 │   ├── ingest_tracker.py        # Request tracking for ingest tool deduplication
@@ -76,7 +78,10 @@ obsidian_rag/                    # Main package
 
 - `obsidian-rag [--log-level LEVEL] <command>` - Global options include `--log-level` (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 - `obsidian-rag ingest --vault <name> [PATH]` - Ingest documents from vault path. PATH is optional when vault has `container_path` configured; if provided, PATH overrides the configured container_path
-- `obsidian-rag query <search>` - Semantic search documents
+- `obsidian-rag query "search"` - Semantic search documents
+- `obsidian-rag query --exact --vault NAME --path PATH` - Exact document lookup by vault and file path
+- `obsidian-rag query --exact --name FILENAME` - Exact document lookup by file name
+- `obsidian-rag query --exact --id UUID` - Exact document lookup by document UUID
 - `obsidian-rag tasks [options]` - Query tasks
 - `obsidian-rag vault list [--format json|table] [--limit N] [--offset N]` - List all vaults
 - `obsidian-rag vault get --name NAME [--id UUID]` - Get vault details by name or UUID
@@ -932,3 +937,38 @@ Used global registry pattern to maintain FastMCP compatibility while achieving t
 - **Default vault removal**: DEFAULT_CONFIG vaults changed from default "Obsidian Vault" to empty `{}`
 - **Env var interpolation**: Unset variables without defaults now return empty string + warning log (instead of preserving `${VAR}` pattern)
 - **README.md**: Updated with Docker Compose quick start instructions
+
+### 035.document-retrieval (Completed 2026-06-09)
+
+**Objective:** Add `get_document` and `list_documents` MCP tools for exact document lookup, plus an `--exact` flag on the existing CLI `query` command for exact document retrieval by path, name, or ID.
+
+**Changes Made:**
+- **Updated `obsidian_rag/mcp_server/tools/documents.py`** (lines 576-675): Added `get_document()` function for unique lookups by vault_name+file_path or document_id (UUID). Added `list_documents()` function for ambiguous lookups by file_name with optional vault_name scope. Added helper functions: `_validate_get_document_params()`, `_lookup_document_by_id()`, `_lookup_document_by_vault_path()`. Both return `DocumentResponse`/`DocumentListResponse` with `similarity_score=0.0` (no vector search).
+- **Updated `obsidian_rag/mcp_server/tools/documents_params.py`** (lines 109-137): Added `GetDocumentParams` and `ListDocumentsParams` dataclasses following the established params pattern.
+- **Updated `obsidian_rag/mcp_server/handlers.py`** (lines 614-751): Added `GetDocumentHandlerParams` and `ListDocumentsHandlerParams` dataclasses. Added `_get_document_handler()` and `_list_documents_handler()` following the `_get_vault_handler` pattern (try/except ValueError, return error dict).
+- **Updated `obsidian_rag/mcp_server/tool_definitions.py`** (lines 587-640): Added `get_document_tool()` and `list_documents_tool()` delegation functions following `get_vault_tool()` pattern.
+- **Created `obsidian_rag/mcp_server/document_tools.py`** (85 lines): Document retrieval MCP tool wrappers extracted from server.py following the vault_tools.py pattern. Contains `get_document()` and `list_documents()` wrapper functions that access `_get_registry()` and delegate to tool_definitions.py.
+- **Updated `obsidian_rag/mcp_server/server.py`** (lines 659-660): Registered `get_document` and `list_documents` tools in `_register_tools()`.
+- **Updated `obsidian_rag/cli.py`** (lines 145-265): Added `--exact` flag and `--path`, `--name`, `--id` options to the `query` command. Made `query_text` argument optional when `--exact` is used. Added `_validate_exact_query_params()` and `_require_exact_lookup_params()` validation functions. When `--exact` is used: `query_text` is forbidden, `--path` requires `--vault`, at least one lookup param required.
+- **Created `obsidian_rag/cli_query_exact.py`** (185 lines): Exact document query implementation extracted from cli_commands.py to keep file under 1000 lines. Contains `_display_single_document()`, `_display_document_list()`, `_execute_get_document_lookup()`, `_execute_list_documents_lookup()`, and `_run_exact_query_command()`.
+- **Updated `obsidian_rag/cli_commands.py`**: Removed exact query functions (extracted to cli_query_exact.py) and unused imports. File reduced from 1173 to 973 lines.
+- **Added test files**: `tests/mcp_server/test_tools_documents_get.py` (16 tests), `tests/mcp_server/test_tools_documents_list.py` (12 tests), `tests/mcp_server/test_tools_documents_params_get_list.py` (4 tests), `tests/mcp_server/test_document_tools.py` (7 tests), `tests/mcp_server/test_tool_definitions_get_list.py` (7 tests), `tests/mcp_server/test_server_document_retrieval.py` (11 tests), `tests/test_cli_commands_exact.py` (25 tests), `tests/test_cli_exact_integration.py` (12 tests).
+- **Updated `tests/test_cli.py`**: Restored 2990 lines of original tests (accidentally reduced to 501 during implementation), added 3 new exact query test classes (TestQueryExactFlag, TestQueryExactById, TestQueryExactByName).
+
+**Key Design Decisions:**
+- **Two-tool split**: `get_document` for unique lookups (vault_name+file_path or document_id) returns single `DocumentResponse`; `list_documents` for ambiguous lookups (file_name with optional vault_name) returns `DocumentListResponse`.
+- **No embedding provider**: Both tools are indexed lookups only - no vector search needed. `similarity_score=0.0` in all responses.
+- **Pattern consistency**: Both follow the established server.py → document_tools.py → tool_definitions.py → handlers.py → documents.py chain.
+- **Error handling**: `get_document` raises `ValueError` for not found (handler returns error dict); `list_documents` returns empty list for no matches (not an error).
+- **CLI integration**: `--exact` flag on existing `query` command. When used, `query_text` is forbidden. Three lookup modes: `--exact --vault X --path Y`, `--exact --name Y`, `--exact --id UUID`.
+- **Extraction to cli_query_exact.py**: Exact query functions extracted from cli_commands.py to keep it under 1000 lines (973 lines after extraction).
+- **Extraction to document_tools.py**: Document tool wrappers follow vault_tools.py pattern, keeping server.py at 850 lines.
+
+**No breaking changes:** New tool additions only. No existing tools modified. Existing `query` command behavior unchanged when `--exact` is not used.
+
+**Verification:**
+- All 1678 tests pass (1 skipped)
+- 100% code coverage (4929 statements, 940 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All source files under 1000 lines (config.py at 1223 is pre-existing exception)

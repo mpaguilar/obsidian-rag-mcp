@@ -646,11 +646,12 @@ class TestRegisterTools:
 
         _register_tools(mock_mcp)
 
-        # Should register 10 tools (get_tasks + 4 document tools + 4 vault tools + ingest)
+        # Should register 12 tools (get_tasks + 6 document tools + 4 vault tools + ingest)
         # get_tasks + query_documents + get_documents_by_tag + get_documents_by_property +
-        # get_all_tags + list_vaults + get_vault + update_vault + delete_vault + ingest
+        # get_all_tags + get_document + list_documents +
+        # list_vaults + get_vault + update_vault + delete_vault + ingest
         # health_check is registered via custom_route
-        assert mock_mcp.tool.call_count == 10
+        assert mock_mcp.tool.call_count == 12
 
     def test_register_vault_tools(self):
         """Test _register_tools registers vault tools."""
@@ -2537,3 +2538,150 @@ class TestIngestForceParameter:
             force=True,
         )
         assert params.force is True
+
+
+class TestGetDocumentToolRegistration:
+    """Verify get_document tool is registered."""
+
+    def test_get_document_registered_as_tool(self):
+        """Verify tool is registered."""
+        from obsidian_rag.mcp_server.server import _register_tools, get_document
+
+        mock_mcp = MagicMock()
+        registered = []
+
+        def capture(func):
+            registered.append(func)
+            return func
+
+        mock_mcp.tool.return_value = capture
+
+        _register_tools(mock_mcp)
+
+        assert get_document in registered
+
+    def test_get_document_tool_call(self):
+        """End-to-end through server wrapper."""
+        from obsidian_rag.mcp_server.server import get_document
+
+        with patch(
+            "obsidian_rag.mcp_server.document_tools._get_registry"
+        ) as mock_get_registry:
+            mock_registry = MagicMock()
+            mock_get_registry.return_value = mock_registry
+
+            with patch(
+                "obsidian_rag.mcp_server.document_tools.get_document_tool"
+            ) as mock_tool:
+                mock_tool.return_value = {
+                    "id": "doc-1",
+                    "vault_name": "test",
+                    "content": "hello",
+                }
+
+                result = get_document(vault_name="test", file_path="note.md")
+
+                assert result == {
+                    "id": "doc-1",
+                    "vault_name": "test",
+                    "content": "hello",
+                }
+                mock_tool.assert_called_once_with(
+                    mock_registry.db_manager,
+                    vault_name="test",
+                    file_path="note.md",
+                    document_id=None,
+                )
+
+    def test_get_document_error_response(self):
+        """Error dict returned for not found."""
+        from obsidian_rag.mcp_server.server import get_document
+
+        with patch(
+            "obsidian_rag.mcp_server.document_tools._get_registry"
+        ) as mock_get_registry:
+            mock_registry = MagicMock()
+            mock_get_registry.return_value = mock_registry
+
+            with patch(
+                "obsidian_rag.mcp_server.document_tools.get_document_tool"
+            ) as mock_tool:
+                mock_tool.return_value = {
+                    "success": False,
+                    "error": "Document not found",
+                }
+
+                result = get_document(document_id="nonexistent-id")
+
+                assert result["success"] is False
+                assert "not found" in result["error"]
+
+
+class TestListDocumentsToolRegistration:
+    """Verify list_documents tool is registered."""
+
+    def test_list_documents_registered_as_tool(self):
+        """Verify tool is registered."""
+        from obsidian_rag.mcp_server.server import _register_tools, list_documents
+
+        mock_mcp = MagicMock()
+        registered = []
+
+        def capture(func):
+            registered.append(func)
+            return func
+
+        mock_mcp.tool.return_value = capture
+
+        _register_tools(mock_mcp)
+
+        assert list_documents in registered
+
+    def test_list_documents_tool_call(self):
+        """End-to-end through server wrapper."""
+        from obsidian_rag.mcp_server.server import list_documents
+
+        with patch(
+            "obsidian_rag.mcp_server.document_tools._get_registry"
+        ) as mock_get_registry:
+            mock_registry = MagicMock()
+            mock_get_registry.return_value = mock_registry
+
+            with patch(
+                "obsidian_rag.mcp_server.document_tools.list_documents_tool"
+            ) as mock_tool:
+                mock_tool.return_value = {
+                    "results": [{"id": "doc-1"}],
+                    "total_count": 1,
+                }
+
+                result = list_documents(file_name="note.md", vault_name="test")
+
+                assert result["total_count"] == 1
+                mock_tool.assert_called_once_with(
+                    mock_registry.db_manager,
+                    file_name="note.md",
+                    vault_name="test",
+                    limit=20,
+                    offset=0,
+                )
+
+    def test_list_documents_empty_results(self):
+        """Empty list returned for no matches."""
+        from obsidian_rag.mcp_server.server import list_documents
+
+        with patch(
+            "obsidian_rag.mcp_server.document_tools._get_registry"
+        ) as mock_get_registry:
+            mock_registry = MagicMock()
+            mock_get_registry.return_value = mock_registry
+
+            with patch(
+                "obsidian_rag.mcp_server.document_tools.list_documents_tool"
+            ) as mock_tool:
+                mock_tool.return_value = {"results": [], "total_count": 0}
+
+                result = list_documents(file_name="nonexistent.md")
+
+                assert result["total_count"] == 0
+                assert result["results"] == []

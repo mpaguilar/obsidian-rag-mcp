@@ -1,7 +1,5 @@
 """Unit tests for MCP server handlers and additional tests."""
 
-import json
-import os
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -95,7 +93,7 @@ class TestDocumentHandlers:
         result = _convert_property_filters(properties)
 
         assert result is not None
-        assert len(result) == 2
+        assert len(result) == len(properties)
         assert result[0].path == "status"
         assert result[0].operator == "equals"
         assert result[0].value == "draft"
@@ -253,7 +251,7 @@ class TestListVaultsHandler:
             )
 
         assert result["total_count"] == 1
-        results = cast(list[dict[str, object]], result["results"])
+        results = cast("list[dict[str, object]]", result["results"])
         assert len(results) == 1
         assert results[0]["name"] == "Personal"
 
@@ -409,3 +407,528 @@ class TestValidateIngestPathSuccess:
             assert isinstance(result, Path)
             assert result.exists()
             assert result.is_dir()
+
+
+class TestGetDocumentHandlerParams:
+    """Tests for GetDocumentHandlerParams dataclass."""
+
+    def test_get_document_handler_params_dataclass(self):
+        """Fields populated correctly."""
+        from obsidian_rag.mcp_server.handlers import GetDocumentHandlerParams
+
+        db_manager = MagicMock()
+        params = GetDocumentHandlerParams(
+            db_manager=db_manager,
+            vault_name="Personal",
+            file_path="notes.md",
+            document_id="abc-123",
+        )
+        assert params.db_manager is db_manager
+        assert params.vault_name == "Personal"
+        assert params.file_path == "notes.md"
+        assert params.document_id == "abc-123"
+
+    def test_get_document_handler_params_defaults(self):
+        """Default values are correct."""
+        from obsidian_rag.mcp_server.handlers import GetDocumentHandlerParams
+
+        params = GetDocumentHandlerParams(db_manager=MagicMock())
+        assert params.vault_name is None
+        assert params.file_path is None
+        assert params.document_id is None
+
+
+class TestListDocumentsHandlerParams:
+    """Tests for ListDocumentsHandlerParams dataclass."""
+
+    def test_list_documents_handler_params_dataclass(self):
+        """Fields populated correctly."""
+        from obsidian_rag.mcp_server.handlers import ListDocumentsHandlerParams
+
+        db_manager = MagicMock()
+        limit = 10
+        offset = 5
+        params = ListDocumentsHandlerParams(
+            db_manager=db_manager,
+            file_name="notes.md",
+            vault_name="Personal",
+            limit=limit,
+            offset=offset,
+        )
+        assert params.db_manager is db_manager
+        assert params.file_name == "notes.md"
+        assert params.vault_name == "Personal"
+        assert params.limit == limit
+        assert params.offset == offset
+
+    def test_list_documents_handler_params_defaults(self):
+        """Default values are correct."""
+        from obsidian_rag.mcp_server.handlers import ListDocumentsHandlerParams
+
+        default_limit = 20
+        params = ListDocumentsHandlerParams(db_manager=MagicMock())
+        assert params.file_name is None
+        assert params.vault_name is None
+        assert params.limit == default_limit
+        assert params.offset == 0
+
+
+class TestGetDocumentHandler:
+    """Tests for _get_document_handler."""
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.get_document",
+        create=True,
+    )
+    def test_get_document_handler_success(self, mock_get_document):
+        """Test successful document retrieval."""
+        from obsidian_rag.mcp_server.handlers import (
+            _get_document_handler,
+            GetDocumentHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "id": "doc-1",
+            "file_path": "notes.md",
+        }
+        mock_get_document.return_value = mock_result
+
+        params = GetDocumentHandlerParams(
+            db_manager=mock_db_manager,
+            vault_name="Personal",
+            file_path="notes.md",
+        )
+        result = _get_document_handler(params)
+
+        assert result == {"id": "doc-1", "file_path": "notes.md"}
+        mock_get_document.assert_called_once_with(
+            session=mock_session,
+            vault_name="Personal",
+            file_path="notes.md",
+            document_id=None,
+        )
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.get_document",
+        create=True,
+    )
+    def test_get_document_handler_by_id_success(self, mock_get_document):
+        """Test successful document retrieval by document_id."""
+        from obsidian_rag.mcp_server.handlers import (
+            _get_document_handler,
+            GetDocumentHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "id": "doc-1",
+            "file_path": "notes.md",
+        }
+        mock_get_document.return_value = mock_result
+
+        params = GetDocumentHandlerParams(
+            db_manager=mock_db_manager,
+            document_id="abc-123",
+        )
+        result = _get_document_handler(params)
+
+        assert result == {"id": "doc-1", "file_path": "notes.md"}
+        mock_get_document.assert_called_once_with(
+            session=mock_session,
+            vault_name=None,
+            file_path=None,
+            document_id="abc-123",
+        )
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.get_document",
+        create=True,
+    )
+    def test_get_document_handler_by_vault_path_success(self, mock_get_document):
+        """Test successful document retrieval by vault_name and file_path."""
+        from obsidian_rag.mcp_server.handlers import (
+            _get_document_handler,
+            GetDocumentHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "id": "doc-1",
+            "file_path": "notes.md",
+            "vault_name": "Personal",
+        }
+        mock_get_document.return_value = mock_result
+
+        params = GetDocumentHandlerParams(
+            db_manager=mock_db_manager,
+            vault_name="Personal",
+            file_path="notes.md",
+        )
+        result = _get_document_handler(params)
+
+        assert result == {
+            "id": "doc-1",
+            "file_path": "notes.md",
+            "vault_name": "Personal",
+        }
+        mock_get_document.assert_called_once_with(
+            session=mock_session,
+            vault_name="Personal",
+            file_path="notes.md",
+            document_id=None,
+        )
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.get_document",
+        create=True,
+    )
+    def test_get_document_handler_no_params(self, mock_get_document):
+        """Test error when no lookup parameters provided."""
+        from obsidian_rag.mcp_server.handlers import (
+            _get_document_handler,
+            GetDocumentHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_get_document.side_effect = ValueError(
+            "Must provide either document_id, or vault_name and file_path"
+        )
+
+        params = GetDocumentHandlerParams(
+            db_manager=mock_db_manager,
+        )
+        result = _get_document_handler(params)
+
+        assert result == {
+            "success": False,
+            "error": "Must provide either document_id, or vault_name and file_path",
+        }
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.get_document",
+        create=True,
+    )
+    def test_get_document_handler_path_without_vault(self, mock_get_document):
+        """Test error when file_path provided without vault_name."""
+        from obsidian_rag.mcp_server.handlers import (
+            _get_document_handler,
+            GetDocumentHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_get_document.side_effect = ValueError(
+            "vault_name is required when using file_path "
+            "(file_path is only unique per vault)"
+        )
+
+        params = GetDocumentHandlerParams(
+            db_manager=mock_db_manager,
+            file_path="notes.md",
+        )
+        result = _get_document_handler(params)
+
+        assert result == {
+            "success": False,
+            "error": "vault_name is required when using file_path "
+            "(file_path is only unique per vault)",
+        }
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.get_document",
+        create=True,
+    )
+    def test_get_document_handler_not_found(self, mock_get_document):
+        """Test error when document not found."""
+        from obsidian_rag.mcp_server.handlers import (
+            _get_document_handler,
+            GetDocumentHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_get_document.side_effect = ValueError("Document not found")
+
+        params = GetDocumentHandlerParams(
+            db_manager=mock_db_manager,
+            vault_name="Personal",
+            file_path="missing.md",
+        )
+        result = _get_document_handler(params)
+
+        assert result == {"success": False, "error": "Document not found"}
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.get_document",
+        create=True,
+    )
+    def test_get_document_handler_invalid_uuid(self, mock_get_document):
+        """Test error when document_id is invalid UUID."""
+        from obsidian_rag.mcp_server.handlers import (
+            _get_document_handler,
+            GetDocumentHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_get_document.side_effect = ValueError(
+            "Invalid document_id UUID format: 'invalid-uuid'"
+        )
+
+        params = GetDocumentHandlerParams(
+            db_manager=mock_db_manager,
+            document_id="invalid-uuid",
+        )
+        result = _get_document_handler(params)
+
+        assert result == {
+            "success": False,
+            "error": "Invalid document_id UUID format: 'invalid-uuid'",
+        }
+
+
+class TestListDocumentsHandler:
+    """Tests for _list_documents_handler."""
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.list_documents",
+        create=True,
+    )
+    def test_list_documents_handler_success(self, mock_list_documents):
+        """Test successful document list retrieval."""
+        from obsidian_rag.mcp_server.handlers import (
+            _list_documents_handler,
+            ListDocumentsHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+        }
+        mock_list_documents.return_value = mock_result
+
+        params = ListDocumentsHandlerParams(
+            db_manager=mock_db_manager,
+            file_name="notes.md",
+            vault_name="Personal",
+            limit=10,
+            offset=5,
+        )
+        result = _list_documents_handler(params)
+
+        assert result == {"results": [], "total_count": 0, "has_more": False}
+        mock_list_documents.assert_called_once_with(
+            session=mock_session,
+            file_name="notes.md",
+            vault_name="Personal",
+            limit=10,
+            offset=5,
+        )
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.list_documents",
+        create=True,
+    )
+    def test_list_documents_handler_value_error(self, mock_list_documents):
+        """Test error handling for invalid parameters."""
+        from obsidian_rag.mcp_server.handlers import (
+            _list_documents_handler,
+            ListDocumentsHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_list_documents.side_effect = ValueError("Invalid vault")
+
+        params = ListDocumentsHandlerParams(db_manager=mock_db_manager)
+        result = _list_documents_handler(params)
+
+        assert result == {"success": False, "error": "Invalid vault"}
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.list_documents",
+        create=True,
+    )
+    def test_list_documents_handler_empty_results(self, mock_list_documents):
+        """Test empty results return empty list dict, not error."""
+        from obsidian_rag.mcp_server.handlers import (
+            _list_documents_handler,
+            ListDocumentsHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+        }
+        mock_list_documents.return_value = mock_result
+
+        params = ListDocumentsHandlerParams(
+            db_manager=mock_db_manager,
+            file_name="nonexistent.md",
+            limit=10,
+            offset=0,
+        )
+        result = _list_documents_handler(params)
+
+        assert result == {"results": [], "total_count": 0, "has_more": False}
+        mock_list_documents.assert_called_once_with(
+            session=mock_session,
+            file_name="nonexistent.md",
+            vault_name=None,
+            limit=10,
+            offset=0,
+        )
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.list_documents",
+        create=True,
+    )
+    def test_list_documents_handler_no_file_name(self, mock_list_documents):
+        """Test error when file_name is not provided."""
+        from obsidian_rag.mcp_server.handlers import (
+            _list_documents_handler,
+            ListDocumentsHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_list_documents.side_effect = ValueError(
+            "Must provide at least file_name"
+        )
+
+        params = ListDocumentsHandlerParams(db_manager=mock_db_manager)
+        result = _list_documents_handler(params)
+
+        assert result == {
+            "success": False,
+            "error": "Must provide at least file_name",
+        }
+
+    @patch(
+        "obsidian_rag.mcp_server.tools.documents.list_documents",
+        create=True,
+    )
+    def test_list_documents_handler_vault_not_found(self, mock_list_documents):
+        """Test error when vault_name is not found."""
+        from obsidian_rag.mcp_server.handlers import (
+            _list_documents_handler,
+            ListDocumentsHandlerParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        mock_list_documents.side_effect = ValueError(
+            "Vault 'Missing' not found. Available: Personal, Work"
+        )
+
+        params = ListDocumentsHandlerParams(
+            db_manager=mock_db_manager,
+            file_name="notes.md",
+            vault_name="Missing",
+        )
+        result = _list_documents_handler(params)
+
+        assert result == {
+            "success": False,
+            "error": "Vault 'Missing' not found. Available: Personal, Work",
+        }

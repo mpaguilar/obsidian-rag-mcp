@@ -103,3 +103,35 @@ class PropertyQueryParams:
     tag_params: TagFilterParams
     vault_name: str | None
     pagination: PaginationParams
+
+
+@dataclass
+class GetDocumentParams:
+    """Parameters for get_document tool.
+
+    Attributes:
+        vault_name: Vault name (required when using file_path).
+        file_path: Relative file path from vault root.
+        document_id: Document UUID string (globally unique).
+    """
+
+    vault_name: str | None = None
+    file_path: str | None = None
+    document_id: str | None = None
+
+
+@dataclass
+class ListDocumentsParams:
+    """Parameters for list_documents tool.
+
+    Attributes:
+        file_name: Document file name to search for (exact match).
+        vault_name: Optional vault name to scope results.
+        limit: Maximum number of results.
+        offset: Number of results to skip.
+    """
+
+    file_name: str | None = None
+    vault_name: str | None = None
+    limit: int = 20
+    offset: int = 0

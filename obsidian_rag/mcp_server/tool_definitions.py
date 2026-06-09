@@ -14,13 +14,17 @@ from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.llm.base import EmbeddingProvider
 from obsidian_rag.llm.providers import ProviderFactory
 from obsidian_rag.mcp_server.handlers import (
+    GetDocumentHandlerParams,
+    ListDocumentsHandlerParams,
     QueryFilterParams,
     _convert_property_filters,
     _create_tag_filter,
     _delete_vault_handler,
     _get_all_tags_handler,
+    _get_document_handler,
     _get_tasks_handler,
     _get_vault_handler,
+    _list_documents_handler,
     _list_vaults_handler,
     _update_vault_handler,
 )
@@ -578,3 +582,64 @@ def delete_vault_tool(
     _msg = "Tool delete_vault called"
     log.info(_msg)
     return _delete_vault_handler(db_manager, name=name, confirm=confirm)
+
+
+def get_document_tool(
+    db_manager: DatabaseManager,
+    *,
+    vault_name: str | None = None,
+    file_path: str | None = None,
+    document_id: str | None = None,
+) -> dict[str, object]:
+    """Tool implementation for getting a single document.
+
+    Args:
+        db_manager: Database manager for session management.
+        vault_name: Vault name (required when using file_path).
+        file_path: Relative file path from vault root.
+        document_id: Document UUID string.
+
+    Returns:
+        Document response as dictionary on success, or error dict on failure.
+    """
+    _msg = "Tool get_document called"
+    log.info(_msg)
+    params = GetDocumentHandlerParams(
+        db_manager=db_manager,
+        vault_name=vault_name,
+        file_path=file_path,
+        document_id=document_id,
+    )
+    return _get_document_handler(params)
+
+
+def list_documents_tool(
+    db_manager: DatabaseManager,
+    *,
+    file_name: str | None = None,
+    vault_name: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, object]:
+    """Tool implementation for listing documents by file_name.
+
+    Args:
+        db_manager: Database manager for session management.
+        file_name: Document file name to search for.
+        vault_name: Optional vault name to scope results.
+        limit: Maximum number of results.
+        offset: Number of results to skip.
+
+    Returns:
+        Document list response as dictionary, or error dict if no file_name.
+    """
+    _msg = "Tool list_documents called"
+    log.info(_msg)
+    params = ListDocumentsHandlerParams(
+        db_manager=db_manager,
+        file_name=file_name,
+        vault_name=vault_name,
+        limit=limit,
+        offset=offset,
+    )
+    return _list_documents_handler(params)

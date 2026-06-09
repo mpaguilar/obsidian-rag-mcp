@@ -232,6 +232,9 @@ Entry point for all user interactions:
 - `query <search>`: Semantic search
   - Options: `--limit N`, `--format json/table`
   - Vector similarity search
+- `query --exact --vault NAME --path PATH`: Exact document lookup by vault and file path
+- `query --exact --name FILENAME`: Exact document lookup by file name (returns list)
+- `query --exact --id UUID`: Exact document lookup by document UUID
   
 - `tasks [options]`: Task queries
   - Options: `--status`, `--due-before DATE`, `--tag TAG`, `--limit N`
@@ -373,6 +376,10 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 - `get_documents_by_tag`: Query documents by tags with include/exclude lists and match_mode ("all" or "any")
 - `get_documents_by_property`: Query documents by frontmatter properties with include/exclude filters
 - `get_all_tags`: Query all unique document tags with optional glob pattern filtering
+
+**Document Retrieval Tools:**
+- `get_document`: Get a single document by vault_name+file_path or document_id (UUID). Returns `DocumentResponse` with `similarity_score=0.0` (no vector search). Raises `ValueError` if not found or invalid params.
+- `list_documents`: List documents by file_name with optional vault_name scope. Returns `DocumentListResponse` with paginated results. Returns empty list (not error) when no matches.
 
 **Vault Tools:**
 - `list_vaults`: List all vaults with document counts and metadata

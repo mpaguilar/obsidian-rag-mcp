@@ -11,6 +11,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy.orm import joinedload
+
 from obsidian_rag.database.models import Document, Vault
 from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
@@ -39,6 +41,7 @@ from obsidian_rag.mcp_server.tools.documents_postgres import (
     query_documents_postgresql,
 )
 from obsidian_rag.mcp_server.tools.documents_tags import validate_tag_filter
+from obsidian_rag.mcp_server.tools.vaults import _get_available_vault_names
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -464,3 +467,209 @@ def get_all_tags(
         has_more=has_more,
         next_offset=next_offset,
     )
+
+
+def _validate_get_document_params(
+    document_id: str | None,
+    vault_name: str | None,
+    file_path: str | None,
+) -> None:
+    """Validate parameters for get_document.
+
+    Args:
+        document_id: Document UUID string.
+        vault_name: Vault name.
+        file_path: Relative file path.
+
+    Raises:
+        ValueError: If parameters are invalid.
+    """
+    if document_id is None and (vault_name is None or file_path is None):
+        _error_msg = "Must provide either document_id, or vault_name and file_path"
+        log.error(_error_msg)
+        raise ValueError(_error_msg)
+
+    if file_path is not None and vault_name is None:
+        _error_msg = "vault_name is required when using file_path (file_path is only unique per vault)"
+        log.error(_error_msg)
+        raise ValueError(_error_msg)
+
+
+def _lookup_document_by_id(
+    session: "Session",
+    document_id: str,
+) -> Document:
+    """Lookup document by UUID.
+
+    Args:
+        session: Database session.
+        document_id: Document UUID string.
+
+    Returns:
+        Document instance.
+
+    Raises:
+        ValueError: If UUID format is invalid or document not found.
+    """
+    try:
+        doc_uuid = uuid.UUID(document_id)
+    except (ValueError, TypeError) as err:
+        _error_msg = f"Invalid document_id UUID format: '{document_id}'"
+        log.error(_error_msg)
+        raise ValueError(_error_msg) from err
+
+    document = (
+        session.query(Document)
+        .options(joinedload(Document.vault))
+        .filter(Document.id == doc_uuid)
+        .first()
+    )
+    if document is None:
+        _error_msg = f"Document with id '{document_id}' not found"
+        log.error(_error_msg)
+        raise ValueError(_error_msg)
+
+    return document
+
+
+def _lookup_document_by_vault_path(
+    session: "Session",
+    vault_name: str,
+    file_path: str,
+) -> Document:
+    """Lookup document by vault name and file path.
+
+    Args:
+        session: Database session.
+        vault_name: Vault name.
+        file_path: Relative file path.
+
+    Returns:
+        Document instance.
+
+    Raises:
+        ValueError: If vault or document not found.
+    """
+    vault = session.query(Vault).filter(Vault.name == vault_name).first()
+    if vault is None:
+        available = _get_available_vault_names(session)
+        available_str = ", ".join(available) if available else "none"
+        _error_msg = f"Vault '{vault_name}' not found. Available: {available_str}"
+        log.error(_error_msg)
+        raise ValueError(_error_msg)
+
+    document = (
+        session.query(Document)
+        .options(joinedload(Document.vault))
+        .filter(Document.vault_id == vault.id)
+        .filter(Document.file_path == file_path)
+        .first()
+    )
+    if document is None:
+        _error_msg = f"Document '{file_path}' not found in vault '{vault_name}'"
+        log.error(_error_msg)
+        raise ValueError(_error_msg)
+
+    return document
+
+
+def get_document(
+    session: "Session",
+    *,
+    vault_name: str | None = None,
+    file_path: str | None = None,
+    document_id: str | None = None,
+) -> DocumentResponse:
+    """Get a single document by vault_name+file_path or document_id.
+
+    Args:
+        session: Database session.
+        vault_name: Vault name (required when using file_path).
+        file_path: Relative file path from vault root.
+        document_id: Document UUID string (globally unique).
+
+    Returns:
+        DocumentResponse with full content, metadata, tags, and obsidian_uri.
+        similarity_score is 0.0 (no vector search).
+
+    Raises:
+        ValueError: If neither lookup combination provided, file_path provided
+            without vault_name, document not found, or invalid UUID format.
+    """
+    _msg = "get_document starting"
+    log.debug(_msg)
+
+    _validate_get_document_params(document_id, vault_name, file_path)
+
+    if document_id is not None:
+        document = _lookup_document_by_id(session, document_id)
+    else:
+        # vault_name and file_path are guaranteed non-None by validation
+        assert vault_name is not None  # Type narrowing for mypy
+        assert file_path is not None  # Type narrowing for mypy
+        document = _lookup_document_by_vault_path(session, vault_name, file_path)
+
+    _msg = "get_document returning"
+    log.debug(_msg)
+    return create_document_response(document, similarity_score=0.0)
+
+
+def list_documents(
+    session: "Session",
+    *,
+    file_name: str | None = None,
+    vault_name: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> DocumentListResponse:
+    """List documents by file_name with optional vault scope.
+
+    Args:
+        session: Database session.
+        file_name: Document file name to search for (exact match, required).
+        vault_name: Optional vault name to scope results.
+        limit: Maximum number of results (default: 20, max: 100).
+        offset: Number of results to skip (default: 0).
+
+    Returns:
+        DocumentListResponse with paginated results. similarity_score=0.0 for all.
+        Returns empty list (not error) when no documents match.
+
+    Raises:
+        ValueError: If file_name is not provided, or if vault_name not found.
+    """
+    _msg = "list_documents starting"
+    log.debug(_msg)
+
+    # Validation
+    if not file_name:
+        _error_msg = "Must provide at least file_name"
+        log.error(_error_msg)
+        raise ValueError(_error_msg)
+
+    limit = _validate_limit(limit)
+    offset = _validate_offset(offset)
+
+    # Build query
+    query = session.query(Document).options(joinedload(Document.vault))
+    query = query.filter(Document.file_name == file_name)
+
+    # Vault scope
+    if vault_name is not None:
+        vault = session.query(Vault).filter(Vault.name == vault_name).first()
+        if vault is None:
+            available = _get_available_vault_names(session)
+            available_str = ", ".join(available) if available else "none"
+            _error_msg = f"Vault '{vault_name}' not found. Available: {available_str}"
+            log.error(_error_msg)
+            raise ValueError(_error_msg)
+        query = query.filter(Document.vault_id == vault.id)
+
+    # Count and paginate
+    total_count = query.count()
+    query = query.order_by(Document.file_path).offset(offset).limit(limit)
+    results = query.all()
+
+    _msg = "list_documents returning"
+    log.debug(_msg)
+    return _build_document_list_response(results, total_count, offset, limit)

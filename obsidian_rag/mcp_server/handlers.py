@@ -610,6 +610,117 @@ def _delete_vault_handler(
         return {"success": False, "error": str(err)}
 
 
+@dataclass
+class GetDocumentHandlerParams:
+    """Input parameters for the get_document handler.
+
+    Attributes:
+        db_manager: Database manager for session management.
+        vault_name: Vault name (required when using file_path).
+        file_path: Relative file path from vault root.
+        document_id: Document UUID string.
+    """
+
+    db_manager: DatabaseManager
+    vault_name: str | None = None
+    file_path: str | None = None
+    document_id: str | None = None
+
+
+@dataclass
+class ListDocumentsHandlerParams:
+    """Input parameters for the list_documents handler.
+
+    Attributes:
+        db_manager: Database manager for session management.
+        file_name: Document file name to search for.
+        vault_name: Optional vault name to scope results.
+        limit: Maximum number of results.
+        offset: Number of results to skip.
+    """
+
+    db_manager: DatabaseManager
+    file_name: str | None = None
+    vault_name: str | None = None
+    limit: int = 20
+    offset: int = 0
+
+
+def _get_document_handler(params: GetDocumentHandlerParams) -> dict[str, object]:
+    """Handle get_document tool call.
+
+    Args:
+        params: GetDocumentHandlerParams with db_manager and lookup fields.
+
+    Returns:
+        Document response as dictionary on success, or error dict on failure.
+
+    Notes:
+        Catches ValueError from get_document tool and returns error dict.
+
+    """
+    _msg = "_get_document_handler starting"
+    log.debug(_msg)
+
+    try:
+        with params.db_manager.get_session() as session:
+            from obsidian_rag.mcp_server.tools.documents import (
+                get_document as get_document_impl,
+            )
+
+            result = get_document_impl(
+                session=session,
+                vault_name=params.vault_name,
+                file_path=params.file_path,
+                document_id=params.document_id,
+            )
+            _msg = "_get_document_handler returning"
+            log.debug(_msg)
+            return result.model_dump()
+    except ValueError as err:
+        _msg = f"_get_document_handler error: {err}"
+        log.error(_msg)
+        return {"success": False, "error": str(err)}
+
+
+def _list_documents_handler(params: ListDocumentsHandlerParams) -> dict[str, object]:
+    """Handle list_documents tool call.
+
+    Args:
+        params: ListDocumentsHandlerParams with db_manager and filter fields.
+
+    Returns:
+        Document list response as dictionary on success, or error dict on failure.
+
+    Notes:
+        Catches ValueError from list_documents tool and returns error dict.
+
+    """
+    _msg = "_list_documents_handler starting"
+    log.debug(_msg)
+
+    try:
+        with params.db_manager.get_session() as session:
+            from obsidian_rag.mcp_server.tools.documents import (
+                list_documents as list_documents_impl,
+            )
+
+            result = list_documents_impl(
+                session=session,
+                file_name=params.file_name,
+                vault_name=params.vault_name,
+                limit=params.limit,
+                offset=params.offset,
+            )
+            _msg = "_list_documents_handler returning"
+            log.debug(_msg)
+            return result.model_dump()
+    except ValueError as err:
+        _msg = f"_list_documents_handler error: {err}"
+        log.error(_msg)
+        return {"success": False, "error": str(err)}
+
+
 # Annotated types for MCP tool parameters that may be passed as JSON strings
 # These are defined at the end of the module to avoid forward reference issues
 AnnotatedQueryFilter = Annotated[

@@ -13,6 +13,7 @@ from obsidian_rag.cli_commands import (
     setup_logging,
 )
 from obsidian_rag.cli_dates import parse_cli_date
+from obsidian_rag.cli_query_exact import _run_exact_query_command
 from obsidian_rag.cli_vault_commands import (
     vault_delete_command,
     vault_get_command,
@@ -141,8 +142,66 @@ def ingest(
     )
 
 
+def _require_exact_lookup_params(
+    path: str | None,
+    name: str | None,
+    document_id: str | None,
+    vault: str | None,
+) -> None:
+    """Validate that exact lookup has required parameters.
+
+    Args:
+        path: Optional path filter.
+        name: Optional name filter.
+        document_id: Optional UUID filter.
+        vault: Optional vault filter.
+
+    Raises:
+        click.UsageError: If validation fails.
+
+    """
+    if path and not vault:
+        _msg = "Option '--path' requires '--vault'"
+        raise click.UsageError(_msg)
+    if not any([path, name, document_id]):
+        _msg = "Must provide --path, --name, or --id with --exact"
+        raise click.UsageError(_msg)
+
+
+def _validate_exact_query_params(
+    query_text: str | None,
+    path: str | None,
+    name: str | None,
+    document_id: str | None,
+    vault: str | None,
+    *,
+    exact: bool,
+) -> None:
+    """Validate query parameters for exact vs semantic search.
+
+    Args:
+        query_text: The query text argument.
+        path: Optional path filter.
+        name: Optional name filter.
+        document_id: Optional UUID filter.
+        vault: Optional vault filter.
+        exact: Whether exact lookup mode is enabled.
+
+    Raises:
+        click.UsageError: If validation fails.
+
+    """
+    if exact:
+        if query_text:
+            _msg = "Cannot use query_text with --exact flag"
+            raise click.UsageError(_msg)
+        _require_exact_lookup_params(path, name, document_id, vault)
+    elif not query_text:
+        raise click.UsageError("Missing argument 'QUERY_TEXT'.")
+
+
 @cli.command()
-@click.argument("query_text")
+@click.argument("query_text", required=False)
 @click.option("--limit", default=10, help="Maximum number of results.")
 @click.option(
     "--format", "output_format", default="table", help="Output format (table or json)."
@@ -152,29 +211,59 @@ def ingest(
     "--chunks", is_flag=True, help="Search document chunks instead of full documents."
 )
 @click.option("--rerank", is_flag=True, help="Rerank chunk results using FlashRank.")
+@click.option(
+    "--exact",
+    is_flag=True,
+    help="Use exact document lookup instead of semantic search.",
+)
+@click.option("--path", help="Document file path (requires --vault, use with --exact).")
+@click.option("--name", help="Document file name (use with --exact).")
+@click.option("--id", "document_id", help="Document UUID (use with --exact).")
 def query(
-    query_text: str,
+    query_text: str | None,
     *,
     limit: int,
     output_format: str,
     vault: str | None,
     chunks: bool,
     rerank: bool,
+    exact: bool,
+    path: str | None,
+    name: str | None,
+    document_id: str | None,
 ) -> None:
-    """Search documents using semantic similarity."""
-    _msg = f"Searching for: {query_text}"
-    log.info(_msg)
-
-    ctx = click.get_current_context()
-    _run_query_command(
-        ctx,
+    """Search documents using semantic similarity, or exact lookup with --exact."""
+    _validate_exact_query_params(
         query_text,
-        limit=limit,
-        output_format=output_format,
-        vault=vault,
-        chunks=chunks,
-        rerank=rerank,
+        path,
+        name,
+        document_id,
+        vault,
+        exact=exact,
     )
+
+    if exact:
+        _run_exact_query_command(
+            ctx=click.get_current_context(),
+            vault=vault,
+            path=path,
+            name=name,
+            document_id=document_id,
+            limit=limit,
+            output_format=output_format,
+        )
+    else:
+        # query_text is guaranteed non-None by _validate_exact_query_params
+        assert query_text is not None  # Type narrowing for mypy
+        _run_query_command(
+            ctx=click.get_current_context(),
+            query_text=query_text,
+            limit=limit,
+            output_format=output_format,
+            vault=vault,
+            chunks=chunks,
+            rerank=rerank,
+        )
 
 
 @cli.command()

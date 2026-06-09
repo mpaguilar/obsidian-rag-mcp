@@ -15,6 +15,10 @@ from starlette.responses import JSONResponse
 
 from obsidian_rag.config import Settings, get_settings
 from obsidian_rag.database.engine import DatabaseManager
+from obsidian_rag.mcp_server.document_tools import (
+    get_document,
+    list_documents,
+)
 from obsidian_rag.mcp_server.handlers import (
     AnnotatedQueryFilter,
     DocumentTagParams,
@@ -650,6 +654,10 @@ def _register_tools(mcp: FastMCP) -> None:
     mcp.tool()(get_documents_by_tag)
     mcp.tool()(get_documents_by_property)
     mcp.tool()(get_all_tags)
+
+    # Register document retrieval tools
+    mcp.tool()(get_document)
+    mcp.tool()(list_documents)
 
     # Register vault tools
     mcp.tool()(list_vaults)
