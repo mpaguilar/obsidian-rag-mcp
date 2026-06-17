@@ -65,6 +65,7 @@ obsidian_rag/                    # Main package
     ├── ingestion.py             # Document ingestion service
     ├── ingestion_chunks.py      # Chunk creation service
     ├── ingestion_cleanup.py     # Document deletion operations
+    ├── ingestion_integrity.py   # IntegrityError recovery for document ingestion
     └── tag_merging.py           # Document/task tag merging utilities
 ```
 
@@ -168,6 +169,31 @@ ruff check obsidian_rag/ tests/
 > **Technical Implementation Details**: For architecture patterns, component details, and data flow, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
 
 ## Checkpoint History
+
+### 036.ingestion-bug (Completed 2026-06-17)
+
+**Objective:** Fix `IntegrityError` (UniqueViolation on `uq_document_vault_path`) in `_ingest_single_file()` by catching it and retrying as an UPDATE. Update `ingested_at` timestamp in `_update_document()` when a document is re-ingested. Add diagnostic logging before the document lookup query.
+
+**Changes Made:**
+- **Created `obsidian_rag/services/ingestion_integrity.py`** (165 lines): New module containing `ingest_new_document()` and `handle_integrity_error()` functions. `ingest_new_document()` wraps the INSERT path with try/except for `IntegrityError`, delegating recovery to `handle_integrity_error()`. `handle_integrity_error()` checks for `"uq_document_vault_path"` in the error message, rolls back the session, re-queries for the existing document, and follows the UPDATE path. Non-matching IntegrityErrors and re-query-returns-None are re-raised.
+- **Updated `obsidian_rag/services/ingestion.py`** (lines 8, 28, 607-610, 637-653, 854): Added `datetime` import and `ingest_new_document` import. Refactored the `else` branch of `_ingest_single_file()` to delegate to `ingest_new_document()` instead of inline document creation. Added diagnostic debug log before the `filter_by` query (REQ-003). Added `document.ingested_at = datetime.now(UTC)` in `_update_document()` (REQ-002).
+- **Created `tests/test_services_ingestion_integrity.py`** (744 lines): 14 test cases covering: IntegrityError recovery to update, non-unique constraint re-raise, re-query-None re-raise, rollback verification, warning logging, end-to-end recovery through `_ingest_single_file()`, non-unique IntegrityError propagation, file counted as "updated" not "error" in stats, `ingested_at` update via `_update_document()`, UTC timezone verification, `ingested_at` update via update path, `ingested_at` update via IntegrityError recovery, diagnostic log presence, and exact value verification in log messages.
+
+**Key Design Decisions:**
+- **Extraction to `ingestion_integrity.py`**: Kept `ingestion.py` at 996 lines (under 1000 limit) by extracting the IntegrityError handling logic. Follows the established pattern of `ingestion_cleanup.py` and `ingestion_chunks.py`.
+- **Constraint detection**: Checks for `"uq_document_vault_path"` in the error message string, matching the existing pattern in `vaults.py:_handle_flush_with_integrity_check()`.
+- **Session rollback**: Explicit `session.rollback()` before re-query since SQLAlchemy session is in invalid state after IntegrityError.
+- **Recovery result status**: Returns `"updated"` — matches user's mental model (the document was updated).
+- **Defensive re-raise**: If re-query returns None after IntegrityError (should not happen), the original IntegrityError is re-raised.
+
+**No breaking changes:** Default behavior unchanged for the happy path. Only the error recovery path is new.
+
+**Verification:**
+- All 1692 tests pass (1 skipped)
+- 100% code coverage (4968 statements, 944 branches)
+- All ruff checks pass
+- All mypy type checks pass
+- All source files under 1000 lines (config.py at 1223 is pre-existing exception)
 
 ### 033.full-reset-ingest (Completed 2026-05-31)
 

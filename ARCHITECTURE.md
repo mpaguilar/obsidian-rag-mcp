@@ -265,6 +265,7 @@ class IngestionService:
     def _ingest_single_file(file_info, vault_id: UUID, dry_run=False) -> str
     def _create_document(file_info, vault_id: UUID, parsed_data) -> Document
     def _update_document(document, file_info, parsed_data)
+        # Updates ingested_at = datetime.now(UTC) on each call
     def _create_tasks(session, document, parsed_tasks)
     def _update_tasks(session, document, parsed_tasks)
     def _delete_orphaned_documents(filesystem_paths, dry_run=False) -> tuple[int, int]
@@ -285,6 +286,19 @@ class IngestionService:
 **Usage Patterns:**
 - **CLI**: Uses service with progress callbacks and verbose output
 - **MCP**: Uses service with path override support, returns structured results
+
+#### IntegrityError Recovery (`services/ingestion_integrity.py`)
+
+Handles `UniqueViolation` on `uq_document_vault_path` during document insertion:
+
+- **`ingest_new_document()`**: Wraps the INSERT path with try/except for `IntegrityError`. On successful INSERT, returns `("new", chunks_created)`. On `IntegrityError`, delegates to `handle_integrity_error()`.
+- **`handle_integrity_error()`**: Checks if the error is on `uq_document_vault_path`. If so, rolls back the session, re-queries for the existing document, and follows the UPDATE path via `service._update_document()` and `service._update_tasks()`. Non-matching IntegrityErrors and re-query-returns-None are re-raised.
+
+**Recovery Flow:**
+1. `_ingest_single_file()` → INSERT path → `session.flush()` → `IntegrityError` raised
+2. `ingest_new_document()` catches `IntegrityError` → delegates to `handle_integrity_error()`
+3. `handle_integrity_error()` checks constraint name → `session.rollback()` → re-query → `_update_document()` + `_update_tasks()` → returns `("updated", chunks_created)`
+4. Back in `_ingest_single_file()`, the result tuple is set and method returns normally
 
 ### 8. MCP Server Layer (`mcp_server/`)
 

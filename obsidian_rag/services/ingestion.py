@@ -5,6 +5,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +25,7 @@ from obsidian_rag.parsing.scanner import (
 from obsidian_rag.parsing.tasks import parse_tasks_from_content
 from obsidian_rag.services.ingestion_chunks import create_chunks_with_embeddings
 from obsidian_rag.services.ingestion_cleanup import delete_orphaned_documents
+from obsidian_rag.services.ingestion_integrity import ingest_new_document
 from obsidian_rag.services.tag_merging import _merge_tags
 
 if TYPE_CHECKING:
@@ -603,6 +605,12 @@ class IngestionService:
 
         # Process in a single transaction for this file
         with self.db_manager.get_session() as session:
+            # REQ-003: Diagnostic logging for document lookup
+            _msg = (
+                f"Looking up document: vault_id={vault_id}, file_path={relative_path}"
+            )
+            log.debug(_msg)
+
             # Check if document exists (by vault_id and relative path)
             existing = (
                 session.query(Document)
@@ -631,36 +639,23 @@ class IngestionService:
                 self._update_tasks(session, existing, parsed_tasks)
                 result = "updated"
             else:
-                # Create new document
-                _msg = "Creating new document"
-                log.debug(_msg)
-                parsed_data = (tags, metadata, content)
-
-                # Determine chunking requirements BEFORE creating document
                 chunk_size = self.settings.chunking.chunk_size
                 model_name = self.settings.chunking.tokenizer_model
                 should_chunk = should_chunk_document(content, chunk_size, model_name)
 
-                document, _ = self._create_document(
-                    _session=session,
+                result, chunks_created = ingest_new_document(
+                    self,
+                    session,
                     file_info=file_info,
-                    parsed_data=parsed_data,
+                    tags=tags,
+                    metadata=metadata,
+                    content=content,
+                    parsed_tasks=parsed_tasks,
                     vault_id=vault_id,
                     relative_path=relative_path,
-                )
-                session.add(document)
-                session.flush()  # Get document ID
-                self._create_tasks(session, document, parsed_tasks)
-
-                # BUG-001 FIX: Create chunks for new documents that need chunking
-                chunks_created = self._create_chunks_for_new_document(
-                    session=session,
-                    document=document,
-                    content=content,
                     should_chunk=should_chunk,
                     is_empty=is_empty,
                 )
-                result = "new"
 
         _msg = f"_ingest_single_file returning: {result}, chunks={chunks_created}"
         log.debug(_msg)
@@ -861,6 +856,7 @@ class IngestionService:
         document.modified_at_fs = file_info.modified_at
         document.tags = tags
         document.frontmatter_json = metadata
+        document.ingested_at = datetime.now(UTC)  # REQ-002: Update ingestion timestamp
 
         # Get chunking settings
         chunk_size = self.settings.chunking.chunk_size
