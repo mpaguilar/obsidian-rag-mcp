@@ -1,5 +1,6 @@
 """Parsing module for obsidian-rag."""
 
+from obsidian_rag.parsing.body_tags import extract_body_tags
 from obsidian_rag.parsing.frontmatter import parse_frontmatter
 from obsidian_rag.parsing.scanner import (
     FileInfo,
@@ -14,6 +15,7 @@ __all__ = [
     "FileInfo",
     "FileScanError",
     "calculate_checksum",
+    "extract_body_tags",
     "parse_frontmatter",
     "parse_task_line",
     "parse_tasks_from_content",

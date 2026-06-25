@@ -57,6 +57,7 @@ obsidian_rag/                    # Main package
 │       └── vaults_params.py     # Vault update parameter dataclass
 ├── parsing/                     # Document parsing
 │   ├── __init__.py
+│   ├── body_tags.py             # Inline body tag extraction (Obsidian rules)
 │   ├── frontmatter.py           # FrontMatter extraction
 │   ├── scanner.py               # File scanning
 │   └── tasks.py                 # Task parsing
@@ -998,3 +999,31 @@ Used global registry pattern to maintain FastMCP compatibility while achieving t
 - All ruff checks pass
 - All mypy type checks pass
 - All source files under 1000 lines (config.py at 1223 is pre-existing exception)
+
+### 037.tag-problems (Completed 2026-06-25)
+
+**Objective:** Extract inline `#tag` patterns from markdown body text during ingestion and merge them with frontmatter tags into `Document.tags`, so that `get_documents_by_tag` and `get_all_tags` return documents with inline body tags. Body tag extraction follows Obsidian's tag recognition rules (exclude headings, code blocks, all-numeric tags).
+
+**Changes Made:**
+- **Created `obsidian_rag/parsing/body_tags.py`** (124 lines): New module with `_strip_code_blocks()` (removes fenced code blocks and inline code, handles unclosed fenced blocks defensively) and `extract_body_tags()` (scans stripped content for Obsidian-valid inline tag patterns). `INLINE_TAG_PATTERN = re.compile(r"#([a-zA-Z0-9_/-]+(?:\.[a-zA-Z0-9_/-]+)*)", re.MULTILINE)` — the character class excludes whitespace so `# Heading` is not matched; dots are only kept when followed by more tag characters (so `#tag.` yields `tag`). All-numeric matches (e.g. `#1984`) are filtered via `tag_text.isdigit()`. Tags are lowercased and deduplicated. Extracted into `_collect_unique_tags()` helper to keep McCabe complexity ≤ 5. `extract_body_tags()` accepts `str | None` and returns `list[str] | None`.
+- **Updated `obsidian_rag/parsing/__init__.py`**: Exported `extract_body_tags` (added import and `__all__` entry) for consistency with `parse_frontmatter` / `parse_tasks_from_content`.
+- **Updated `obsidian_rag/services/ingestion.py`** (line 586): In `_ingest_single_file()`, after `parse_frontmatter()` returns `(tags, metadata, content)`, added `tags = _merge_tags(tags, extract_body_tags(content))`. The merged `tags` variable flows through to `_create_document()`, `_update_document()`, and `ingest_new_document()` unchanged, and `_create_tasks()` inherits the expanded `document.tags` via the existing `_merge_tags(document.tags, parsed_task.tags)` call. Added `extract_body_tags` import. File remains under the 1000-line limit (999 lines).
+- **Created test files**: `tests/test_parsing_body_tags.py` (30 unit tests for `extract_body_tags` and `_strip_code_blocks`), `tests/test_parsing_body_tags_edge_cases.py` (17 edge case tests), `tests/test_parsing_body_tags_integration.py` (14 ingestion pipeline integration tests), `tests/test_services_ingestion_body_tags.py` (10 ingestion service body tag tests), `tests/test_mcp_server_body_tags_all_tags.py` (5 `get_all_tags` integration tests).
+- **Updated `tests/test_services_ingestion.py`**: Added 4 `_merge_tags` compatibility tests for the frontmatter + body tag use case.
+
+**Key Design Decisions:**
+- **Regex excludes headings by character class**: The pattern requires a non-whitespace tag character immediately after `#`, so `# Heading` (with space) and `## Heading` (second `#`) never match. No post-match heading check needed — simpler and faster than the plan's original lookahead approach.
+- **All-numeric exclusion via `isdigit()`**: Post-match filter on the captured group; `#1984` → `"1984".isdigit()` is `True` → skipped. `#y1984` is kept.
+- **Code block stripping before scanning**: `_strip_code_blocks()` removes fenced blocks (closed and unclosed) and inline code first, so tags inside code are never seen by the tag pattern. Cleaner than per-match context checks.
+- **Reuses `_merge_tags()`**: The existing `tag_merging._merge_tags()` already does case-insensitive dedup + lowercasing + `#` prefix stripping for both arguments, so no changes to `tag_merging.py` were needed. Body tags are already `#`-stripped and lowercased by `extract_body_tags`, and `lstrip("#")` on a tag without `#` is a harmless no-op.
+- **Additive only**: Documents without inline tags keep frontmatter-only behavior (backward compatible). Documents with inline tags get additional tags. Existing `get_documents_by_tag` and `get_all_tags` queries work unchanged because they already read `Document.tags`.
+- **No schema changes**: `Document.tags` is already `TEXT[]`. Legacy documents ingested before this fix retain frontmatter-only tags until re-ingested (force re-ingest or natural checksum change).
+
+**No breaking changes:** Default behavior unchanged for documents without inline body tags. No schema changes, no API changes.
+
+**Verification:**
+- All 1772 tests pass (1 skipped)
+- 100% code coverage (5015 statements, 954 branches)
+- All ruff checks pass
+- All mypy type checks pass on source code
+- All source files under 1000 lines (ingestion.py at 999, body_tags.py at 124, tag_merging.py at 77)

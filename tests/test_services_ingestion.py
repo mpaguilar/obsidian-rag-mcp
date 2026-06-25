@@ -2843,3 +2843,28 @@ def test_ingest_single_file_force_true_dry_run_unaffected() -> None:
     )
 
     assert result[0] == "new"
+
+
+def test_merge_tags_frontmatter_with_body_tags_no_hash() -> None:
+    """frontmatter tags + body inline tags (already # stripped) merge lowercased."""
+    assert _merge_tags(["Work", "Personal"], ["meeting", "project"]) == [
+        "work",
+        "personal",
+        "meeting",
+        "project",
+    ]
+
+
+def test_merge_tags_body_tags_case_insensitive_dedup_with_frontmatter() -> None:
+    """body tag already lowercased dedups with matching frontmatter tag."""
+    assert _merge_tags(["work"], ["work"]) == ["work"]
+
+
+def test_merge_tags_body_tags_none_frontmatter_only() -> None:
+    """frontmatter-only when body tags arg is None."""
+    assert _merge_tags(["frontmatter"], None) == ["frontmatter"]
+
+
+def test_merge_tags_none_body_only() -> None:
+    """body-only when frontmatter arg is None."""
+    assert _merge_tags(None, ["bodyside"]) == ["bodyside"]

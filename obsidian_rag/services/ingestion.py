@@ -16,6 +16,7 @@ from obsidian_rag.config import VaultConfig
 from obsidian_rag.database.engine import DatabaseManager
 from obsidian_rag.database.models import Document, DocumentChunk, Task, Vault
 from obsidian_rag.llm.base import EmbeddingError, EmbeddingProvider
+from obsidian_rag.parsing.body_tags import extract_body_tags
 from obsidian_rag.parsing.frontmatter import parse_frontmatter
 from obsidian_rag.parsing.scanner import (
     FileInfo,
@@ -581,6 +582,8 @@ class IngestionService:
 
         # Parse frontmatter and content
         tags, metadata, content = parse_frontmatter(file_info.content)
+        # Extract inline body tags and merge with frontmatter tags
+        tags = _merge_tags(tags, extract_body_tags(content))
 
         # Parse tasks
         parsed_tasks = parse_tasks_from_content(content)

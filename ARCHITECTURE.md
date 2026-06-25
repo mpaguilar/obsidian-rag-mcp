@@ -92,6 +92,19 @@ Database connection management using SQLAlchemy with:
 - All other properties including `kind` are stored in `frontmatter_json`
 - Handles corrupted frontmatter gracefully (logs warning, continues)
 
+#### Body Tag Extraction (`body_tags.py`)
+
+- Extracts inline `#tag` patterns from markdown body text (post-frontmatter-removal)
+- Follows Obsidian's tag recognition rules:
+  - `#` immediately followed by tag characters (no space) is a tag
+  - `#` followed by a space is a heading (NOT extracted)
+  - All-numeric tags like `#1984` are NOT valid (must contain non-numerical character)
+  - Tags inside fenced code blocks and inline code are NOT extracted (stripped first)
+  - Hierarchical tags (`personal/expenses`) and dotted tags (`v1.0/release`) ARE extracted
+  - Tags in blockquotes and callouts ARE extracted
+- Tags are lowercased and deduplicated
+- Reuses `_merge_tags()` from `tag_merging.py` to combine frontmatter + body tags into `Document.tags`
+
 #### Task Parsing (`tasks.py`)
 
 - Identifies tasks via checkbox prefix patterns: `[ ]`, `[x]`, `[/]`, `[-]`
