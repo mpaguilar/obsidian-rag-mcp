@@ -435,6 +435,12 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 
 **Ingest Tools:**
 - `ingest`: Ingest markdown files and return processing statistics
+  - `no_delete` parameter type is `bool | None = None`:
+    - `None` (default, not specified): the system auto-sets `True` when `path` is a subdirectory of `container_path` (incremental ingestion, preventing deletion of documents outside the scanned subdirectory), and `False` for full-vault ingestion.
+    - `True`: skip deletion of orphaned documents (honored as-is).
+    - `False`: deletion of orphaned documents proceeds (honored as-is — the client explicitly accepts the risk, even with an incremental path).
+  - The handler (`_ingest_handler`) is the boundary where the API-facing `bool | None` resolves to a concrete `bool` via `_resolve_no_delete()` before reaching `IngestVaultOptions` (which stays `bool`). An INFO-level log is emitted only when `no_delete` is auto-forced to `True` (None → True for incremental paths).
+  - CLI behavior is unchanged: the CLI rejects paths not matching `container_path` exactly, so it never encounters incremental paths and the auto-force does not apply.
 
 **Pagination Pattern:**
 - `limit`: Default 20, maximum 10000

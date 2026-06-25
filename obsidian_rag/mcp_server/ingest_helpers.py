@@ -15,7 +15,7 @@ def _generate_request_id(
     vault_name: str,
     path: str | None,
     *,
-    no_delete: bool,
+    no_delete: bool | None,
     force: bool,
 ) -> str:
     """Generate a deterministic request ID from parameters.
@@ -23,7 +23,7 @@ def _generate_request_id(
     Args:
         vault_name: Name of the vault.
         path: Optional path override.
-        no_delete: Whether to skip deletion.
+        no_delete: Whether to skip deletion (None if unspecified by client).
         force: Whether to force re-ingestion.
 
     Returns:
@@ -148,7 +148,7 @@ def _check_and_handle_duplicate(
     vault_name: str,
     path: str | None,
     *,
-    no_delete: bool,
+    no_delete: bool | None,
     force: bool,
 ) -> dict[str, object] | None:
     """Check for duplicate requests and return cached result if available.
@@ -158,7 +158,7 @@ def _check_and_handle_duplicate(
         request_id: The generated request ID.
         vault_name: Name of the vault.
         path: Optional path override.
-        no_delete: Whether to skip deletion.
+        no_delete: Whether to skip deletion (None if unspecified by client).
         force: Whether to force re-ingestion.
 
     Returns:

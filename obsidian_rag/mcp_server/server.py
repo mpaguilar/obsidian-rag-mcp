@@ -327,7 +327,7 @@ def ingest(
     vault_name: str,
     path: str | None = None,
     *,
-    no_delete: bool = False,
+    no_delete: bool | None = None,
     force: bool = False,
 ) -> dict[str, object]:
     """Ingest markdown files from a vault directory into the database.
@@ -337,8 +337,13 @@ def ingest(
             Must match a vault configured in the config file.
         path: Optional path to vault directory. Uses vault's container_path
             if not provided.
-        no_delete: If True, skip deletion of orphaned documents.
-            Default is False.
+        no_delete: If True, skip deletion of orphaned documents. If None
+            (default, not specified), the system auto-sets True when `path`
+            is a subdirectory of `container_path` (incremental ingestion),
+            and False for full-vault ingestion. Explicitly passing False with
+            an incremental path honors the client's choice (deletion proceeds
+            — the client accepts the risk of losing documents outside the
+            scanned subdirectory).
         force: If True, re-ingest all documents regardless of checksums.
             Default is False.
 

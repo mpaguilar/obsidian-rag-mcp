@@ -124,7 +124,7 @@ class IngestHandlerParams:
     embedding_provider: EmbeddingProvider | None
     vault_name: str
     path_override: str | None
-    no_delete: bool = False
+    no_delete: bool | None = None
     force: bool = False
 
 
@@ -299,6 +299,82 @@ def _validate_ingest_path(ingest_path: str) -> Path:
     return path
 
 
+def _is_incremental_path(path: str | None, container_path: str) -> bool:
+    """Determine whether a path is incremental — inside container_path but not equal.
+
+    Args:
+        path: Candidate path to check (may be None).
+        container_path: The vault's configured container_path.
+
+    Returns:
+        True if path resolves to a strict subdirectory of container_path;
+        False if path is None, equals container_path, or is outside it.
+
+    Notes:
+        Uses Path.resolve() for symlink and trailing-slash normalization,
+        mirroring the _validate_path_matches_vault() pattern in cli_ingest.py.
+
+    """
+    _msg = "_is_incremental_path starting"
+    log.debug(_msg)
+    if path is None:
+        _msg = "_is_incremental_path returning: False (path is None)"
+        log.debug(_msg)
+        return False
+    resolved_path = Path(path).resolve()
+    resolved_container = Path(container_path).resolve()
+    if resolved_path == resolved_container:
+        _msg = "_is_incremental_path returning: False (equals container_path)"
+        log.debug(_msg)
+        return False
+    try:
+        resolved_path.relative_to(resolved_container)
+    except ValueError:
+        _msg = "_is_incremental_path returning: False (outside container_path)"
+        log.debug(_msg)
+        return False
+    _msg = "_is_incremental_path returning: True (incremental)"
+    log.debug(_msg)
+    return True
+
+
+def _resolve_no_delete(
+    path_override: str | None,
+    container_path: str,
+    *,
+    no_delete: bool | None,
+) -> bool:
+    """Resolve no_delete, auto-forcing True for incremental paths when unspecified.
+
+    Args:
+        path_override: Optional MCP path override.
+        container_path: Vault's configured container_path.
+        no_delete: Client-specified value (None = not specified).
+
+    Returns:
+        Concrete bool to pass to IngestVaultOptions.
+
+    """
+    _msg = "_resolve_no_delete starting"
+    log.debug(_msg)
+    if no_delete is not None:
+        _msg = f"_resolve_no_delete returning: {no_delete} (explicit)"
+        log.debug(_msg)
+        return no_delete
+    if _is_incremental_path(path_override, container_path):
+        _msg = (
+            f"no_delete auto-enabled: incremental path '{path_override}' "
+            "is a subdirectory of vault container_path"
+        )
+        log.info(_msg)
+        _msg = "_resolve_no_delete returning: True (auto-forced)"
+        log.debug(_msg)
+        return True
+    _msg = "_resolve_no_delete returning: False (default)"
+    log.debug(_msg)
+    return False
+
+
 def _ingest_handler(params: IngestHandlerParams) -> dict[str, object]:
     """Handle ingest tool call.
 
@@ -337,10 +413,15 @@ def _ingest_handler(params: IngestHandlerParams) -> dict[str, object]:
         settings=params.settings,
     )
 
+    no_delete = _resolve_no_delete(
+        params.path_override,
+        vault_config.container_path,
+        no_delete=params.no_delete,
+    )
     options = IngestVaultOptions(
         vault=params.vault_name,
         dry_run=False,
-        no_delete=params.no_delete,
+        no_delete=no_delete,
         force=params.force,
     )
     result = ingestion_service.ingest_vault(path, options)

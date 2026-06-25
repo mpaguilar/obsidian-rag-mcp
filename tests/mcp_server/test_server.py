@@ -2685,3 +2685,167 @@ class TestListDocumentsToolRegistration:
 
                 assert result["total_count"] == 0
                 assert result["results"] == []
+
+
+class TestIngestNoDeleteNone:
+    """Tests for TASK-003: no_delete parameter accepts None (unspecified)."""
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.server._ingest_handler")
+    def test_ingest_no_delete_none_propagates_to_handler_params(
+        self, mock_handler: MagicMock, mock_get_registry: MagicMock
+    ):
+        """Test no_delete=None is passed through to IngestHandlerParams."""
+        from obsidian_rag.mcp_server.server import (
+            _clear_ingest_tracker,
+            ingest,
+        )
+
+        _clear_ingest_tracker()
+
+        mock_registry = MagicMock()
+        mock_get_registry.return_value = mock_registry
+        mock_handler.return_value = {"total": 0}
+
+        result = ingest("vault", "/path", no_delete=None)
+
+        call_params = mock_handler.call_args.args[0]
+        assert call_params.no_delete is None
+        assert result == {"total": 0}
+
+        _clear_ingest_tracker()
+
+    @patch("obsidian_rag.mcp_server.server._check_and_handle_duplicate")
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.server._ingest_handler")
+    def test_ingest_no_delete_none_propagates_to_request_id(
+        self,
+        mock_handler: MagicMock,
+        mock_get_registry: MagicMock,
+        mock_dup_check: MagicMock,
+    ):
+        """Test no_delete=None flows to _generate_request_id."""
+        from obsidian_rag.mcp_server.server import (
+            _clear_ingest_tracker,
+            ingest,
+        )
+
+        _clear_ingest_tracker()
+
+        mock_dup_check.return_value = None
+        mock_registry = MagicMock()
+        mock_get_registry.return_value = mock_registry
+        mock_handler.return_value = {"total": 0}
+
+        with patch(
+            "obsidian_rag.mcp_server.server._generate_request_id"
+        ) as mock_gen:
+            mock_gen.return_value = "test-id"
+            ingest("vault", "/path")
+            mock_gen.assert_called_once_with(
+                "vault", "/path", no_delete=None, force=False
+            )
+
+        _clear_ingest_tracker()
+
+    @patch("obsidian_rag.mcp_server.server._check_and_handle_duplicate")
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.server._ingest_handler")
+    def test_ingest_no_delete_none_propagates_to_duplicate_check(
+        self,
+        mock_handler: MagicMock,
+        mock_get_registry: MagicMock,
+        mock_dup_check: MagicMock,
+    ):
+        """Test no_delete=None flows to _check_and_handle_duplicate."""
+        from obsidian_rag.mcp_server.server import (
+            _clear_ingest_tracker,
+            ingest,
+        )
+
+        _clear_ingest_tracker()
+
+        mock_dup_check.return_value = None
+        mock_registry = MagicMock()
+        mock_get_registry.return_value = mock_registry
+        mock_handler.return_value = {"total": 0}
+
+        ingest("vault", "/path")
+
+        mock_dup_check.assert_called_once()
+        call_kwargs = mock_dup_check.call_args.kwargs
+        assert call_kwargs["no_delete"] is None
+
+        _clear_ingest_tracker()
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.server._ingest_handler")
+    def test_ingest_no_delete_not_passed_defaults_to_none(
+        self, mock_handler: MagicMock, mock_get_registry: MagicMock
+    ):
+        """Test omitting no_delete defaults to None."""
+        from obsidian_rag.mcp_server.server import (
+            _clear_ingest_tracker,
+            ingest,
+        )
+
+        _clear_ingest_tracker()
+
+        mock_registry = MagicMock()
+        mock_get_registry.return_value = mock_registry
+        mock_handler.return_value = {"total": 0}
+
+        ingest("vault", "/path")
+
+        call_params = mock_handler.call_args.args[0]
+        assert call_params.no_delete is None
+
+        _clear_ingest_tracker()
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.server._ingest_handler")
+    def test_ingest_no_delete_false_still_works(
+        self, mock_handler: MagicMock, mock_get_registry: MagicMock
+    ):
+        """Test explicit False is still accepted."""
+        from obsidian_rag.mcp_server.server import (
+            _clear_ingest_tracker,
+            ingest,
+        )
+
+        _clear_ingest_tracker()
+
+        mock_registry = MagicMock()
+        mock_get_registry.return_value = mock_registry
+        mock_handler.return_value = {"total": 0}
+
+        ingest("vault", "/path", no_delete=False)
+
+        call_params = mock_handler.call_args.args[0]
+        assert call_params.no_delete is False
+
+        _clear_ingest_tracker()
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.server._ingest_handler")
+    def test_ingest_no_delete_true_still_works(
+        self, mock_handler: MagicMock, mock_get_registry: MagicMock
+    ):
+        """Test explicit True is still accepted."""
+        from obsidian_rag.mcp_server.server import (
+            _clear_ingest_tracker,
+            ingest,
+        )
+
+        _clear_ingest_tracker()
+
+        mock_registry = MagicMock()
+        mock_get_registry.return_value = mock_registry
+        mock_handler.return_value = {"total": 0}
+
+        ingest("vault", "/path", no_delete=True)
+
+        call_params = mock_handler.call_args.args[0]
+        assert call_params.no_delete is True
+
+        _clear_ingest_tracker()
