@@ -171,6 +171,33 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 038.limit-output (Completed 2026-06-25)
+
+**Objective:** Increase the pagination limit maximum from 100 to 10,000 so MCP tools and CLI vault commands respect client-provided `limit` values instead of silently capping at 100. Align all docstrings, tests, and documentation to the new maximum.
+
+**Changes Made:**
+- **Updated `obsidian_rag/mcp_server/models.py`** (lines 14, 267, 279): Changed `MAX_PAGINATION_LIMIT` constant from 100 to 10000. Updated `_validate_limit()` docstring to "clamped between 1 and 10000". **Critical bug fix:** the `limit > MAX_PAGINATION_LIMIT` branch had a hardcoded `return 100` instead of `return MAX_PAGINATION_LIMIT` — without this fix, changing the constant alone would NOT have changed behavior (values above 100 would still be clamped to 100). Changed to `return MAX_PAGINATION_LIMIT`.
+- **Updated `obsidian_rag/cli_vault_commands.py`** (lines 30, 40): Changed `MAX_VAULT_LIMIT` constant from 100 to 10000. Updated `_validate_limit()` docstring to "max 10000". (This file already correctly used `return MAX_VAULT_LIMIT`, so the constant change alone fixed the CLI path.)
+- **Updated tool wrapper/implementation docstrings** ("max: 100" → "max: 10000"): `mcp_server/server.py` (5 wrappers: query_documents, get_documents_by_tag, get_documents_by_property, get_all_tags, list_vaults), `mcp_server/document_tools.py` (list_documents), `mcp_server/tool_definitions.py` (get_all_tags_tool, list_vaults_tool — preserved the no-colon "max 10000" style for list_vaults_tool), `mcp_server/tools/documents.py` (get_documents_by_tag, get_all_tags, list_documents), `mcp_server/tools/tasks_params.py` (GetTasksFilterParams.limit), `mcp_server/tools/vaults.py` (list_vaults).
+- **Updated tests**: `tests/mcp_server/test_models.py` `TestValidateLimit` — expanded `test_valid_limit` to include 500 and 10000 (previously capped); changed `test_limit_above_maximum` from `101→100`/`1000→100` to `10001→10000`/`100000→10000`; updated docstrings. `tests/test_cli_vault.py` `test_vault_list_limit_validation` — changed `--limit 200` to `--limit 20000` with `mock_query.offset.return_value.limit.assert_called_with(10000)`.
+- **Updated documentation**: `ARCHITECTURE.md` Pagination Pattern "maximum 100" → "maximum 10000"; `DOMAIN_GLOSSARY.md` Pagination Limits "capped at 100" → "capped at 10000".
+- **Verification easy fix**: `tests/mcp_server/test_tools_vaults.py::TestListVaults::test_list_vaults_limit_validation` had stale docstring/comment referencing the old max 100 and used `limit=200` (no longer clamped under the new max). Updated to `limit=20000`, docstring "clamped to max 10000", comment "# Should be clamped to 10000", and added `mock_query.limit.assert_called_with(10000)` to actually verify the clamp.
+
+**Key Design Decisions:**
+- **10,000 ceiling** balances legitimate client needs (e.g., "give me all tasks in this vault") against resource exhaustion. PostgreSQL `.limit(N)` is efficient via query planning; 10,000 full-document results use acceptable memory (~10–50MB) for legitimate use cases while preventing pathological requests (e.g., 1M results).
+- **Root-cause bug fix** in `models.py:_validate_limit()` (hardcoded `return 100`) was the actual blocker — the constant change alone was insufficient. `cli_vault_commands.py` already used the constant correctly.
+- **No schema changes, no config changes, no migration needed.** Pure code/docstring change. Backward compatible — clients passing `limit <= 100` see identical behavior; only clients requesting `limit > 100` see the change (more results returned).
+
+**No breaking changes:** Default behavior unchanged for `limit <= 100`. No schema, config, or API changes.
+
+**Verification:**
+- All 1772 tests pass (1 skipped)
+- 100% code coverage (5015 statements, 954 branches)
+- All ruff checks pass (canonical `ruff check obsidian_rag/ tests/`); ruff format clean
+- mypy clean on source code (52 source files, no issues)
+- All source files under 1000 lines (config.py at 1223 is pre-existing exception, untouched)
+- Code review: 4/4 reviewers APPROVED, no CHANGES REQUESTED
+
 ### 036.ingestion-bug (Completed 2026-06-17)
 
 **Objective:** Fix `IntegrityError` (UniqueViolation on `uq_document_vault_path`) in `_ingest_single_file()` by catching it and retrying as an UPDATE. Update `ingested_at` timestamp in `_update_document()` when a document is re-ingested. Add diagnostic logging before the document lookup query.

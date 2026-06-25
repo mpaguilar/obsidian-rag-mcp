@@ -349,13 +349,13 @@ class TestVaultList:
         mock_query.reset_mock()
         mock_query.offset.return_value.limit.return_value.all.return_value = mock_result
 
-        # Test with limit=200 (should be clamped to 100)
+        # Test with limit=20000 (should be clamped to 10000)
         with patch("obsidian_rag.cli.get_settings", return_value=mock_settings):
-            result = runner.invoke(cli, ["vault", "list", "--limit", "200"])
+            result = runner.invoke(cli, ["vault", "list", "--limit", "20000"])
 
         assert result.exit_code == 0
-        # Verify that limit was clamped to 100
-        mock_query.offset.return_value.limit.assert_called_with(100)
+        # Verify that limit was clamped to 10000
+        mock_query.offset.return_value.limit.assert_called_with(10000)
 
     @patch("obsidian_rag.cli_vault_commands.DatabaseManager")
     def test_vault_list_offset_validation(self, mock_db_manager_class) -> None:

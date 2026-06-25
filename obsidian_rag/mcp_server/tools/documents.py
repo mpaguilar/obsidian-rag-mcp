@@ -260,7 +260,7 @@ def get_documents_by_tag(
         session: Database session.
         tag_filter: Tag filter with include/exclude lists.
         vault_name: Filter by specific vault name (optional).
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     Returns:
@@ -432,7 +432,7 @@ def get_all_tags(
         session: Database session.
         pattern: Glob pattern for filtering tags (optional).
             Supports * (any chars), ? (single char), [abc] (char class).
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     Returns:
@@ -628,7 +628,7 @@ def list_documents(
         session: Database session.
         file_name: Document file name to search for (exact match, required).
         vault_name: Optional vault name to scope results.
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     Returns:

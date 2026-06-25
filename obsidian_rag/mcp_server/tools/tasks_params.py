@@ -72,7 +72,7 @@ class GetTasksFilterParams:
             Multiple values use OR logic (task matches any).
         date_match_mode: How to combine date filters - "all" for AND logic (default),
             "any" for OR logic across all date conditions.
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     """

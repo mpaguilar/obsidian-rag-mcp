@@ -31,7 +31,7 @@ def list_vaults(
 
     Args:
         session: Database session.
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     Returns:

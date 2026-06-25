@@ -110,7 +110,7 @@ def query_documents(
             - Dict: {"include_tags": ["work"], "match_mode": "any"}
             - JSON string: '{"include_tags": ["work"], "match_mode": "any"}'
             - None or "": No filter
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
         use_chunks: If True, search at chunk level instead of document level.
             Returns the best matching chunk per document for more precise
@@ -157,7 +157,7 @@ def get_documents_by_tag(
             Tags should NOT include the '#' prefix. Use plain tag names like
             "personal/expenses" instead of "#personal/expenses".
         vault_name: Filter by specific vault name (optional).
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     Returns:
@@ -215,7 +215,7 @@ def get_documents_by_property(
             parsed before validation. Empty or whitespace-only strings are
             treated as None (no filters).
         vault_name: Filter by specific vault name (optional).
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     Returns:
@@ -294,7 +294,7 @@ def get_all_tags(
     Args:
         pattern: Glob pattern for filtering tags (optional).
             Supports * (any chars), ? (single char), [abc] (char class).
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     Returns:
@@ -312,7 +312,7 @@ def list_vaults(
     """List all configured vaults with document counts.
 
     Args:
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     Returns:

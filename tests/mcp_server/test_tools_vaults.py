@@ -211,7 +211,7 @@ class TestListVaults:
         assert result.next_offset is None
 
     def test_list_vaults_limit_validation(self):
-        """Test that limit is validated (clamped to max 100)."""
+        """Test that limit is validated (clamped to max 10000)."""
         from obsidian_rag.mcp_server.tools.vaults import list_vaults
 
         vault1 = MagicMock(spec=Vault)
@@ -257,10 +257,11 @@ class TestListVaults:
 
         mock_session.query.return_value = mock_query
 
-        result = list_vaults(mock_session, limit=200, offset=0)
+        result = list_vaults(mock_session, limit=20000, offset=0)
 
-        # Should be clamped to 100
+        # Should be clamped to 10000
         assert len(result.results) == 3  # All vaults returned
+        mock_query.limit.assert_called_with(10000)
 
     def test_list_vaults_negative_offset(self):
         """Test that negative offset is clamped to 0."""

@@ -176,7 +176,7 @@ Load Defaults → Load Config File → Interpolate Env Vars
 5. **Checksum Consistency**: Documents are only updated when MD5 checksum changes
 6. **Task Status Mapping**: Checkbox characters map deterministically to TaskStatus enum
 7. **Tag Normalization**: Tags are deduplicated, stripped of whitespace, and stored lowercase
-8. **Pagination Limits**: `limit` parameter capped at 100 results per query
+8. **Pagination Limits**: `limit` parameter capped at 10000 results per query
 9. **Max Tasks Per Document**: 10,000 tasks maximum to prevent abuse
 10. **File Size Limit**: Files > 10MB are skipped during scanning
 

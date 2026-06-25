@@ -27,7 +27,7 @@ from obsidian_rag.mcp_server.tools.vaults import (
 
 log = logging.getLogger(__name__)
 
-MAX_VAULT_LIMIT = 100
+MAX_VAULT_LIMIT = 10000
 
 
 def _validate_limit(limit: int) -> int:
@@ -37,7 +37,7 @@ def _validate_limit(limit: int) -> int:
         limit: The requested limit value.
 
     Returns:
-        Validated limit (clamped to 1-MAX_VAULT_LIMIT range).
+        Validated limit (clamped to 1-MAX_VAULT_LIMIT range, max 10000).
 
     """
     if limit < 1:

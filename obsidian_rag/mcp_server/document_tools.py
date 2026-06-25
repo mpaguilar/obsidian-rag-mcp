@@ -69,7 +69,7 @@ def list_documents(
     Args:
         file_name: Document file name to search for (required).
         vault_name: Filter by specific vault name (optional).
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     Returns:

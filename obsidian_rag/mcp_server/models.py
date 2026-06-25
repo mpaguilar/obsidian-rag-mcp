@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 log = logging.getLogger(__name__)
 
 # Constants for validation
-MAX_PAGINATION_LIMIT = 100
+MAX_PAGINATION_LIMIT = 10000
 
 
 class PropertyFilter(BaseModel):
@@ -264,7 +264,7 @@ def _validate_limit(limit: int) -> int:
         limit: The requested limit value.
 
     Returns:
-        Validated limit (clamped between 1 and 100).
+        Validated limit (clamped between 1 and 10000).
 
     """
     _msg = "_validate_limit starting"
@@ -276,7 +276,7 @@ def _validate_limit(limit: int) -> int:
     if limit > MAX_PAGINATION_LIMIT:
         _msg = "_validate_limit returning"
         log.debug(_msg)
-        return 100
+        return MAX_PAGINATION_LIMIT
     _msg = "_validate_limit returning"
     log.debug(_msg)
     return limit

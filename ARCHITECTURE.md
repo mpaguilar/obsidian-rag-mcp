@@ -437,7 +437,7 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 - `ingest`: Ingest markdown files and return processing statistics
 
 **Pagination Pattern:**
-- `limit`: Default 20, maximum 100
+- `limit`: Default 20, maximum 10000
 - `offset`: Starting position for results
 - Response includes: `total_count`, `has_more`, `next_offset`
 

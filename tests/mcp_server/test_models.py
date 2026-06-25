@@ -318,6 +318,8 @@ class TestValidateLimit:
         assert _validate_limit(1) == 1
         assert _validate_limit(50) == 50
         assert _validate_limit(100) == 100
+        assert _validate_limit(500) == 500  # new: previously capped
+        assert _validate_limit(10000) == 10000  # new: previously capped
 
     def test_limit_below_minimum(self):
         """Test limit below minimum is clamped to 1."""
@@ -325,9 +327,9 @@ class TestValidateLimit:
         assert _validate_limit(-10) == 1
 
     def test_limit_above_maximum(self):
-        """Test limit above maximum is clamped to 100."""
-        assert _validate_limit(101) == 100
-        assert _validate_limit(1000) == 100
+        """Test limit above maximum is clamped to 10000."""
+        assert _validate_limit(10001) == 10000
+        assert _validate_limit(100000) == 10000
 
 
 class TestValidateOffset:

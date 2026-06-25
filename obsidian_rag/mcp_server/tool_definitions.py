@@ -348,7 +348,7 @@ def get_all_tags_tool(
         db_manager: Database manager for session management.
         pattern: Glob pattern for filtering tags (optional).
             Supports * (any chars), ? (single char), [abc] (char class).
-        limit: Maximum number of results (default: 20, max: 100).
+        limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
     Returns:
@@ -373,7 +373,7 @@ def list_vaults_tool(
 
     Args:
         db_manager: Database manager for session management.
-        limit: Maximum number of results (default 20, max 100).
+        limit: Maximum number of results (default 20, max 10000).
         offset: Number of results to skip.
 
     Returns:
