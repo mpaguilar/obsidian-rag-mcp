@@ -2,7 +2,6 @@
 
 import uuid
 from datetime import datetime
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,7 +11,6 @@ from obsidian_rag.database.models import (
     Task,
     TaskPriority,
     TaskStatus,
-    Vault,
 )
 
 

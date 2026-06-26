@@ -110,9 +110,7 @@ def test_get_all_tags_filters_none_tags(db_session: MagicMock) -> None:
     tag is None. This test verifies that behavior with body tags.
     """
     expected_count = 2
-    _configure_mock_for_tags(
-        db_session, ["meeting", None, "project"]
-    )
+    _configure_mock_for_tags(db_session, ["meeting", None, "project"])
 
     result = get_all_tags(db_session, pattern=None, limit=20, offset=0)
 

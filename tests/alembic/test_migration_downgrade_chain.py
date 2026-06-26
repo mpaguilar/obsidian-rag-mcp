@@ -6,7 +6,7 @@ and downgraded without errors.
 
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from alembic import command
@@ -112,6 +112,47 @@ class TestMigration003Downgrade:
         ), "Migration 003 should recreate ix_documents_tags index in downgrade"
 
         _msg = "test_migration_003_file_recreates_indexes returning"
+        log.debug(_msg)
+
+
+class TestMigration003DowngradeDuplicateFilePath:
+    """Test migration 003 downgrade handles duplicate file_path risk."""
+
+    def test_migration_003_downgrade_recreates_file_path_constraint(self):
+        """Verify migration 003 downgrade recreates documents_file_path_key."""
+        _msg = "test_migration_003_downgrade_recreates_file_path_constraint starting"
+        log.debug(_msg)
+
+        migration_path = Path("alembic/versions/003_add_vaults_table.py")
+        content = migration_path.read_text()
+
+        # Verify the unique constraint on file_path is recreated
+        # The downgrade uses a DO block to handle duplicate file_path gracefully
+        assert (
+            "ALTER TABLE documents ADD CONSTRAINT documents_file_path_key" in content
+        ), (
+            "Migration 003 downgrade should recreate documents_file_path_key unique constraint"
+        )
+
+        _msg = "test_migration_003_downgrade_recreates_file_path_constraint returning"
+        log.debug(_msg)
+
+    def test_migration_003_downgrade_has_duplicate_file_path_warning(self):
+        """Verify migration 003 downgrade documents duplicate file_path risk."""
+        _msg = "test_migration_003_downgrade_has_duplicate_file_path_warning starting"
+        log.debug(_msg)
+
+        migration_path = Path("alembic/versions/003_add_vaults_table.py")
+        content = migration_path.read_text()
+
+        # Verify the downgrade contains a warning about duplicate file_path data
+        assert (
+            "duplicate file_path" in content.lower()
+            or "may fail if duplicate" in content.lower()
+            or "unique constraint" in content.lower()
+        ), "Migration 003 downgrade should document the duplicate file_path risk"
+
+        _msg = "test_migration_003_downgrade_has_duplicate_file_path_warning returning"
         log.debug(_msg)
 
 

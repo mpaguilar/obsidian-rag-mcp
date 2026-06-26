@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import click
 
 from obsidian_rag.cli_query_exact import (
     _display_document_list,

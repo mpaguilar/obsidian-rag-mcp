@@ -1,4 +1,5 @@
 """Tests for document_tools.py MCP tool wrappers."""
+
 from unittest.mock import Mock, patch
 
 from obsidian_rag.mcp_server.document_tools import (

@@ -1,7 +1,7 @@
 """Tests for cli_dates module."""
 
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -40,6 +40,7 @@ class TestParseCliDate:
                 parse_cli_date("2026-02-30")  # Feb 30 doesn't exist
 
         assert exc_info.value.code == 1
+        mock_echo.assert_called_once()
 
     def test_empty_string_exits(self):
         """Test that empty string exits with code 1."""

@@ -45,7 +45,7 @@ def _generate_request_id(
     }
     # Sort keys for deterministic serialization
     params_json = json.dumps(params, sort_keys=True, separators=(",", ":"))
-    request_id = hashlib.md5(params_json.encode()).hexdigest()
+    request_id = hashlib.md5(params_json.encode(), usedforsecurity=False).hexdigest()
 
     _msg = f"_generate_request_id returning: {request_id}"
     log.debug(_msg)

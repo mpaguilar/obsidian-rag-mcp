@@ -21,7 +21,10 @@ obsidian_rag/                    # Main package
 ├── cli_ingest.py                # CLI ingest path resolution helpers
 ├── cli_query_exact.py           # CLI exact document query implementation
 ├── cli_vault_commands.py        # CLI vault command implementations
-├── config.py                    # Configuration management
+├── config.py                    # Configuration management (entry point; re-exports split modules)
+├── config_env.py                # Environment-variable interpolation (T TypeVar, _interpolate_env_vars)
+├── config_models.py             # Pydantic config model classes (EndpointConfig..MCPConfig)
+├── config_validators.py         # Standalone validation helpers used by Settings validators
 ├── database/                    # Database layer
 │   ├── __init__.py
 │   ├── engine.py                # Database connection
@@ -170,6 +173,46 @@ ruff check obsidian_rag/ tests/
 > **Technical Implementation Details**: For architecture patterns, component details, and data flow, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
 
 ## Checkpoint History
+
+### 040.cleanup (Completed 2026-06-26)
+
+**Objective:** Clean up pre-existing tech debt: resolve 9 bandit warnings (B101/B324/B104/B105), remove 7 inline `# noqa` pragmas (6 PIE790 + 1 ANN401), audit/reduce 15 `# pragma: no cover` (down to 5 documented-legitimate), fix 70 test-file lint violations (51 F401 + 19 F841), exclude tests from mypy via `pyproject.toml`, split 10 oversized test files (with growth headroom ~600-750 lines each), split `config.py` from 1223 to 587 lines via `config_env.py`/`config_models.py`/`config_validators.py` extraction, and fix the Alembic `downgrade base` blocker (test data pollution). Zero behavioral change to CLI/MCP tools.
+
+**Changes Made:**
+- **Group A — Bandit fixes (REQ-001, REQ-008):** Added `usedforsecurity=False` to `hashlib.md5()` in `ingest_helpers.py` (B324). Replaced 5 `assert X is not None` with `if X is None: log.error(_msg); raise RuntimeError(_msg)` in `cli.py`, `documents.py`, `vaults.py` (B101). Added `[tool.bandit]` config in `pyproject.toml` with `skips = ["B104", "B105"]` and `exclude_dirs = ["tests", ".venv"]`. New covering test files: `test_cli_type_guards.py`, `test_documents_type_guards.py`, `test_vaults_type_guards.py`.
+- **Group B — Remove inline noqa (REQ-002):** Deleted `pass`/`...` placeholders from 6 locations (`llm/base.py` 3 abstract methods, `reranking.py` 2 Protocol/exception, `tokenizer.py` 1 exception), leaving docstring-only bodies (PIE790 passes without noqa). Removed `# noqa: ANN401` from `handlers.py:parse_json_str` by adding `per-file-ignores` entry in `pyproject.toml` and documenting the accepted exception in `CONVENTIONS.md`.
+- **Group C — Pragma audit (REQ-003):** Removed 10 of 15 `# pragma: no cover` — 3 via TASK-004 placeholder deletion, 7 config.py pragmas covered by new tests or removed as unreachable. 5 remaining documented-legitimate (server.py JSON fallbacks, documents_chunks.py defensive, tokenizer.py unreachable, chunking.py defensive).
+- **Group D — Test lint hygiene (REQ-004, REQ-009):** Fixed 51 F401 unused-import + 19 F841 unused-variable violations across test files. Expanded ruff `include` to `tests/**/*.py` with extended `per-file-ignores` enforcing only F401/F841 on tests (suppressing PLR2004, ARG002, C4, C901, PIE790, TC002/006, SIM110, etc.).
+- **Group E — mypy exclusion (REQ-005):** Added `exclude = "^tests/"` to `[tool.mypy]` in `pyproject.toml`. Confirmed `--mypy` not in pytest addopts.
+- **Group F — Test file splits (REQ-006):** Split 10 oversized test files into ~42 smaller files with growth headroom (~600-750 lines each): `test_cli.py` (3206→6 files), `test_services_ingestion.py` (2870→7 files), `test_server.py` (2851→6 files), `test_tools_vaults.py` (1564→2 files), `test_llm_providers.py` (1454→2 files), `test_server_handlers.py` (1313→2 files), `test_tools_documents.py` (1306→2 files), `test_config.py` (1245→2 files), `test_cli_vault.py` (1190→2 files), `test_handlers.py` (1141→2 files).
+- **Group G — config.py split (REQ-007):** Extracted `config_env.py` (102 lines, env-var interpolation + T TypeVar), `config_models.py` (354 lines, Pydantic model classes), `config_validators.py` (292 lines, validation helpers). `config.py` re-exports all symbols — public API unchanged. `config.py` now 587 lines (was 1223).
+- **Group H — Alembic blocker (REQ-010):** Fixed test data pollution (duplicate `file_path` values) via transaction-rollback fixtures. Corrected documentation: failing migration is 003, not 002.
+- **Group I — Final verification:** All 11 completion criteria verified.
+
+**Key Design Decisions:**
+- **`assert`→`RuntimeError`** (not `cast()`): User chose explicit raise — survives `python -O`, covers the branch with a test, no pragma needed.
+- **Docstring-only bodies** for PIE790: Empirically validated — ruff accepts a docstring as a sufficient body for abstract methods, Protocol methods, and exception classes.
+- **`per-file-ignores` over inline noqa**: Config-level suppression + CONVENTIONS.md documentation is the accepted alternative to inline `# noqa` (CONVENTIONS policy).
+- **F401/F841-only on tests**: User-confirmed policy — PLR2004/ARG002/etc. are normal in test files.
+- **Growth headroom**: Test splits target ~600-750 lines per file, leaving ~250+ lines of room under 1000 so future additions don't immediately re-exceed.
+- **config.py re-export pattern**: Follows `ingestion.py`→`ingestion_*.py` precedent. `from obsidian_rag.config import X` still works — no caller/test breakage.
+
+**No breaking changes:** Zero behavioral change to CLI or MCP tools. All changes are code quality, test structure, and dev-tooling config. No schema changes, no API changes.
+
+**Verification:**
+- All 1861 tests pass (1 skipped pre-existing)
+- 100% code coverage (5116 statements, 980 branches)
+- `bandit -r obsidian_rag/ -q` → 0 violations
+- `ruff check obsidian_rag/ tests/` → All checks passed
+- `ruff format --check` → 173 files formatted
+- `mypy obsidian_rag/` → Success: no issues found in 55 source files
+- `mypy tests/` → Excluded (0 .py[i] files)
+- `grep -rn "# noqa" obsidian_rag/` → 0 matches
+- `grep -rn "# pragma: no cover" obsidian_rag/` → 5 (documented-legitimate)
+- All source files under 1000 lines (max: ingestion.py at 999)
+- All test files under 1000 lines (max: test_tools_documents_postgres_complete.py at 919)
+- config.py at 587 lines (was 1223)
+- Code review: 4/4 reviewers APPROVED, no CHANGES REQUESTED
 
 ### 039.ingestion-path (Completed 2026-06-25)
 

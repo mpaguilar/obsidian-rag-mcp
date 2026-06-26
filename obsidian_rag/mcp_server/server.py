@@ -177,6 +177,8 @@ def get_documents_by_tag(
         elif isinstance(parsed, dict):
             filters = QueryFilterParams(**parsed)
         else:
+            # Defensive fallback: parse_json_str only returns dict or None for str inputs,
+            # but this branch handles the impossible case where it returns a non-dict type.
             filters = parsed  # pragma: no cover
 
     filters = filters or QueryFilterParams(
@@ -532,6 +534,8 @@ def get_tasks(
         elif isinstance(parsed, dict):
             params = GetTasksToolInput(**parsed)
         else:
+            # Defensive fallback: parse_json_str only returns dict or None for str inputs,
+            # but this branch handles the impossible case where it returns a non-dict type.
             params = parsed  # pragma: no cover
 
     # Handle None params - create default GetTasksToolInput

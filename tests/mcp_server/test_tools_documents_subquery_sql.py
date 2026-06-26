@@ -8,9 +8,13 @@ from obsidian_rag.database.models import Document
 
 def test_subquery_sql_without_pattern():
     """Verify subquery generates correct SQL without pattern filter."""
-    tag_subq = sa_select(
-        func.unnest(Document.tags).label("tag"),
-    ).select_from(Document).subquery("tag_subq")
+    tag_subq = (
+        sa_select(
+            func.unnest(Document.tags).label("tag"),
+        )
+        .select_from(Document)
+        .subquery("tag_subq")
+    )
 
     tags_query = sa_select(
         func.distinct(tag_subq.c.tag).label("tag"),
@@ -32,14 +36,22 @@ def test_subquery_sql_without_pattern():
 
 def test_subquery_sql_with_pattern():
     """Verify pattern filter works through subquery."""
-    tag_subq = sa_select(
-        func.unnest(Document.tags).label("tag"),
-    ).select_from(Document).subquery("tag_subq")
+    tag_subq = (
+        sa_select(
+            func.unnest(Document.tags).label("tag"),
+        )
+        .select_from(Document)
+        .subquery("tag_subq")
+    )
 
-    tags_query = sa_select(
-        func.distinct(tag_subq.c.tag).label("tag"),
-    ).where(tag_subq.c.tag.isnot(None)).where(
-        func.lower(tag_subq.c.tag).ilike(func.lower("work%")),
+    tags_query = (
+        sa_select(
+            func.distinct(tag_subq.c.tag).label("tag"),
+        )
+        .where(tag_subq.c.tag.isnot(None))
+        .where(
+            func.lower(tag_subq.c.tag).ilike(func.lower("work%")),
+        )
     )
 
     compiled = tags_query.compile(
@@ -55,9 +67,13 @@ def test_subquery_sql_with_pattern():
 
 def test_subquery_column_accessible():
     """Verify that tag_subq.c.tag is a valid column reference."""
-    tag_subq = sa_select(
-        func.unnest(Document.tags).label("tag"),
-    ).select_from(Document).subquery("tag_subq")
+    tag_subq = (
+        sa_select(
+            func.unnest(Document.tags).label("tag"),
+        )
+        .select_from(Document)
+        .subquery("tag_subq")
+    )
 
     # tag_subq.c.tag should be a real column object, not None
     assert tag_subq.c.tag is not None
@@ -65,9 +81,13 @@ def test_subquery_column_accessible():
 
 def test_subquery_not_table_valued():
     """Verify generated SQL does not contain buggy table_valued artifacts."""
-    tag_subq = sa_select(
-        func.unnest(Document.tags).label("tag"),
-    ).select_from(Document).subquery("tag_subq")
+    tag_subq = (
+        sa_select(
+            func.unnest(Document.tags).label("tag"),
+        )
+        .select_from(Document)
+        .subquery("tag_subq")
+    )
 
     tags_query = sa_select(
         func.distinct(tag_subq.c.tag).label("tag"),

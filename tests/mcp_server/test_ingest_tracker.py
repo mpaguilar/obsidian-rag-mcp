@@ -2,7 +2,6 @@
 
 import asyncio
 
-import pytest
 
 from obsidian_rag.mcp_server.ingest_tracker import (
     IngestRequestTracker,

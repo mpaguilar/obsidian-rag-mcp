@@ -34,7 +34,7 @@ def test_vault_update_params_all_fields():
 def test_vault_update_params_name_required():
     """Verify name is required for VaultUpdateParams."""
     try:
-        params = VaultUpdateParams()  # type: ignore[call-arg]
+        VaultUpdateParams()  # type: ignore[call-arg]
         assert False, "Should have raised TypeError"
     except TypeError:
         pass  # Expected

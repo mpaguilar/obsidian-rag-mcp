@@ -88,7 +88,9 @@ def test_force_reingest_unchanged_document_returns_updated(
     mock_session_context.__exit__ = MagicMock(return_value=None)
     ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
-    with patch.object(ingestion_service, "_update_document", return_value=0) as mock_update:
+    with patch.object(
+        ingestion_service, "_update_document", return_value=0
+    ) as mock_update:
         with patch.object(ingestion_service, "_update_tasks"):
             result = ingestion_service._ingest_single_file(
                 file_info,
@@ -127,7 +129,9 @@ def test_force_reingest_updates_ingested_at_timestamp(
     mock_session_context.__exit__ = MagicMock(return_value=None)
     ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
-    with patch.object(ingestion_service, "_update_document", return_value=0) as mock_update:
+    with patch.object(
+        ingestion_service, "_update_document", return_value=0
+    ) as mock_update:
         with patch.object(ingestion_service, "_update_tasks"):
             ingestion_service._ingest_single_file(
                 file_info,
@@ -165,7 +169,9 @@ def test_force_reingest_regenerates_embedding(
     mock_session_context.__exit__ = MagicMock(return_value=None)
     ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
-    with patch.object(ingestion_service, "_update_document", return_value=0) as mock_update:
+    with patch.object(
+        ingestion_service, "_update_document", return_value=0
+    ) as mock_update:
         with patch.object(ingestion_service, "_update_tasks"):
             ingestion_service._ingest_single_file(
                 file_info,
@@ -205,9 +211,7 @@ def test_force_false_preserves_unchanged_behavior(
     result = ingestion_service._ingest_single_file(
         file_info,
         vault_id=uuid.uuid4(),
-        vault_config=VaultConfig(
-            container_path="/test/vault", host_path="/test/vault"
-        ),
+        vault_config=VaultConfig(container_path="/test/vault", host_path="/test/vault"),
         force=False,
     )
 
@@ -272,9 +276,7 @@ def test_force_does_not_affect_dry_run(
     result = ingestion_service._ingest_single_file(
         file_info,
         vault_id=uuid.uuid4(),
-        vault_config=VaultConfig(
-            container_path="/test/vault", host_path="/test/vault"
-        ),
+        vault_config=VaultConfig(container_path="/test/vault", host_path="/test/vault"),
         dry_run=True,
         force=True,
     )
@@ -297,9 +299,7 @@ def test_ingest_vault_with_force_processes_all_files(
         ),
     ]
 
-    vault_config = VaultConfig(
-        container_path="/test/vault", host_path="/test/vault"
-    )
+    vault_config = VaultConfig(container_path="/test/vault", host_path="/test/vault")
     vault_id = uuid.uuid4()
 
     existing = MagicMock()
@@ -352,9 +352,7 @@ def test_ingest_vault_without_force_skips_unchanged(
         ),
     ]
 
-    vault_config = VaultConfig(
-        container_path="/test/vault", host_path="/test/vault"
-    )
+    vault_config = VaultConfig(container_path="/test/vault", host_path="/test/vault")
     vault_id = uuid.uuid4()
 
     existing = MagicMock()
@@ -408,7 +406,9 @@ def test_force_with_different_checksum_still_updates(
     mock_session_context.__exit__ = MagicMock(return_value=None)
     ingestion_service.db_manager.get_session.return_value = mock_session_context  # type: ignore[attr-defined]
 
-    with patch.object(ingestion_service, "_update_document", return_value=0) as mock_update:
+    with patch.object(
+        ingestion_service, "_update_document", return_value=0
+    ) as mock_update:
         with patch.object(ingestion_service, "_update_tasks"):
             result = ingestion_service._ingest_single_file(
                 file_info,
@@ -438,9 +438,7 @@ def test_force_with_no_delete(
         ),
     ]
 
-    vault_config = VaultConfig(
-        container_path="/test/vault", host_path="/test/vault"
-    )
+    vault_config = VaultConfig(container_path="/test/vault", host_path="/test/vault")
     vault_id = uuid.uuid4()
 
     existing = MagicMock()

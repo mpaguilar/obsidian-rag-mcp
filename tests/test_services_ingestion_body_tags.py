@@ -131,7 +131,11 @@ def _added_documents(session: MagicMock) -> list[Document]:
         List of Document objects added during ingestion.
 
     """
-    return [call.args[0] for call in session.add.call_args_list if isinstance(call.args[0], Document)]
+    return [
+        call.args[0]
+        for call in session.add.call_args_list
+        if isinstance(call.args[0], Document)
+    ]
 
 
 def _added_tasks(session: MagicMock) -> list[Task]:
@@ -144,7 +148,11 @@ def _added_tasks(session: MagicMock) -> list[Task]:
         List of Task objects added during ingestion.
 
     """
-    return [call.args[0] for call in session.add.call_args_list if isinstance(call.args[0], Task)]
+    return [
+        call.args[0]
+        for call in session.add.call_args_list
+        if isinstance(call.args[0], Task)
+    ]
 
 
 def _run_new_ingest(
@@ -180,9 +188,13 @@ def _run_new_ingest(
 
     with patch("obsidian_rag.services.ingestion.parse_frontmatter") as mock_fm:
         mock_fm.return_value = (frontmatter_tags, {}, body)
-        with patch("obsidian_rag.services.ingestion.parse_tasks_from_content") as mock_pt:
+        with patch(
+            "obsidian_rag.services.ingestion.parse_tasks_from_content"
+        ) as mock_pt:
             mock_pt.return_value = parsed_tasks
-            with patch("obsidian_rag.services.ingestion.should_chunk_document") as mock_sc:
+            with patch(
+                "obsidian_rag.services.ingestion.should_chunk_document"
+            ) as mock_sc:
                 mock_sc.return_value = False
                 service._ingest_single_file(
                     file_info,
@@ -343,9 +355,13 @@ def test_ingest_single_file_update_path_merges_body_tags(
 
     with patch("obsidian_rag.services.ingestion.parse_frontmatter") as mock_fm:
         mock_fm.return_value = (["updated"], {}, body)
-        with patch("obsidian_rag.services.ingestion.parse_tasks_from_content") as mock_pt:
+        with patch(
+            "obsidian_rag.services.ingestion.parse_tasks_from_content"
+        ) as mock_pt:
             mock_pt.return_value = [(1, _make_task("inline"))]
-            with patch("obsidian_rag.services.ingestion.should_chunk_document") as mock_sc:
+            with patch(
+                "obsidian_rag.services.ingestion.should_chunk_document"
+            ) as mock_sc:
                 mock_sc.return_value = False
                 result, _chunks, _is_empty = ingestion_service._ingest_single_file(
                     file_info,

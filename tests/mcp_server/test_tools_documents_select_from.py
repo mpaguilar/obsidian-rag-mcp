@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock
 
 
-
 class TestExtractTagsPostgresqlSubquery:
     """Tests for _extract_tags_postgresql subquery approach."""
 

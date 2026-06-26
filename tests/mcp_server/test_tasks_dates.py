@@ -3,7 +3,6 @@
 from datetime import date
 from unittest.mock import patch
 
-import pytest
 
 from obsidian_rag.mcp_server.tools.tasks_dates import parse_iso_date
 

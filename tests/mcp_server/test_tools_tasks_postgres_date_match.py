@@ -7,7 +7,6 @@ match_mode.
 from datetime import date
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from obsidian_rag.mcp_server.models import TaskResponse
 from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams

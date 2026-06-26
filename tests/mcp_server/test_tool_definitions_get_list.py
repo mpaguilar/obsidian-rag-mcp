@@ -1,4 +1,5 @@
 """Tests for get_document_tool and list_documents_tool in tool_definitions.py."""
+
 from unittest.mock import Mock, patch
 
 from obsidian_rag.mcp_server.tool_definitions import (

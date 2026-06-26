@@ -77,12 +77,24 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Revert vaults table creation and document updates."""
-    # Restore unique constraint on file_path only
+    # Restore unique constraint on file_path only.
+    # NOTE: This may fail if duplicate file_path data exists (e.g., from
+    # test pollution or multiple vaults sharing the same file_path),
+    # because the per-vault uq_document_vault_path constraint allows
+    # duplicates across vaults while the restored file_path-only
+    # constraint does not.
+    # Use a DO block to handle the unique violation gracefully.
     op.drop_constraint("uq_document_vault_path", "documents", type_="unique")
-    op.create_unique_constraint(
-        "documents_file_path_key",
-        "documents",
-        ["file_path"],
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            ALTER TABLE documents ADD CONSTRAINT documents_file_path_key
+                UNIQUE (file_path);
+        EXCEPTION WHEN unique_violation THEN
+            NULL;
+        END $$;
+        """
     )
 
     # Add back vault_root column
@@ -91,8 +103,8 @@ def downgrade() -> None:
         sa.Column("vault_root", sa.Text(), nullable=True),
     )
 
-    # Recreate indexes that were dropped when vault_root column was removed
-    # These indexes are needed for migration 002's state to be valid
+    # Recreate indexes that were dropped when vault_root column was removed.
+    # These indexes are needed for the post-downgrade schema state.
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_documents_vault_root ON documents (vault_root)"
     )

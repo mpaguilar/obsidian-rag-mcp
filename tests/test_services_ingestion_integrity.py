@@ -78,7 +78,7 @@ class _FakeDbError(Exception):
 
         """
         super().__init__(
-            f"duplicate key value violates unique constraint \"{constraint_name}\""
+            f'duplicate key value violates unique constraint "{constraint_name}"'
         )
 
 
@@ -546,9 +546,7 @@ def test_ingest_single_file_update_path_updates_ingested_at(
                 "obsidian_rag.services.ingestion.should_chunk_document",
                 return_value=False,
             ):
-                with patch(
-                    "obsidian_rag.services.ingestion.datetime"
-                ) as mock_dt:
+                with patch("obsidian_rag.services.ingestion.datetime") as mock_dt:
                     mock_dt.now.return_value = expected_time
                     mock_dt.UTC = UTC
 
@@ -610,9 +608,7 @@ def test_ingest_single_file_integrity_recovery_updates_ingested_at(
                     "_create_document",
                     return_value=(MagicMock(), 0),
                 ):
-                    with patch(
-                        "obsidian_rag.services.ingestion.datetime"
-                    ) as mock_dt:
+                    with patch("obsidian_rag.services.ingestion.datetime") as mock_dt:
                         mock_dt.now.return_value = expected_time
                         mock_dt.UTC = UTC
 
@@ -732,9 +728,7 @@ def test_ingest_single_file_diagnostic_log_uses_exact_values(
 
     # Find the exact log message
     diagnostic_records = [
-        record
-        for record in caplog.records
-        if "Looking up document:" in record.message
+        record for record in caplog.records if "Looking up document:" in record.message
     ]
     assert len(diagnostic_records) == 1
     log_message = diagnostic_records[0].message

@@ -32,19 +32,16 @@ class RerankerProtocol(Protocol):
         """Rerank passages based on query.
 
         Args:
-            request: RerankRequest object containing query and passages.
+            request: RankRequest object containing query and passages.
 
         Returns:
             List of reranked results with scores.
 
         """
-        ...  # noqa: PIE790  # pragma: no cover
 
 
 class RerankError(Exception):
     """Exception raised for re-ranking errors."""
-
-    pass  # noqa: PIE790
 
 
 @dataclass

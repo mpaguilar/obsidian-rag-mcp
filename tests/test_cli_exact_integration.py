@@ -1,4 +1,5 @@
 """End-to-end integration tests for CLI --exact document retrieval."""
+
 from unittest.mock import Mock, patch
 
 from click.testing import CliRunner
@@ -25,9 +26,9 @@ class TestCLIExactPathLookup:
         mock_get_doc.return_value = mock_doc
 
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "query", "--exact", "--vault", "Personal", "--path", "notes.md"
-        ])
+        result = runner.invoke(
+            cli, ["query", "--exact", "--vault", "Personal", "--path", "notes.md"]
+        )
         assert result.exit_code == 0
         mock_get_doc.assert_called_once()
         call_kwargs = mock_get_doc.call_args.kwargs
@@ -51,9 +52,7 @@ class TestCLIExactPathLookup:
         mock_list_docs.return_value = mock_result
 
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "query", "--exact", "--name", "notes.md"
-        ])
+        result = runner.invoke(cli, ["query", "--exact", "--name", "notes.md"])
         assert result.exit_code == 0
         mock_list_docs.assert_called_once()
         call_kwargs = mock_list_docs.call_args.kwargs
@@ -75,9 +74,7 @@ class TestCLIExactPathLookup:
         mock_get_doc.return_value = mock_doc
 
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "query", "--exact", "--id", "abc-123"
-        ])
+        result = runner.invoke(cli, ["query", "--exact", "--id", "abc-123"])
         assert result.exit_code == 0
         mock_get_doc.assert_called_once()
         call_kwargs = mock_get_doc.call_args.kwargs
@@ -86,18 +83,14 @@ class TestCLIExactPathLookup:
     def test_cli_exact_path_without_vault(self):
         """Click error requires --vault."""
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "query", "--exact", "--path", "notes.md"
-        ])
+        result = runner.invoke(cli, ["query", "--exact", "--path", "notes.md"])
         assert result.exit_code != 0
         assert "--vault" in result.output or "--vault" in str(result.exception)
 
     def test_cli_exact_with_query_text(self):
         """Click error when --exact with query_text."""
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "query", "--exact", "search text"
-        ])
+        result = runner.invoke(cli, ["query", "--exact", "search text"])
         assert result.exit_code != 0
         assert "Cannot use" in result.output or "Cannot use" in str(result.exception)
 
@@ -106,7 +99,9 @@ class TestCLIExactPathLookup:
         runner = CliRunner()
         result = runner.invoke(cli, ["query", "--exact"])
         assert result.exit_code != 0
-        assert "Must provide" in result.output or "Must provide" in str(result.exception)
+        assert "Must provide" in result.output or "Must provide" in str(
+            result.exception
+        )
 
     def test_cli_semantic_search_still_works(self):
         """query search text unchanged."""
@@ -129,9 +124,9 @@ class TestCLIExactPathLookup:
         mock_list_docs.return_value = mock_result
 
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "query", "--exact", "--name", "notes.md", "--format", "json"
-        ])
+        result = runner.invoke(
+            cli, ["query", "--exact", "--name", "notes.md", "--format", "json"]
+        )
         assert result.exit_code == 0
         assert '"documents"' in result.output
 
@@ -152,9 +147,9 @@ class TestCLIExactPathLookup:
         mock_list_docs.return_value = mock_result
 
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "query", "--exact", "--vault", "Personal", "--name", "notes.md"
-        ])
+        result = runner.invoke(
+            cli, ["query", "--exact", "--vault", "Personal", "--name", "notes.md"]
+        )
         assert result.exit_code == 0
         mock_list_docs.assert_called_once()
         call_kwargs = mock_list_docs.call_args.kwargs
@@ -174,9 +169,9 @@ class TestCLIExactPathLookup:
         mock_get_doc.side_effect = ValueError("Document not found")
 
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "query", "--exact", "--vault", "Personal", "--path", "missing.md"
-        ])
+        result = runner.invoke(
+            cli, ["query", "--exact", "--vault", "Personal", "--path", "missing.md"]
+        )
         assert result.exit_code == 1
         assert "not found" in result.output or "Error" in result.output
 

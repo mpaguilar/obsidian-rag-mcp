@@ -604,9 +604,14 @@ def get_document(
     if document_id is not None:
         document = _lookup_document_by_id(session, document_id)
     else:
-        # vault_name and file_path are guaranteed non-None by validation
-        assert vault_name is not None  # Type narrowing for mypy
-        assert file_path is not None  # Type narrowing for mypy
+        if vault_name is None:
+            _msg = "vault_name is None despite validation guarantee"
+            log.error(_msg)
+            raise RuntimeError(_msg)
+        if file_path is None:
+            _msg = "file_path is None despite validation guarantee"
+            log.error(_msg)
+            raise RuntimeError(_msg)
         document = _lookup_document_by_vault_path(session, vault_name, file_path)
 
     _msg = "get_document returning"

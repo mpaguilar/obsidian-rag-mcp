@@ -253,8 +253,10 @@ def query(
             output_format=output_format,
         )
     else:
-        # query_text is guaranteed non-None by _validate_exact_query_params
-        assert query_text is not None  # Type narrowing for mypy
+        if query_text is None:
+            _msg = "query_text is None despite validation guarantee"
+            log.error(_msg)
+            raise RuntimeError(_msg)
         _run_query_command(
             ctx=click.get_current_context(),
             query_text=query_text,

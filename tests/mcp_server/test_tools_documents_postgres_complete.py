@@ -728,7 +728,6 @@ class TestQueryDocumentsPostgresPath:
         )
 
         mock_session = create_mock_session()
-        mock_doc = create_mock_document()
 
         with patch(
             "obsidian_rag.mcp_server.tools.documents.query_documents_postgresql"
@@ -918,6 +917,3 @@ class TestGetAllTagsPostgresPath:
             mock_extract.assert_called_once_with(mock_session, None)
             assert result.total_count == 3
             assert result.tags == ["work", "personal", "ideas"]
-
-
-

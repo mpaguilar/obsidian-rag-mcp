@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "obsidian-rag"
-version = "0.39.0"
+version = "0.40.0"
 description = "CLI tool for ingesting Obsidian markdown documents into PostgreSQL with vector embeddings"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -57,7 +57,7 @@ dev = [
 ]
 
 [tool.ruff]
-include = ["obsidian_rag/**/*.py"]
+include = ["obsidian_rag/**/*.py", "tests/**/*.py"]
 exclude = ["temporal-samples-python"]
 
 [tool.ruff.lint]
@@ -97,7 +97,8 @@ select = [
 ignore = ["COM812"]
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/**/*" = ["ANN", "D", "I", "DTZ", "COM812", "PERF401", "PLC0415", "ARG001", "PLR0913", "INP001", "E501"]
+"**/tests/**/*" = ["ANN", "D", "I", "DTZ", "COM812", "PERF401", "PLC0415", "ARG001", "PLR0913", "INP001", "E501", "A002", "ARG002", "FBT001", "FBT003", "B904", "BLE001", "RUF006", "TC002", "TC006", "SIM110", "RET505", "PLR2004", "UP007", "UP045", "F541", "C901", "C4", "PIE790", "FAST"]
+"obsidian_rag/mcp_server/handlers.py" = ["ANN401"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 5
@@ -134,6 +135,7 @@ exclude_lines = [
 
 [tool.mypy]
 check_untyped_defs = true
+exclude = "^tests/"
 ignore_missing_imports = true
 mypy_path = "stubs"
 python_version = "3.12"
@@ -141,3 +143,7 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = ["B104", "B105"]

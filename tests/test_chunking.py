@@ -57,8 +57,6 @@ from obsidian_rag.chunking import (
     split_into_chunks,
 )
 
-import pytest
-
 
 # Store the original module for cleanup
 _original_tokenizer_module = sys.modules.get("obsidian_rag.tokenizer")

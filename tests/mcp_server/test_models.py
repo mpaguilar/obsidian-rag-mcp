@@ -4,7 +4,6 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-import pytest
 
 from obsidian_rag.mcp_server.models import (
     DocumentListResponse,

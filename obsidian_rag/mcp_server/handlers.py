@@ -38,7 +38,7 @@ from obsidian_rag.services.ingestion import IngestionService, IngestVaultOptions
 log = logging.getLogger(__name__)
 
 
-def parse_json_str(value: Any) -> Any:  # noqa: ANN401
+def parse_json_str(value: Any) -> Any:
     """Parse JSON string to dict, or pass through other values unchanged.
 
     This helper function is used with Pydantic's BeforeValidator to handle

@@ -26,8 +26,6 @@ _tokenizer_cache: dict[str, "Tokenizer"] = {}
 class TokenizerError(Exception):
     """Exception raised for tokenizer-related errors."""
 
-    pass  # noqa: PIE790
-
 
 @dataclass
 class TokenizerConfig:
@@ -102,6 +100,8 @@ def get_tokenizer(model_name: str) -> "Tokenizer | None":
         _msg = f"Tokenizer not cached, initializing: {model_name}"
         log.debug(_msg)
         tokenizer = initialize_tokenizer(model_name)
+        # Defensive fallback: initialize_tokenizer can return None if model loading fails.
+        # This prevents caching None values.
         if tokenizer is not None:  # pragma: no cover
             _tokenizer_cache[cache_key] = tokenizer
 

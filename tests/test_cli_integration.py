@@ -1,8 +1,6 @@
 """Integration tests for CLI date filtering."""
 
-import uuid
 from datetime import date
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

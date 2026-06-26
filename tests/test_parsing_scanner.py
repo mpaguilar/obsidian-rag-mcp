@@ -8,7 +8,6 @@ from unittest.mock import Mock, patch
 import pytest
 
 from obsidian_rag.parsing.scanner import (
-    FileInfo,
     FileScanError,
     calculate_checksum,
     process_files_in_batches,

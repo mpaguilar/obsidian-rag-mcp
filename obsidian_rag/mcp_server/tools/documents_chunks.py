@@ -175,6 +175,8 @@ def rerank_chunk_results(
     results = []
     for rr in rerank_results:
         original = chunk_map.get(rr.chunk_id)
+        # Defensive fallback: rerank_results come from the same chunks list,
+        # but this guards against chunk_id mismatches in edge cases.
         if original:  # pragma: no cover
             results.append(
                 ChunkQueryResult(

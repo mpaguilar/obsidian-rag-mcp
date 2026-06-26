@@ -1,7 +1,6 @@
 """Integration tests for MCP server."""
 
 import pytest
-from fastmcp import Client
 
 
 @pytest.mark.integration

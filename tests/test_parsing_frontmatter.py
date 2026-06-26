@@ -1,7 +1,5 @@
 """Tests for FrontMatter parsing module."""
 
-import pytest
-
 from datetime import date, datetime
 
 from obsidian_rag.parsing.frontmatter import (

@@ -3,10 +3,9 @@
 Tests for ArrayType with PostgreSQL dialect and pgvector extension creation.
 """
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import dialect as pg_dialect
 
 from obsidian_rag.database.models import ArrayType
@@ -28,7 +27,6 @@ class TestArrayTypePostgresql:
 
     def test_array_type_load_dialect_impl_postgresql_element_type(self):
         """Test ArrayType PostgreSQL dialect returns Text array."""
-        from sqlalchemy import Text
         from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 
         array_type = ArrayType()

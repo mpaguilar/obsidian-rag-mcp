@@ -211,7 +211,13 @@ This approach eliminates `@overload` decorators while maintaining precise return
 
 ### 5. Configuration (`config.py`)
 
-Layered configuration system:
+Layered configuration system. The implementation is split across several modules to keep individual files under the 1000-line limit, while `config.py` remains the public entry point that re-exports all classes and helpers.
+
+**Module decomposition:**
+- `config_env.py`: Environment variable interpolation utilities (`_interpolate_env_vars`, homomorphic `T` TypeVar)
+- `config_models.py`: Pydantic model classes for each configuration section (`EndpointConfig`, `DatabaseConfig`, `ChunkingConfig`, `IngestionConfig`, `LoggingConfig`, `MCPConfig`, `VaultConfig`)
+- `config_validators.py`: Standalone validation helpers used by `Settings` and model validators (dimension limits, vault name validation, endpoint merging)
+- `config.py`: Public entry point; re-exports all model classes and helpers, defines `DEFAULT_CONFIG`, and implements the `Settings` class with layered precedence
 
 **Sources (highest to lowest precedence):**
 1. CLI flags: `--<section>-<key>` format

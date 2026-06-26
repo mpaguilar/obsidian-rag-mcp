@@ -38,6 +38,17 @@
 * **`Any` type restrictions**: Only use `Any` for arguments and parameters that can truly accept any type, or when required by a third-party library interface. **Never** use `Any` as a shortcut to avoid proper typing—use specific types, `Union`, `Optional`, or `object` instead.
 * Use named arguments when calling functions when possible.
 
+## Accepted typing.Any exception
+
+`obsidian_rag/mcp_server/handlers.py:parse_json_str(value: Any) -> Any` is the
+ONLY accepted bare-`typing.Any` annotation in the source. It is a polymorphic
+Pydantic `BeforeValidator` pass-through (str→dict|None, dict→dict, None→None),
+and its return is assigned back to `QueryFilterParams | None` /
+`GetTasksToolInput | None` at `server.py:174,251,529`. The CONVENTIONS-endorsed
+alternative `object` breaks mypy at those call sites. The exception is enforced
+via ruff `per-file-ignores` (`obsidian_rag/mcp_server/handlers.py = ["ANN401"]`)
+rather than an inline `# noqa`. No other bare-`Any` annotation is permitted.
+
 # General formatting
 * use double-quotes for strings
 * all functions should have a docstring describing:

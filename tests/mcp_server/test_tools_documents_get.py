@@ -343,8 +343,7 @@ class TestGetDocumentPriority:
         assert result == mock_response.return_value
         # Verify that Vault query was NOT called (document_id path used)
         vault_query_calls = [
-            call for call in mock_session.query.call_args_list
-            if call[0][0] is Vault
+            call for call in mock_session.query.call_args_list if call[0][0] is Vault
         ]
         assert len(vault_query_calls) == 0
 

@@ -2,7 +2,6 @@
 
 from unittest.mock import Mock, patch
 
-import pytest
 
 from obsidian_rag.mcp_server.tools.documents import query_documents
 from obsidian_rag.mcp_server.tools.documents_chunks import ChunkQueryResult
@@ -17,7 +16,7 @@ class TestQueryDocumentsChunkOption:
         mock_session = Mock()
         mock_postgres_query.return_value = Mock(results=[], total_count=0)
 
-        result = query_documents(
+        query_documents(
             mock_session,
             [0.1] * 1536,
             use_chunks=False,  # Explicit
@@ -140,7 +139,7 @@ class TestQueryDocumentsChunkOption:
 
         from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
 
-        result = query_documents(
+        query_documents(
             mock_session,
             [0.1] * 1536,
             use_chunks=True,
@@ -177,7 +176,7 @@ class TestQueryDocumentsChunkOption:
         ]
         mock_query_chunks.return_value = chunk_results
 
-        result = query_documents(
+        query_documents(
             mock_session,
             [0.1] * 1536,
             use_chunks=True,

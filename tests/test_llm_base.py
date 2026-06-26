@@ -178,7 +178,6 @@ class TestProviderFactory:
 
     def test_create_openai_embedding_provider(self):
         """Test creating OpenAI embedding provider covers lines 119-122."""
-        from obsidian_rag.llm.providers import OpenAIEmbeddingProvider
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(
@@ -195,7 +194,6 @@ class TestProviderFactory:
 
     def test_create_openai_chat_provider(self):
         """Test creating OpenAI chat provider covers lines 166-169."""
-        from obsidian_rag.llm.providers import OpenAIChatProvider
 
         with patch("obsidian_rag.llm.providers.log"):
             with patch(

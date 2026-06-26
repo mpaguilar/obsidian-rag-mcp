@@ -5,7 +5,6 @@ This module tests PostgreSQL-specific code paths in tasks.py.
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from obsidian_rag.mcp_server.models import TaskResponse
 from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams

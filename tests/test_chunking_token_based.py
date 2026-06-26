@@ -2,10 +2,8 @@
 
 from unittest.mock import Mock, patch
 
-import pytest
 
 from obsidian_rag.chunking import (
-    Chunk,
     ChunkType,
     TokenChunk,
     chunk_document,

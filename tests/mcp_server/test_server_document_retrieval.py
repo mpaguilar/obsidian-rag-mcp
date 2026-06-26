@@ -1,4 +1,5 @@
 """End-to-end integration tests for document retrieval MCP tools."""
+
 from unittest.mock import Mock, patch
 
 import uuid as uuid_module
@@ -55,7 +56,10 @@ class TestGetDocumentMCPTool:
     def test_get_document_mcp_tool_no_params(self, mock_tool, mock_registry):
         """Returns error dict."""
         mock_registry.return_value.db_manager = Mock()
-        mock_tool.return_value = {"success": False, "error": "Must provide either document_id, or vault_name and file_path"}
+        mock_tool.return_value = {
+            "success": False,
+            "error": "Must provide either document_id, or vault_name and file_path",
+        }
         result = get_document()
         assert result["success"] is False
         assert "error" in result
@@ -65,7 +69,10 @@ class TestGetDocumentMCPTool:
     def test_get_document_mcp_tool_path_without_vault(self, mock_tool, mock_registry):
         """Returns error dict."""
         mock_registry.return_value.db_manager = Mock()
-        mock_tool.return_value = {"success": False, "error": "vault_name is required when using file_path"}
+        mock_tool.return_value = {
+            "success": False,
+            "error": "vault_name is required when using file_path",
+        }
         result = get_document(file_path="notes.md")
         assert result["success"] is False
         assert "vault_name" in result["error"]
@@ -123,7 +130,10 @@ class TestListDocumentsMCPTool:
     def test_list_documents_mcp_tool_no_name(self, mock_tool, mock_registry):
         """Returns error dict."""
         mock_registry.return_value.db_manager = Mock()
-        mock_tool.return_value = {"success": False, "error": "Must provide at least file_name"}
+        mock_tool.return_value = {
+            "success": False,
+            "error": "Must provide at least file_name",
+        }
         result = list_documents()
         assert result["success"] is False
         assert "file_name" in result["error"]

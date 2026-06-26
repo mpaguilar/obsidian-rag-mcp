@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from tests.utils.mock_helpers import (
     configure_mock_query_chain,

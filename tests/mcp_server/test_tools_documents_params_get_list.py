@@ -1,4 +1,5 @@
 """Tests for GetDocumentParams and ListDocumentsParams dataclasses."""
+
 from obsidian_rag.mcp_server.tools.documents_params import (
     GetDocumentParams,
     ListDocumentsParams,

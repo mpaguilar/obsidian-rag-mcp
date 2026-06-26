@@ -373,6 +373,8 @@ def split_into_token_chunks(
             content, start_pos, content_len, chunk_index, config, tokenizer
         )
         if result is None:
+            # Defensive fallback: _process_single_chunk should always return a chunk
+            # for valid content, but this prevents infinite loops on empty content.
             break  # pragma: no cover
         chunk, actual_end = result
         chunks.append(chunk)

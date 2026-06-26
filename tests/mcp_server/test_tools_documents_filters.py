@@ -3,7 +3,7 @@
 Tests for property filtering utilities in documents_filters.py.
 """
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -22,7 +22,6 @@ from obsidian_rag.mcp_server.tools.documents_filters import (
     check_regex,
     check_starts_with,
     get_jsonb_path_expression,
-    get_nested_value,
     matches_property_filter,
     validate_property_filter,
     validate_property_path,
@@ -407,7 +406,6 @@ class TestKindFiltering:
 
     def test_filter_by_kind_equals(self):
         """Test filtering documents by kind with equals operator."""
-        from datetime import datetime
 
         from obsidian_rag.mcp_server.models import PropertyFilter
         from obsidian_rag.mcp_server.tools.documents_filters import (

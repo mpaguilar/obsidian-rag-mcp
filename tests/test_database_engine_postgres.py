@@ -3,8 +3,6 @@
 Tests for _normalize_postgres_url function that converts postgres:// to postgresql+psycopg://.
 """
 
-import pytest
-
 from obsidian_rag.database.engine import _normalize_postgres_url
 
 

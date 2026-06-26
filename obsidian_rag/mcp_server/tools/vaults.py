@@ -172,6 +172,23 @@ def _count_vault_documents(session: "Session", vault_id: uuid.UUID) -> int:
     return count or 0
 
 
+def _validate_get_vault_params(name: str | None, vault_id: str | None) -> None:
+    """Validate that at least one lookup criteria is provided.
+
+    Args:
+        name: Vault name to lookup.
+        vault_id: Vault UUID string to lookup.
+
+    Raises:
+        ValueError: If neither name nor vault_id is provided.
+
+    """
+    if name is None and vault_id is None:
+        _error_msg = "Must provide name or vault_id"
+        log.error(_error_msg)
+        raise ValueError(_error_msg)
+
+
 def get_vault(
     session: "Session",
     *,
@@ -197,10 +214,7 @@ def get_vault(
     log.debug(_msg)
 
     # Validate that at least one lookup criteria is provided
-    if name is None and vault_id is None:
-        _error_msg = "Must provide name or vault_id"
-        log.error(_error_msg)
-        raise ValueError(_error_msg)
+    _validate_get_vault_params(name, vault_id)
 
     vault: Vault | None = None
 
@@ -210,7 +224,10 @@ def get_vault(
         lookup_key = name
     else:
         # vault_id is not None here (checked above)
-        assert vault_id is not None  # Type narrowing for mypy
+        if vault_id is None:
+            _msg = "vault_id is None despite validation guarantee"
+            log.error(_msg)
+            raise RuntimeError(_msg)
         try:
             vault_uuid = uuid.UUID(vault_id)
         except (ValueError, TypeError) as err:
@@ -406,7 +423,10 @@ def _apply_vault_updates(
         log.warning(_warning_msg)
         _delete_vault_documents(session, vault_id=vault.id)
         # params.container_path is not None when _is_container_path_changing is True
-        assert params.container_path is not None  # Type narrowing for mypy
+        if params.container_path is None:
+            _msg = "params.container_path is None despite validation guarantee"
+            log.error(_msg)
+            raise RuntimeError(_msg)
         vault.container_path = params.container_path
 
     # Update other fields (partial update)
