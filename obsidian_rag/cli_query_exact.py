@@ -35,8 +35,31 @@ def _display_single_document(document: DocumentResponse) -> None:
     click.echo(f"Vault: {document.vault_name}")
     click.echo(f"Path: {document.file_path}")
     click.echo(f"Tags: {', '.join(document.tags) if document.tags else 'none'}")
+    if document.properties:
+        click.echo("Properties:")
+        for key, value in document.properties.items():
+            click.echo(f"  {key}: {value}")
     click.echo()
     click.echo(document.content)
+
+
+def _display_document_item(doc: DocumentResponse) -> None:
+    """Display a single document item in a list.
+
+    Args:
+        doc: Document response to display.
+
+    """
+    click.echo(f"File: {doc.file_name}")
+    click.echo(f"Path: {doc.file_path}")
+    click.echo(f"Vault: {doc.vault_name}")
+    if doc.tags:
+        click.echo(f"Tags: {', '.join(doc.tags)}")
+    if doc.properties:
+        click.echo("Properties:")
+        for key, value in doc.properties.items():
+            click.echo(f"  {key}: {value}")
+    click.echo("")
 
 
 def _display_document_list(documents: DocumentListResponse) -> None:
@@ -52,12 +75,7 @@ def _display_document_list(documents: DocumentListResponse) -> None:
 
     click.echo(f"Found {documents.total_count} results:\n")
     for doc in documents.results:
-        click.echo(f"File: {doc.file_name}")
-        click.echo(f"Path: {doc.file_path}")
-        click.echo(f"Vault: {doc.vault_name}")
-        if doc.tags:
-            click.echo(f"Tags: {', '.join(doc.tags)}")
-        click.echo("")
+        _display_document_item(doc)
 
 
 def _execute_get_document_lookup(

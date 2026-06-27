@@ -92,6 +92,7 @@ class DocumentTagParams(TypedDict, total=False):
     vault_name: str | None
     limit: int
     offset: int
+    include_content: bool
 
 
 @dataclass
@@ -161,6 +162,7 @@ def _get_documents_by_tag_handler(
             vault_name=params.get("vault_name"),
             limit=params.get("limit", 20),
             offset=params.get("offset", 0),
+            include_content=params.get("include_content", True),
         )
         _msg = "_get_documents_by_tag_handler returning"
         log.debug(_msg)
@@ -447,6 +449,8 @@ class GetTasksToolInput:
             "personal/expenses" instead of "#personal/expenses".
         date_filters: Date filter parameters with ISO date strings and match mode.
         priority: List of priorities to filter by.
+        include_content: Whether to include the parent document's content in each
+            task response.
         limit: Maximum number of results.
         offset: Number of results to skip.
 
@@ -456,6 +460,7 @@ class GetTasksToolInput:
     tag_filters: "TagFilterStrings | None" = None
     date_filters: "TaskDateFilterStrings | None" = None
     priority: list[str] | None = None
+    include_content: bool = True
     limit: int = 20
     offset: int = 0
 
@@ -558,6 +563,7 @@ def _get_tasks_handler(
         tag_match_mode=tag_filters.match_mode,
         priority=request.priority,
         date_match_mode=date_filters.match_mode,
+        include_content=request.include_content,
         limit=request.limit,
         offset=request.offset,
     )
@@ -700,12 +706,14 @@ class GetDocumentHandlerParams:
         vault_name: Vault name (required when using file_path).
         file_path: Relative file path from vault root.
         document_id: Document UUID string.
+        include_content: Whether to include document content in the response.
     """
 
     db_manager: DatabaseManager
     vault_name: str | None = None
     file_path: str | None = None
     document_id: str | None = None
+    include_content: bool = True
 
 
 @dataclass
@@ -718,6 +726,7 @@ class ListDocumentsHandlerParams:
         vault_name: Optional vault name to scope results.
         limit: Maximum number of results.
         offset: Number of results to skip.
+        include_content: Whether to include document content in each result.
     """
 
     db_manager: DatabaseManager
@@ -725,6 +734,7 @@ class ListDocumentsHandlerParams:
     vault_name: str | None = None
     limit: int = 20
     offset: int = 0
+    include_content: bool = True
 
 
 def _get_document_handler(params: GetDocumentHandlerParams) -> dict[str, object]:
@@ -754,6 +764,7 @@ def _get_document_handler(params: GetDocumentHandlerParams) -> dict[str, object]
                 vault_name=params.vault_name,
                 file_path=params.file_path,
                 document_id=params.document_id,
+                include_content=params.include_content,
             )
             _msg = "_get_document_handler returning"
             log.debug(_msg)
@@ -792,6 +803,7 @@ def _list_documents_handler(params: ListDocumentsHandlerParams) -> dict[str, obj
                 vault_name=params.vault_name,
                 limit=params.limit,
                 offset=params.offset,
+                include_content=params.include_content,
             )
             _msg = "_list_documents_handler returning"
             log.debug(_msg)

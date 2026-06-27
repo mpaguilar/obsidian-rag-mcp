@@ -171,7 +171,13 @@ def query_documents_postgresql(params: DocumentQueryParams) -> DocumentListRespo
     for row in results:
         doc = _extract_document_from_row(row)
         distance = _extract_distance_from_row(row)
-        document_responses.append(create_document_response(doc, distance))
+        document_responses.append(
+            create_document_response(
+                doc,
+                distance,
+                include_content=pagination.include_content,
+            )
+        )
 
     has_more = (pagination.offset + pagination.limit) < total_count
     next_offset = pagination.offset + pagination.limit if has_more else None

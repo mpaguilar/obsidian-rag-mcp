@@ -353,6 +353,9 @@ def _format_query_results_json(results: list) -> str:
             "distance": float(dist),
             "kind": doc.frontmatter_json.get("kind") if doc.frontmatter_json else None,
             "tags": doc.tags,
+            "properties": {k: v for k, v in doc.frontmatter_json.items() if k != "tags"}
+            if doc.frontmatter_json
+            else None,
         }
         for doc, dist in results
     ]
@@ -360,6 +363,21 @@ def _format_query_results_json(results: list) -> str:
     _msg = "_format_query_results_json returning"
     log.debug(_msg)
     return result
+
+
+def _append_properties_lines(lines: list[str], frontmatter_json: dict | None) -> None:
+    """Append property lines from frontmatter_json to lines list.
+
+    Args:
+        lines: List of output lines to append to.
+        frontmatter_json: Document frontmatter dictionary or None.
+
+    """
+    if frontmatter_json:
+        props = {k: v for k, v in frontmatter_json.items() if k != "tags"}
+        if props:
+            for key, value in props.items():
+                lines.append(f"  {key}: {value}")
 
 
 def _format_query_results_table(results: list) -> str:
@@ -376,6 +394,7 @@ def _format_query_results_table(results: list) -> str:
             lines.append(f"Kind: {kind}")
         if doc.tags:
             lines.append(f"Tags: {', '.join(doc.tags)}")
+        _append_properties_lines(lines, doc.frontmatter_json)
         lines.append("")
     result = "\n".join(lines)
     _msg = "_format_query_results_table returning"

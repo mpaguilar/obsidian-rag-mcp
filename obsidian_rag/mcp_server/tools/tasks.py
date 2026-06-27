@@ -521,7 +521,10 @@ def get_tasks(
     results = query.offset(offset).limit(limit).all()
 
     # Convert to response models
-    task_responses = [create_task_response(task, doc) for task, doc in results]
+    task_responses = [
+        create_task_response(task, doc, include_content=filters.include_content)
+        for task, doc in results
+    ]
 
     # Calculate pagination
     has_more = (offset + limit) < total_count

@@ -86,7 +86,13 @@ class TestListDocumentsByFileName:
         result = list_documents(mock_session, file_name="work.md")
 
         assert result == mock_build.return_value
-        mock_build.assert_called_once_with([mock_doc], 1, 0, 20)
+        mock_build.assert_called_once_with(
+            [mock_doc],
+            1,
+            0,
+            20,
+            include_content=True,
+        )
         # Verify file_name filter was applied
         assert mock_query.filter.call_count >= 1
 
@@ -116,7 +122,13 @@ class TestListDocumentsByFileName:
         result = list_documents(mock_session, file_name="work.md")
 
         assert result == mock_build.return_value
-        mock_build.assert_called_once_with([mock_doc1, mock_doc2], 2, 0, 20)
+        mock_build.assert_called_once_with(
+            [mock_doc1, mock_doc2],
+            2,
+            0,
+            20,
+            include_content=True,
+        )
 
 
 class TestListDocumentsWithVaultScope:
@@ -152,7 +164,13 @@ class TestListDocumentsWithVaultScope:
         )
 
         assert result == mock_build.return_value
-        mock_build.assert_called_once_with([mock_doc], 1, 0, 20)
+        mock_build.assert_called_once_with(
+            [mock_doc],
+            1,
+            0,
+            20,
+            include_content=True,
+        )
         # Verify vault filter was applied (file_name + vault_id)
         _expected_filter_calls = 2
         assert mock_query.filter.call_count >= _expected_filter_calls
@@ -219,7 +237,7 @@ class TestListDocumentsNotFound:
         result = list_documents(mock_session, file_name="nonexistent.md")
 
         assert result == mock_build.return_value
-        mock_build.assert_called_once_with([], 0, 0, 20)
+        mock_build.assert_called_once_with([], 0, 0, 20, include_content=True)
 
 
 class TestListDocumentsPagination:
@@ -247,7 +265,7 @@ class TestListDocumentsPagination:
         )
 
         assert result == mock_build.return_value
-        mock_build.assert_called_once_with([mock_doc], 5, 2, 10)
+        mock_build.assert_called_once_with([mock_doc], 5, 2, 10, include_content=True)
         # Verify offset and limit were called
         mock_query.offset.assert_called_once_with(2)
         mock_query.limit.assert_called_once_with(10)
@@ -272,7 +290,7 @@ class TestListDocumentsSimilarityScore:
 
         list_documents(mock_session, file_name="work.md")
 
-        mock_build.assert_called_once_with([mock_doc], 1, 0, 20)
+        mock_build.assert_called_once_with([mock_doc], 1, 0, 20, include_content=True)
 
 
 class TestListDocumentsEagerLoad:
@@ -350,4 +368,4 @@ class TestListDocumentsLimitValidation:
 
         mock_validate.assert_called_once_with(150)
         # Note: _build_document_list_response uses the validated limit
-        mock_build.assert_called_once_with([mock_doc], 1, 0, 50)
+        mock_build.assert_called_once_with([mock_doc], 1, 0, 50, include_content=True)

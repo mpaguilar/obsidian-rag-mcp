@@ -20,11 +20,13 @@ class PaginationParams:
     Attributes:
         limit: Maximum number of results.
         offset: Number of results to skip.
+        include_content: Whether to include document content in responses.
 
     """
 
     limit: int
     offset: int
+    include_content: bool = True
 
 
 @dataclass
@@ -113,11 +115,13 @@ class GetDocumentParams:
         vault_name: Vault name (required when using file_path).
         file_path: Relative file path from vault root.
         document_id: Document UUID string (globally unique).
+        include_content: Whether to include document content in the response.
     """
 
     vault_name: str | None = None
     file_path: str | None = None
     document_id: str | None = None
+    include_content: bool = True
 
 
 @dataclass
@@ -129,9 +133,11 @@ class ListDocumentsParams:
         vault_name: Optional vault name to scope results.
         limit: Maximum number of results.
         offset: Number of results to skip.
+        include_content: Whether to include document content in responses.
     """
 
     file_name: str | None = None
     vault_name: str | None = None
     limit: int = 20
     offset: int = 0
+    include_content: bool = True

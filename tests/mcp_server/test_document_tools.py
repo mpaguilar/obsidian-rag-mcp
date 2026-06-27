@@ -30,6 +30,7 @@ class TestGetDocumentWrapper:
             vault_name=None,
             file_path=None,
             document_id=None,
+            include_content=True,
         )
         assert result == {"id": "doc-1", "vault_name": "Personal"}
 
@@ -51,6 +52,7 @@ class TestGetDocumentWrapper:
             vault_name="Personal",
             file_path="notes.md",
             document_id=None,
+            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.document_tools._get_registry")
@@ -71,6 +73,7 @@ class TestGetDocumentWrapper:
             vault_name=None,
             file_path=None,
             document_id="abc-123",
+            include_content=True,
         )
 
 
@@ -97,6 +100,7 @@ class TestListDocumentsWrapper:
             vault_name=None,
             limit=20,
             offset=0,
+            include_content=True,
         )
         assert result == {"documents": [], "total_count": 0}
 
@@ -119,6 +123,7 @@ class TestListDocumentsWrapper:
             vault_name=None,
             limit=20,
             offset=0,
+            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.document_tools._get_registry")
@@ -140,6 +145,7 @@ class TestListDocumentsWrapper:
             vault_name="Personal",
             limit=20,
             offset=0,
+            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.document_tools._get_registry")
@@ -161,4 +167,5 @@ class TestListDocumentsWrapper:
             vault_name=None,
             limit=10,
             offset=5,
+            include_content=True,
         )

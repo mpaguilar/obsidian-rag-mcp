@@ -174,6 +174,37 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 041.frontmatter-properties (Completed 2026-06-27)
+
+**Objective:** Add `properties` field to DocumentResponse and TaskResponse models (from frontmatter_json), and add `include_content` parameter to all document- and task-returning MCP tools.
+
+**Changes Made:**
+- **Batch 1:** Added `properties` and `include_content` to `DocumentResponse` and `TaskResponse` Pydantic models. Added `include_content` to `DocumentQueryParams`, `GetTasksFilterParams`, and handler dataclasses (`GetDocumentHandlerParams`, `ListDocumentsHandlerParams`, `GetTasksToolInput`).
+- **Batch 2:** Threaded `include_content` through `documents.py` (`query_documents`, `get_document`, `list_documents`), `documents_postgres.py` (`_extract_tags_postgresql`), `tasks.py` (`get_tasks`), and `handlers.py` (`_get_document_handler`, `_list_documents_handler`, `_get_tasks_handler`).
+- **Batch 3:** Added `include_content` to MCP tool wrappers in `server.py`, `tool_definitions.py`, and `document_tools.py`. Updated all tool docstrings to document the new parameter. Fixed `get_tasks` parameter propagation to pass `include_content` correctly.
+- **Batch 4:** Updated CLI query/exact output to display `properties` alongside tags. Added integration tests verifying backward compatibility (default `include_content=True` preserves full content) and new behavior (omitted content with `include_content=False`).
+- **Batch 5:** Updated `ARCHITECTURE.md` and `AGENTS.md` documentation to reflect new response fields and parameter.
+
+**Key Design Decisions:**
+- `properties` is derived from `Document.frontmatter_json` at response time — no database schema changes, no migration needed.
+- `include_content` defaults to `True` for backward compatibility; existing clients receive full content unchanged.
+- `properties` excludes the `tags` key defensively (tags already have a dedicated field) to avoid duplication.
+- Chunk search returns `properties=None` because chunks have no associated frontmatter.
+
+**No breaking changes:** Default behavior unchanged, fully backward compatible. All existing tool signatures and responses work identically without client modifications.
+
+**Verification:**
+- All 2000 tests pass (1 skipped pre-existing)
+- 100% code coverage (statements and branches)
+- All ruff checks pass
+- All mypy type checks pass on source code
+- All source files under 1000 lines
+
+**Verification agent notes (2026-06-27):**
+- Plan checklist in `_agent/041.frontmatter-properties.md` updated to mark TASK-001..TASK-037 as completed.
+- Re-ran full test suite, ruff, mypy, bandit; all gates still pass with 100% coverage and no violations.
+- Confirmed implementation matches requirements REQ-001..REQ-007 and CLI/MCP documentation in ARCHITECTURE.md.
+
 ### 040.cleanup (Completed 2026-06-26)
 
 **Objective:** Clean up pre-existing tech debt: resolve 9 bandit warnings (B101/B324/B104/B105), remove 7 inline `# noqa` pragmas (6 PIE790 + 1 ANN401), audit/reduce 15 `# pragma: no cover` (down to 5 documented-legitimate), fix 70 test-file lint violations (51 F401 + 19 F841), exclude tests from mypy via `pyproject.toml`, split 10 oversized test files (with growth headroom ~600-750 lines each), split `config.py` from 1223 to 587 lines via `config_env.py`/`config_models.py`/`config_validators.py` extraction, and fix the Alembic `downgrade base` blocker (test data pollution). Zero behavioral change to CLI/MCP tools.

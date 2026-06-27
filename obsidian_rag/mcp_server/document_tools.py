@@ -17,6 +17,7 @@ def get_document(
     vault_name: str | None = None,
     file_path: str | None = None,
     document_id: str | None = None,
+    include_content: bool = True,
 ) -> dict[str, object]:
     """Get a single document by exact file_path within a vault, or by UUID document_id.
 
@@ -28,6 +29,7 @@ def get_document(
         file_path: Relative file path from vault root.
         document_id: Document UUID string (use document_id, not id,
             to avoid shadowing the built-in id function).
+        include_content: Whether to include document content in the response.
 
     Returns:
         Document response as dictionary on success, or error dict on failure:
@@ -48,6 +50,7 @@ def get_document(
         vault_name=vault_name,
         file_path=file_path,
         document_id=document_id,
+        include_content=include_content,
     )
 
     _msg = "Tool wrapper get_document returning"
@@ -60,6 +63,8 @@ def list_documents(
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    *,
+    include_content: bool = True,
 ) -> dict[str, object]:
     """List documents by file_name with optional vault scope.
 
@@ -71,6 +76,7 @@ def list_documents(
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
+        include_content: Whether to include document content in responses.
 
     Returns:
         Document list response with pagination, or error dict if no
@@ -91,6 +97,7 @@ def list_documents(
         vault_name=vault_name,
         limit=limit,
         offset=offset,
+        include_content=include_content,
     )
 
     _msg = "Tool wrapper list_documents returning"

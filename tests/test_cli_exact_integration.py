@@ -23,6 +23,7 @@ class TestCLIExactPathLookup:
         mock_doc = Mock()
         mock_doc.model_dump_json.return_value = '{"id": "abc"}'
         mock_doc.tags = []
+        mock_doc.properties = None
         mock_get_doc.return_value = mock_doc
 
         runner = CliRunner()
@@ -71,6 +72,7 @@ class TestCLIExactPathLookup:
         mock_doc = Mock()
         mock_doc.model_dump_json.return_value = '{"id": "abc"}'
         mock_doc.tags = []
+        mock_doc.properties = None
         mock_get_doc.return_value = mock_doc
 
         runner = CliRunner()

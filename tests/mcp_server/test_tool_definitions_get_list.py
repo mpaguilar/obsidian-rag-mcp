@@ -31,6 +31,7 @@ class TestGetDocumentTool:
             vault_name=None,
             file_path=None,
             document_id=None,
+            include_content=True,
         )
         mock_handler.assert_called_once_with(mock_params)
         assert result == {"id": "doc-1"}
@@ -54,6 +55,7 @@ class TestGetDocumentTool:
             vault_name="Personal",
             file_path="notes.md",
             document_id=None,
+            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.tool_definitions._get_document_handler")
@@ -75,6 +77,7 @@ class TestGetDocumentTool:
             vault_name=None,
             file_path=None,
             document_id="abc-123",
+            include_content=True,
         )
 
 
@@ -102,6 +105,7 @@ class TestListDocumentsTool:
             vault_name=None,
             limit=20,
             offset=0,
+            include_content=True,
         )
         mock_handler.assert_called_once_with(mock_params)
         assert result == {"documents": []}
@@ -126,6 +130,7 @@ class TestListDocumentsTool:
             vault_name=None,
             limit=20,
             offset=0,
+            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.tool_definitions._list_documents_handler")
@@ -148,6 +153,7 @@ class TestListDocumentsTool:
             vault_name="Personal",
             limit=20,
             offset=0,
+            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.tool_definitions._list_documents_handler")
@@ -170,4 +176,5 @@ class TestListDocumentsTool:
             vault_name=None,
             limit=10,
             offset=5,
+            include_content=True,
         )

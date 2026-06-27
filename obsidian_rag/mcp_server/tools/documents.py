@@ -81,6 +81,8 @@ def _build_document_list_response(
     total_count: int,
     offset: int,
     limit: int,
+    *,
+    include_content: bool = True,
 ) -> DocumentListResponse:
     """Build DocumentListResponse from query results.
 
@@ -89,6 +91,7 @@ def _build_document_list_response(
         total_count: Total number of matching documents.
         offset: Current offset.
         limit: Current limit.
+        include_content: Whether to include document content in responses.
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -96,7 +99,11 @@ def _build_document_list_response(
     """
     document_responses = []
     for doc in results:
-        doc_response = create_document_response(doc, 0.0)
+        doc_response = create_document_response(
+            doc,
+            0.0,
+            include_content=include_content,
+        )
         document_responses.append(doc_response)
 
     has_more = (offset + limit) < total_count
@@ -121,6 +128,7 @@ def query_documents(
     rerank: bool = False,
     rerank_model: str = "ms-marco-MiniLM-L-12-v2",
     query_text: str = "",
+    include_content: bool = True,
 ) -> DocumentListResponse:
     """Semantic search over document content with optional property and tag filters.
 
@@ -136,6 +144,7 @@ def query_documents(
         query_text: Original search query text for re-ranking.
             Required when rerank=True for effective cross-encoding.
             Defaults to empty string for backward compatibility.
+        include_content: Whether to include document content in responses.
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -182,6 +191,9 @@ def query_documents(
             encoded_path = relative_path.replace(" ", "%20")
             obsidian_uri = f"obsidian://open?vault={vault_name}&file={encoded_path}"
 
+            # Determine content based on include_content flag
+            content = chunk.content if include_content else ""
+
             # Create DocumentResponse from chunk data
             doc_response = DocumentResponse(
                 id=uuid.UUID(chunk.chunk_id),  # Use chunk_id as UUID
@@ -189,7 +201,7 @@ def query_documents(
                 file_path=relative_path,
                 relative_path=relative_path,
                 file_name=chunk.document_name,
-                content=chunk.content,
+                content=content,
                 kind=chunk.chunk_type,
                 tags=[],  # Chunks don't have tags directly
                 similarity_score=chunk.similarity_score,
@@ -197,6 +209,7 @@ def query_documents(
                 created_at_fs=datetime.now(UTC),  # Default value
                 modified_at_fs=datetime.now(UTC),  # Default value
                 obsidian_uri=obsidian_uri,
+                properties=None,  # Chunks don't have frontmatter
             )
             document_responses.append(doc_response)
 
@@ -233,7 +246,11 @@ def query_documents(
         property_filters=property_filter_params,
         tag_params=tag_filter_params,
     )
-    pagination = PaginationParams(limit=limit, offset=offset)
+    pagination = PaginationParams(
+        limit=limit,
+        offset=offset,
+        include_content=include_content,
+    )
     query_params = DocumentQueryParams(
         session=session,
         query_embedding=query_embedding,
@@ -253,6 +270,8 @@ def get_documents_by_tag(
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    *,
+    include_content: bool = True,
 ) -> DocumentListResponse:
     """Query documents filtered by tags with include/exclude semantics.
 
@@ -262,6 +281,7 @@ def get_documents_by_tag(
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
+        include_content: Whether to include document content in responses.
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -301,7 +321,11 @@ def get_documents_by_tag(
 
     document_responses = []
     for doc in results:
-        doc_response = create_document_response(doc, 0.0)
+        doc_response = create_document_response(
+            doc,
+            0.0,
+            include_content=include_content,
+        )
         document_responses.append(doc_response)
 
     has_more = (offset + limit) < total_count
@@ -324,6 +348,8 @@ def get_documents_by_property(
     tag_filter: TagFilter | None = None,
     vault_name: str | None = None,
     pagination: PaginationParams | None = None,
+    *,
+    include_content: bool = True,
 ) -> DocumentListResponse:
     """Query documents filtered by frontmatter properties.
 
@@ -333,6 +359,7 @@ def get_documents_by_property(
         tag_filter: Optional tag filter to also apply.
         vault_name: Filter by specific vault name (optional).
         pagination: Pagination parameters (limit/offset).
+        include_content: Whether to include document content in responses.
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -367,7 +394,11 @@ def get_documents_by_property(
         exclude_filters=exclude_properties,
     )
     tag_params = TagFilterParams(tag_filter=tag_filter)
-    pagination = PaginationParams(limit=limit, offset=offset)
+    pagination = PaginationParams(
+        limit=limit,
+        offset=offset,
+        include_content=include_content,
+    )
     query_params = PropertyQueryParams(
         session=session,
         property_filters=filter_params,
@@ -381,7 +412,13 @@ def get_documents_by_property(
     _msg = "get_documents_by_property returning"
     log.debug(_msg)
 
-    return _build_document_list_response(results, total_count, offset, limit)
+    return _build_document_list_response(
+        results,
+        total_count,
+        offset,
+        limit,
+        include_content=include_content,
+    )
 
 
 def _extract_tags_postgresql(session: "Session", pattern: str | None) -> list[str]:
@@ -579,6 +616,7 @@ def get_document(
     vault_name: str | None = None,
     file_path: str | None = None,
     document_id: str | None = None,
+    include_content: bool = True,
 ) -> DocumentResponse:
     """Get a single document by vault_name+file_path or document_id.
 
@@ -587,9 +625,10 @@ def get_document(
         vault_name: Vault name (required when using file_path).
         file_path: Relative file path from vault root.
         document_id: Document UUID string (globally unique).
+        include_content: Whether to include document content in the response.
 
     Returns:
-        DocumentResponse with full content, metadata, tags, and obsidian_uri.
+        DocumentResponse with content, metadata, tags, and obsidian_uri.
         similarity_score is 0.0 (no vector search).
 
     Raises:
@@ -616,7 +655,11 @@ def get_document(
 
     _msg = "get_document returning"
     log.debug(_msg)
-    return create_document_response(document, similarity_score=0.0)
+    return create_document_response(
+        document,
+        similarity_score=0.0,
+        include_content=include_content,
+    )
 
 
 def list_documents(
@@ -626,6 +669,7 @@ def list_documents(
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    include_content: bool = True,
 ) -> DocumentListResponse:
     """List documents by file_name with optional vault scope.
 
@@ -635,6 +679,7 @@ def list_documents(
         vault_name: Optional vault name to scope results.
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
+        include_content: Whether to include document content in responses.
 
     Returns:
         DocumentListResponse with paginated results. similarity_score=0.0 for all.
@@ -677,4 +722,10 @@ def list_documents(
 
     _msg = "list_documents returning"
     log.debug(_msg)
-    return _build_document_list_response(results, total_count, offset, limit)
+    return _build_document_list_response(
+        results,
+        total_count,
+        offset,
+        limit,
+        include_content=include_content,
+    )

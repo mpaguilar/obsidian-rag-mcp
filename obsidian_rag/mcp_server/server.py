@@ -99,6 +99,7 @@ def query_documents(
     *,
     use_chunks: bool = False,
     rerank: bool = False,
+    include_content: bool = True,
 ) -> dict[str, object]:
     """Semantic search over document content with optional filters.
 
@@ -117,6 +118,9 @@ def query_documents(
             semantic matching in large documents.
         rerank: If True, apply flashrank re-ranking to chunk results.
             Only applies when use_chunks is True.
+        include_content: If True (default), include full document content in
+            responses. When False, the 'content' field is an empty string,
+            reducing payload size.
 
     Returns:
         Document list response with pagination and similarity scores.
@@ -127,7 +131,9 @@ def query_documents(
     from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
 
     registry = _get_registry()
-    pagination = PaginationParams(limit=limit, offset=offset)
+    pagination = PaginationParams(
+        limit=limit, offset=offset, include_content=include_content
+    )
     return query_documents_tool(
         db_manager=registry.db_manager,
         embedding_provider=registry.embedding_provider,
@@ -136,6 +142,7 @@ def query_documents(
         pagination=pagination,
         use_chunks=use_chunks,
         rerank=rerank,
+        include_content=include_content,
     )
 
 
@@ -144,6 +151,8 @@ def get_documents_by_tag(
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    *,
+    include_content: bool = True,
 ) -> dict[str, object]:
     """Query documents filtered by tags with include/exclude semantics.
 
@@ -159,6 +168,9 @@ def get_documents_by_tag(
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
+        include_content: If True (default), include full document content in
+            responses. When False, the 'content' field is an empty string,
+            reducing payload size.
 
     Returns:
         Document list response with pagination and relative paths.
@@ -198,6 +210,7 @@ def get_documents_by_tag(
         "vault_name": vault_name,
         "limit": limit,
         "offset": offset,
+        "include_content": include_content,
     }
     return _get_documents_by_tag_handler(registry.db_manager, params)
 
@@ -207,6 +220,8 @@ def get_documents_by_property(
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    *,
+    include_content: bool = True,
 ) -> dict[str, object]:
     """Query documents filtered by frontmatter properties.
 
@@ -219,6 +234,9 @@ def get_documents_by_property(
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
+        include_content: If True (default), include full document content in
+            responses. When False, the 'content' field is an empty string,
+            reducing payload size.
 
     Returns:
         Document list response with pagination and relative paths.
@@ -273,7 +291,9 @@ def get_documents_by_property(
         include_filters=prop_filters_include,
         exclude_filters=prop_filters_exclude,
     )
-    pagination = PaginationParams(limit=limit, offset=offset)
+    pagination = PaginationParams(
+        limit=limit, offset=offset, include_content=include_content
+    )
 
     with registry.db_manager.get_session() as session:
         result = get_documents_by_property_tool(
@@ -282,6 +302,7 @@ def get_documents_by_property(
             tag_filter=tag_filter,
             vault_name=vault_name,
             pagination=pagination,
+            include_content=include_content,
         )
         return result.model_dump()
 
@@ -507,7 +528,10 @@ def get_tasks(
 
     Returns:
         Dictionary with paginated task list response including:
-        - results: List of matching tasks with full details
+        - results: List of matching tasks with full details. Each task response
+            includes properties: Frontmatter key-value pairs from the parent
+            document (excluding tags). None if the parent document has no
+            frontmatter.
         - total_count: Total number of tasks matching the filters
         - has_more: True if more results are available beyond this page
         - next_offset: The offset value to use for the next page (if has_more)
@@ -551,6 +575,7 @@ def get_tasks(
         tag_filters=tag_filters,
         date_filters=date_filters,
         priority=params.priority,
+        include_content=params.include_content,
         limit=params.limit,
         offset=params.offset,
     )

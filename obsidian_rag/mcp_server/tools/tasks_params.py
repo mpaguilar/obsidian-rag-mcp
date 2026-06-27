@@ -72,6 +72,8 @@ class GetTasksFilterParams:
             Multiple values use OR logic (task matches any).
         date_match_mode: How to combine date filters - "all" for AND logic (default),
             "any" for OR logic across all date conditions.
+        include_content: Whether to include the parent document's content in each
+            task response (default: True).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
 
@@ -89,6 +91,7 @@ class GetTasksFilterParams:
     tag_match_mode: Literal["all", "any"] = "all"
     priority: list[str] | None = None
     date_match_mode: Literal["all", "any"] = "all"
+    include_content: bool = True
     limit: int = 20
     offset: int = 0
 
@@ -122,6 +125,8 @@ class GetTasksRequest:
         tag_filters: Tag filter parameters with include/exclude lists and match mode.
         date_filters: Date filter parameters with ISO date strings.
         priority: List of priorities to filter by.
+        include_content: Whether to include the parent document's content in each
+            task response.
         limit: Maximum number of results.
         offset: Number of results to skip.
 
@@ -131,5 +136,6 @@ class GetTasksRequest:
     tag_filters: "TagFilterStrings | None" = None
     date_filters: "TaskDateFilterStrings | None" = None
     priority: list[str] | None = None
+    include_content: bool = True
     limit: int = 20
     offset: int = 0

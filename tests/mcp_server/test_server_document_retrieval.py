@@ -31,6 +31,7 @@ class TestGetDocumentMCPTool:
             vault_name="Personal",
             file_path="notes.md",
             document_id=None,
+            include_content=True,
         )
         assert result["vault_name"] == "Personal"
         assert result["file_path"] == "notes.md"
@@ -48,6 +49,7 @@ class TestGetDocumentMCPTool:
             vault_name=None,
             file_path=None,
             document_id=doc_id,
+            include_content=True,
         )
         assert result["id"] == doc_id
 
@@ -107,6 +109,7 @@ class TestListDocumentsMCPTool:
             vault_name=None,
             limit=20,
             offset=0,
+            include_content=True,
         )
         assert result["total_count"] == 1
 
@@ -123,6 +126,7 @@ class TestListDocumentsMCPTool:
             vault_name="Personal",
             limit=20,
             offset=0,
+            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.document_tools._get_registry")

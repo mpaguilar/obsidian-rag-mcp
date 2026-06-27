@@ -77,6 +77,7 @@ class TaskResponse(BaseModel):
         tags: List of tags extracted from the task.
         document_path: Path to the parent document.
         document_name: Name of the parent document.
+        properties: Parent document's frontmatter key-value pairs (excluding tags), or None.
 
     """
 
@@ -89,6 +90,7 @@ class TaskResponse(BaseModel):
     tags: list[str]
     document_path: str
     document_name: str
+    properties: dict[str, object] | None = None
 
 
 class TaskListResponse(BaseModel):
@@ -165,6 +167,7 @@ class DocumentResponse(BaseModel):
         created_at_fs: Filesystem creation timestamp.
         modified_at_fs: Filesystem modification timestamp.
         obsidian_uri: Obsidian URI for opening the document.
+        properties: Frontmatter key-value pairs (excluding tags), or None.
 
     """
 
@@ -181,6 +184,7 @@ class DocumentResponse(BaseModel):
     created_at_fs: datetime
     modified_at_fs: datetime
     obsidian_uri: str
+    properties: dict[str, object] | None = None
 
 
 class DocumentListResponse(BaseModel):
@@ -360,12 +364,15 @@ def create_vault_response(
 def create_task_response(
     task: "TaskModel",
     document: "DocumentModel",
+    *,
+    include_content: bool = True,
 ) -> TaskResponse:
     """Create a TaskResponse from database models.
 
     Args:
         task: Task model instance.
         document: Document model instance.
+        include_content: When False, the returned raw_text is an empty string.
 
     Returns:
         TaskResponse populated from the models.
@@ -374,9 +381,19 @@ def create_task_response(
     _msg = "create_task_response starting"
     log.debug(_msg)
 
+    raw_text = task.raw_text if include_content else ""
+
+    properties: dict[str, object] | None = None
+    if document.frontmatter_json:
+        properties = {
+            key: value
+            for key, value in document.frontmatter_json.items()
+            if key != "tags"
+        }
+
     result = TaskResponse(
         id=task.id,
-        raw_text=task.raw_text,
+        raw_text=raw_text,
         status=task.status,
         description=task.description,
         due=task.due,
@@ -384,6 +401,7 @@ def create_task_response(
         tags=task.tags or [],
         document_path=document.file_path,
         document_name=document.file_name,
+        properties=properties,
     )
     _msg = "create_task_response returning"
     log.debug(_msg)
@@ -394,6 +412,8 @@ def create_document_response(
     document: "DocumentModel",
     similarity_score: float,
     matching_chunk: str | None = None,
+    *,
+    include_content: bool = True,
 ) -> DocumentResponse:
     """Create a DocumentResponse from database model.
 
@@ -401,6 +421,7 @@ def create_document_response(
         document: Document model instance.
         similarity_score: Cosine distance score from vector search.
         matching_chunk: Text of the best matching chunk (optional).
+        include_content: When False, the returned content is an empty string.
 
     Returns:
         DocumentResponse populated from the model.
@@ -424,13 +445,24 @@ def create_document_response(
     if document.frontmatter_json:
         kind = document.frontmatter_json.get("kind")
 
+    # Build properties from frontmatter_json, excluding the tags key
+    properties: dict[str, object] | None = None
+    if document.frontmatter_json is not None:
+        properties = {
+            key: value
+            for key, value in document.frontmatter_json.items()
+            if key != "tags"
+        }
+
+    content = document.content if include_content else ""
+
     result = DocumentResponse(
         id=document.id,
         vault_name=vault_name,
         file_path=relative_path,
         relative_path=relative_path,
         file_name=document.file_name,
-        content=document.content,
+        content=content,
         kind=kind,
         tags=document.tags or [],
         similarity_score=similarity_score,
@@ -438,6 +470,7 @@ def create_document_response(
         created_at_fs=document.created_at_fs,
         modified_at_fs=document.modified_at_fs,
         obsidian_uri=obsidian_uri,
+        properties=properties,
     )
     _msg = "create_document_response returning"
     log.debug(_msg)

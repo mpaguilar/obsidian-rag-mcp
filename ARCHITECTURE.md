@@ -364,7 +364,7 @@ uvicorn obsidian_rag.mcp_server.server:create_http_app --factory
 All tools are read-only and use SQLAlchemy `select()` operations only:
 
 **Task Tools:**
-- `get_tasks`: Generic task query with comprehensive filtering by status, date ranges (due, scheduled, completion), tags, and priority. All filters are optional and combined with AND logic.
+- `get_tasks`: Generic task query with comprehensive filtering by status, date ranges (due, scheduled, completion), tags, and priority. All filters are optional and combined with AND logic. Returns `TaskResponse` with `properties` (parent document's frontmatter key-value pairs excluding tags) and `include_content` support.
 
 **Task Filter Features (get_tasks):**
 - `status`: List of statuses to filter by (e.g., ['not_completed', 'in_progress'])
@@ -405,14 +405,14 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 - Find tasks with 'work' but NOT 'blocked': `include_tags=["work"], exclude_tags=["blocked"]`
 
 **Document Tools:**
-- `query_documents`: Semantic search using vector similarity (cosine distance) with optional property and tag filters
+- `query_documents`: Semantic search using vector similarity (cosine distance) with optional property and tag filters. Returns `DocumentResponse` with `properties` (frontmatter key-value pairs excluding tags) and `include_content` support.
 - `get_documents_by_tag`: Query documents by tags with include/exclude lists and match_mode ("all" or "any")
 - `get_documents_by_property`: Query documents by frontmatter properties with include/exclude filters
 - `get_all_tags`: Query all unique document tags with optional glob pattern filtering
 
 **Document Retrieval Tools:**
-- `get_document`: Get a single document by vault_name+file_path or document_id (UUID). Returns `DocumentResponse` with `similarity_score=0.0` (no vector search). Raises `ValueError` if not found or invalid params.
-- `list_documents`: List documents by file_name with optional vault_name scope. Returns `DocumentListResponse` with paginated results. Returns empty list (not error) when no matches.
+- `get_document`: Get a single document by vault_name+file_path or document_id (UUID). Returns `DocumentResponse` with `similarity_score=0.0` (no vector search). Raises `ValueError` if not found or invalid params. Supports `include_content=False` to omit the document body.
+- `list_documents`: List documents by file_name with optional vault_name scope. Returns `DocumentListResponse` with paginated results. Returns empty list (not error) when no matches. Supports `include_content=False` to omit document bodies.
 
 **Vault Tools:**
 - `list_vaults`: List all vaults with document counts and metadata
@@ -458,11 +458,11 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 Pydantic models for request/response validation:
 
 **Task Models:**
-- `TaskResponse`: Single task with document info
+- `TaskResponse`: Single task with document info, `properties` (parent document's frontmatter key-value pairs excluding tags), and `include_content` support
 - `TaskListResponse`: Paginated task list
 
 **Document Models:**
-- `DocumentResponse`: Single document with similarity score
+- `DocumentResponse`: Single document with similarity score, `properties` (frontmatter key-value pairs excluding tags), and `include_content` support
 - `DocumentListResponse`: Paginated document list
 
 **Tag Models:**

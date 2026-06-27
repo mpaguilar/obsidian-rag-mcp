@@ -490,6 +490,7 @@ class TestGetDocumentToolRegistration:
                     vault_name="test",
                     file_path="note.md",
                     document_id=None,
+                    include_content=True,
                 )
 
     def test_get_document_error_response(self):
@@ -563,6 +564,7 @@ class TestListDocumentsToolRegistration:
                     vault_name="test",
                     limit=20,
                     offset=0,
+                    include_content=True,
                 )
 
     def test_list_documents_empty_results(self):

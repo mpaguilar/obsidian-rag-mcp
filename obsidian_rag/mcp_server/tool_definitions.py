@@ -121,6 +121,7 @@ def query_documents_tool(
     *,
     use_chunks: bool = False,
     rerank: bool = False,
+    include_content: bool = True,
 ) -> dict[str, object]:
     """Tool implementation for semantic search over document content using chunk-based search.
 
@@ -140,6 +141,8 @@ def query_documents_tool(
             semantic matching in large documents.
         rerank: If True, apply flashrank re-ranking to chunk results.
             Only applies when use_chunks is True.
+        include_content: If True, include document content in responses.
+            Set to False to return metadata-only results (smaller payload).
 
     Returns:
         Document list response with pagination and similarity scores.
@@ -207,6 +210,7 @@ def query_documents_tool(
             use_chunks=use_chunks,
             rerank=rerank,
             query_text=query,
+            include_content=include_content,
         )
         return result.model_dump()
 
@@ -590,6 +594,7 @@ def get_document_tool(
     vault_name: str | None = None,
     file_path: str | None = None,
     document_id: str | None = None,
+    include_content: bool = True,
 ) -> dict[str, object]:
     """Tool implementation for getting a single document.
 
@@ -598,6 +603,8 @@ def get_document_tool(
         vault_name: Vault name (required when using file_path).
         file_path: Relative file path from vault root.
         document_id: Document UUID string.
+        include_content: If True, include document content in the response.
+            Set to False to return metadata-only results (smaller payload).
 
     Returns:
         Document response as dictionary on success, or error dict on failure.
@@ -609,6 +616,7 @@ def get_document_tool(
         vault_name=vault_name,
         file_path=file_path,
         document_id=document_id,
+        include_content=include_content,
     )
     return _get_document_handler(params)
 
@@ -620,6 +628,7 @@ def list_documents_tool(
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    include_content: bool = True,
 ) -> dict[str, object]:
     """Tool implementation for listing documents by file_name.
 
@@ -629,6 +638,8 @@ def list_documents_tool(
         vault_name: Optional vault name to scope results.
         limit: Maximum number of results.
         offset: Number of results to skip.
+        include_content: If True, include document content in each result.
+            Set to False to return metadata-only results (smaller payload).
 
     Returns:
         Document list response as dictionary, or error dict if no file_name.
@@ -641,5 +652,6 @@ def list_documents_tool(
         vault_name=vault_name,
         limit=limit,
         offset=offset,
+        include_content=include_content,
     )
     return _list_documents_handler(params)

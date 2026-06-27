@@ -266,6 +266,7 @@ class TestGetDocumentHandler:
             vault_name="Personal",
             file_path="notes.md",
             document_id=None,
+            include_content=True,
         )
 
     @patch(
@@ -307,6 +308,7 @@ class TestGetDocumentHandler:
             vault_name=None,
             file_path=None,
             document_id="abc-123",
+            include_content=True,
         )
 
     @patch(
@@ -354,6 +356,7 @@ class TestGetDocumentHandler:
             vault_name="Personal",
             file_path="notes.md",
             document_id=None,
+            include_content=True,
         )
 
     @patch(
@@ -541,6 +544,7 @@ class TestListDocumentsHandler:
             vault_name="Personal",
             limit=10,
             offset=5,
+            include_content=True,
         )
 
     @patch(
@@ -613,6 +617,7 @@ class TestListDocumentsHandler:
             vault_name=None,
             limit=10,
             offset=0,
+            include_content=True,
         )
 
     @patch(

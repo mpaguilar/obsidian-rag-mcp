@@ -79,7 +79,11 @@ class TestGetDocumentByVaultPath:
         )
 
         assert result == mock_response.return_value
-        mock_response.assert_called_once_with(mock_doc, similarity_score=0.0)
+        mock_response.assert_called_once_with(
+            mock_doc,
+            similarity_score=0.0,
+            include_content=True,
+        )
 
 
 class TestGetDocumentByDocumentId:
@@ -97,7 +101,11 @@ class TestGetDocumentByDocumentId:
         result = get_document(mock_session, document_id=doc_id)
 
         assert result == mock_response.return_value
-        mock_response.assert_called_once_with(mock_doc, similarity_score=0.0)
+        mock_response.assert_called_once_with(
+            mock_doc,
+            similarity_score=0.0,
+            include_content=True,
+        )
 
 
 class TestGetDocumentValidationErrors:
@@ -293,7 +301,11 @@ class TestGetDocumentEdgeCases:
 
         get_document(mock_session, document_id=doc_id)
 
-        mock_response.assert_called_once_with(mock_doc, similarity_score=0.0)
+        mock_response.assert_called_once_with(
+            mock_doc,
+            similarity_score=0.0,
+            include_content=True,
+        )
 
     @patch("obsidian_rag.mcp_server.tools.documents.create_document_response")
     @patch("obsidian_rag.mcp_server.tools.documents._get_available_vault_names")
@@ -318,7 +330,11 @@ class TestGetDocumentEdgeCases:
             file_path="notes.md",
         )
 
-        mock_response.assert_called_once_with(mock_doc, similarity_score=0.0)
+        mock_response.assert_called_once_with(
+            mock_doc,
+            similarity_score=0.0,
+            include_content=True,
+        )
 
 
 class TestGetDocumentPriority:
