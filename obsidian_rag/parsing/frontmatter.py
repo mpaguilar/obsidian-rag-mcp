@@ -65,6 +65,50 @@ FRONTMATTER_PATTERN = re.compile(
 )
 
 
+def _has_indentation_tabs(yaml_content: str) -> list[int]:
+    """Detect tab characters at indentation positions in YAML content.
+
+    Only tabs at line-start indentation positions are flagged.
+    Tabs in quoted string values, inline after key-colon, or in
+    non-indentation positions are valid YAML and NOT flagged.
+
+    Args:
+        yaml_content: The raw YAML frontmatter text to scan.
+
+    Returns:
+        List of line numbers (1-based) where indentation tabs were found.
+        Empty list if no indentation tabs detected.
+
+    """
+    tab_lines: list[int] = []
+    for line_num, line in enumerate(yaml_content.split("\n"), start=1):
+        stripped = line.lstrip(" ")
+        if stripped.startswith("\t"):
+            tab_lines.append(line_num)
+    return tab_lines
+
+
+def _validate_no_indentation_tabs(yaml_content: str) -> None:
+    """Raise FrontMatterParsingError if indentation tabs are found.
+
+    Args:
+        yaml_content: The raw YAML frontmatter text to validate.
+
+    Raises:
+        FrontMatterParsingError: If tab characters are found at indentation
+            positions within the YAML content.
+
+    """
+    tab_lines = _has_indentation_tabs(yaml_content)
+    if tab_lines:
+        _msg = (
+            f"Tab characters found in frontmatter indentation at lines "
+            f"{tab_lines}. Replace tabs with spaces for indentation."
+        )
+        log.warning(_msg)
+        raise FrontMatterParsingError(_msg)
+
+
 class FrontMatterParsingError(Exception):
     """Exception raised when FrontMatter parsing fails."""
 
@@ -95,6 +139,8 @@ def extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
 
     yaml_content = match.group(1)
     remaining_content = content[match.end() :]
+
+    _validate_no_indentation_tabs(yaml_content)
 
     frontmatter: dict[str, Any]
     try:

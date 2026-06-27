@@ -271,31 +271,24 @@ class TestToolFunctionsWithRegistry:
         ) as mock_handler:
             mock_handler.return_value = {"results": []}
 
-            from obsidian_rag.mcp_server.handlers import GetTasksToolInput
-
             date_filters = TaskDateFilterStrings(
                 due_after="2026-01-01",
                 due_before="2026-12-31",
             )
 
-            params = GetTasksToolInput(
+            result = get_tasks(
                 status=["not_completed"],
                 date_filters=date_filters,
                 limit=20,
                 offset=0,
             )
 
-            result = get_tasks(params=params)
-
             assert result == {"results": []}
             mock_handler.assert_called_once()
 
     def test_get_tasks_without_date_filters(self, setup_registry):
         """Test get_tasks creates default date_filters when not provided."""
-        from obsidian_rag.mcp_server.handlers import (
-            GetTasksToolInput,
-            TaskDateFilterStrings,
-        )
+        from obsidian_rag.mcp_server.handlers import TaskDateFilterStrings
         from obsidian_rag.mcp_server.server import get_tasks
 
         # Patch inside the server module where it's imported
@@ -304,14 +297,11 @@ class TestToolFunctionsWithRegistry:
         ) as mock_handler:
             mock_handler.return_value = {"results": []}
 
-            from obsidian_rag.mcp_server.handlers import GetTasksToolInput
-
-            params = GetTasksToolInput(
+            result = get_tasks(
                 status=["not_completed"],
                 limit=20,
                 offset=0,
             )
-            result = get_tasks(params=params)
 
             assert result == {"results": []}
             mock_handler.assert_called_once()

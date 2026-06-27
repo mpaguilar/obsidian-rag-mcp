@@ -91,6 +91,12 @@ Database connection management using SQLAlchemy with:
 - `tags` are extracted separately and normalized (string or list)
 - All other properties including `kind` are stored in `frontmatter_json`
 - Handles corrupted frontmatter gracefully (logs warning, continues)
+- **Tab rejection pre-validation:**
+  - `_has_indentation_tabs()` helper detects tab characters at indentation positions (start of line or after whitespace)
+  - `FrontMatterParsingError` is raised when indentation tabs are detected
+  - Error message includes line numbers and recommends "replace tabs with spaces"
+  - Tabs inside quoted string values are accepted (valid YAML)
+  - Pre-validation runs before `yaml.safe_load()` — existing `YAMLError` handling remains unchanged
 
 #### Body Tag Extraction (`body_tags.py`)
 
@@ -364,22 +370,28 @@ uvicorn obsidian_rag.mcp_server.server:create_http_app --factory
 All tools are read-only and use SQLAlchemy `select()` operations only:
 
 **Task Tools:**
-- `get_tasks`: Generic task query with comprehensive filtering by status, date ranges (due, scheduled, completion), tags, and priority. All filters are optional and combined with AND logic. Returns `TaskResponse` with `properties` (parent document's frontmatter key-value pairs excluding tags) and `include_content` support.
+- `get_tasks`: Generic task query with comprehensive filtering. All filters are optional and combined with AND logic. Returns `TaskResponse` with `properties` (parent document's frontmatter key-value pairs excluding tags) and `include_content` support.
 
-**Task Filter Features (get_tasks):**
+**Parameters (flat keyword schema):**
 - `status`: List of statuses to filter by (e.g., ['not_completed', 'in_progress'])
-- `due_after`/`due_before`: Date range filtering for due dates (inclusive)
-- `scheduled_after`/`scheduled_before`: Date range filtering for scheduled dates (inclusive)
-- `completion_after`/`completion_before`: Date range filtering for completion dates (inclusive)
-- `date_match_mode`: How to combine date filters - "all" (AND logic, default) or "any" (OR logic)
-  - "all": Task must satisfy ALL date conditions to match (backward compatible)
-  - "any": Task matches if ANY date condition is satisfied
-- `include_tags`: List of tags tasks must have (controlled by `tag_match_mode`)
-  - `tag_match_mode="all"` (default): Task must have ALL include tags
-  - `tag_match_mode="any"`: Task must have ANY of the include tags
-- `exclude_tags`: List of tags tasks must NOT have (always OR logic - any excluded tag disqualifies)
-- `tag_match_mode`: How to combine include_tags - "all" (AND logic, default) or "any" (OR logic)
+- `tag_filters`: Tag filter specification. Accepts `str` (JSON string), `dict`, or `GetTasksFilterParams` dataclass. Parsed manually before validation.
+  - `include_tags`: List of tags tasks must have
+  - `exclude_tags`: List of tags tasks must NOT have
+  - `tag_match_mode`: "all" (AND logic, default) or "any" (OR logic)
+- `date_filters`: Date filter specification. Accepts `str` (JSON string), `dict`, or dataclass. Parsed manually before validation.
+  - `due_after`/`due_before`: Date range filtering for due dates (inclusive)
+  - `scheduled_after`/`scheduled_before`: Date range filtering for scheduled dates (inclusive)
+  - `completion_after`/`completion_before`: Date range filtering for completion dates (inclusive)
+  - `date_match_mode`: "all" (AND logic, default) or "any" (OR logic)
 - `priority`: List of priorities to filter by (e.g., ['high', 'highest'])
+- `include_content`: Whether to include task content in response (default: True)
+- `limit`: Maximum results (default: 20, max: 10000)
+- `offset`: Result offset for pagination (default: 0)
+
+**Handler-level bundling:**
+- `GetTasksRequest` remains the internal bundling type used by the handler layer to group parameters before passing to the service layer.
+
+**Filter behavior:**
 - All filters are optional and combined with AND logic
 - Date comparisons are inclusive (>= for after, <= for before)
 - Tasks without dates are excluded from date filter comparisons
@@ -557,7 +569,7 @@ File System → Scanner → FrontMatter Parser → Task Parser → Database
 1. Scanner discovers `.md` files
 2. MD5 checksum calculated and compared with database
 3. If changed or new:
-   - FrontMatter extracted and parsed
+   - FrontMatter extracted and parsed (including tab pre-validation)
    - Tasks extracted from content
    - **Document-level tags merged into task tags** (case-insensitive dedup, lowercased) via `tag_merging.py`
    - Vector embeddings generated via LLM provider

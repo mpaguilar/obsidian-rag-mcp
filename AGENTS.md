@@ -174,6 +174,36 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 042.fix-schema-and-tabs (Completed 2026-06-27)
+
+**Objective:** Flatten the get_tasks MCP tool wrapper to expose individual top-level parameters (making them visible to MCP clients), and add indentation-position tab character detection/rejection in frontmatter parsing.
+
+**Changes Made:**
+- **Batch 1 (Foundation):** Added `_has_indentation_tabs()` helper and `_validate_no_indentation_tabs()` to frontmatter.py — detects tab characters at indentation positions in frontmatter YAML content before `yaml.safe_load()`. Raises `FrontMatterParsingError` with message including line numbers and recommending "replace tabs with spaces". Removed `GetTasksToolInput` dataclass and `AnnotatedGetTasksInput` type alias from handlers.py — no longer used at MCP boundary.
+- **Batch 2 (Core):** Flattened `get_tasks()` in server.py from `params: GetTasksToolInput` to individual keyword parameters (status, tag_filters, date_filters, priority, include_content, limit, offset). Added `_parse_tag_filters()` and `_parse_date_filters()` helper functions for manual JSON string/dict parsing (option b). Created `tests/test_parsing_frontmatter_tabs.py` (15 tests) and `tests/test_services_ingestion_tab_rejection.py` (6 tests).
+- **Batch 3 (Test updates):** Updated 7 test files to use flat keyword parameters instead of `GetTasksToolInput`: test_server_tasks.py, test_server_tasks_params.py, test_server_tasks_include_content.py, test_server_core.py, test_server_server.py, test_handlers_tasks.py, test_handlers_include_content.py.
+- **Batch 4 (Integration + docs):** Updated test_integration_validation.py and test_backward_compatibility_properties.py. Updated ARCHITECTURE.md for both flat parameter schema and tab rejection behavior.
+
+**Key Design Decisions:**
+- **Flat keyword parameters**: FastMCP introspects function signatures to build MCP tool schemas. Flat params produce visible schema fields for MCP clients (Hermes, Claude), while nested `params: GetTasksToolInput` was invisible.
+- **Manual JSON parsing (option b)**: `_parse_tag_filters` and `_parse_date_filters` use `parse_json_str` to handle str/dict inputs. No BeforeValidator needed. Consistent with document tools pattern.
+- **Clean break**: No backward compatibility for `{params: {...}}` format. The old nested format was invisible to MCP clients and already unusable.
+- **Tab detection**: Pre-validation regex scan before `yaml.safe_load()` — separate step preserves existing YAMLError handling. Only indentation-position tabs rejected; tabs in quoted string values accepted (valid YAML).
+- **GetTasksRequest retained**: `GetTasksRequest` in `tasks_params.py` remains as handler-level bundling type — unchanged by this checkpoint.
+- **McCabe complexity**: `_parse_tag_filters` and `_parse_date_filters` extracted as module-level helpers to keep `get_tasks()` complexity at 2 (well under max 5).
+
+**No breaking changes for functional behavior:** Clean break for the `{params: {...}}` MCP schema format (which was already broken from a usability standpoint — invisible to clients). No schema changes, no Alembic migration, no config changes. Tab rejection is a new validation that prevents previously-silently-dropped data from being accepted.
+
+**Verification:**
+- All 2018 tests pass (1 skipped pre-existing)
+- 100% code coverage (5165 statements, 1010 branches)
+- All ruff checks pass; ruff format clean
+- mypy clean on source code (55 source files, no issues)
+- bandit clean (0 violations)
+- All source files under 1000 lines
+- No `GetTasksToolInput` or `AnnotatedGetTasksInput` references remain in source code
+- Code review: 5/5 reviewers APPROVED, no CHANGES REQUESTED
+
 ### 041.frontmatter-properties (Completed 2026-06-27)
 
 **Objective:** Add `properties` field to DocumentResponse and TaskResponse models (from frontmatter_json), and add `include_content` parameter to all document- and task-returning MCP tools.

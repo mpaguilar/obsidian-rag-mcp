@@ -43,8 +43,9 @@
 `obsidian_rag/mcp_server/handlers.py:parse_json_str(value: Any) -> Any` is the
 ONLY accepted bare-`typing.Any` annotation in the source. It is a polymorphic
 Pydantic `BeforeValidator` pass-through (str→dict|None, dict→dict, None→None),
-and its return is assigned back to `QueryFilterParams | None` /
-`GetTasksToolInput | None` at `server.py:174,251,529`. The CONVENTIONS-endorsed
+and its return is assigned back to typed variables at
+`server.py` (QueryFilterParams assembly at ~189/274, TagFilterStrings at ~457,
+TaskDateFilterStrings at ~471). The CONVENTIONS-endorsed
 alternative `object` breaks mypy at those call sites. The exception is enforced
 via ruff `per-file-ignores` (`obsidian_rag/mcp_server/handlers.py = ["ANN401"]`)
 rather than an inline `# noqa`. No other bare-`Any` annotation is permitted.

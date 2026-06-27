@@ -435,37 +435,6 @@ def _ingest_handler(params: IngestHandlerParams) -> dict[str, object]:
 
 
 @dataclass
-class GetTasksToolInput:
-    """Input parameters for the get_tasks MCP tool.
-
-    This dataclass bundles all input parameters for the get_tasks tool
-    to comply with the 5 argument limit per function (PLR0913).
-
-    Attributes:
-        status: List of statuses to filter by.
-            Valid values: "not_completed", "completed", "in_progress", "cancelled".
-        tag_filters: Tag filter parameters with include/exclude lists and match mode.
-            Tags should NOT include the '#' prefix. Use plain tag names like
-            "personal/expenses" instead of "#personal/expenses".
-        date_filters: Date filter parameters with ISO date strings and match mode.
-        priority: List of priorities to filter by.
-        include_content: Whether to include the parent document's content in each
-            task response.
-        limit: Maximum number of results.
-        offset: Number of results to skip.
-
-    """
-
-    status: list[str] | None = None
-    tag_filters: "TagFilterStrings | None" = None
-    date_filters: "TaskDateFilterStrings | None" = None
-    priority: list[str] | None = None
-    include_content: bool = True
-    limit: int = 20
-    offset: int = 0
-
-
-@dataclass
 class TaskDateFilterStrings:
     """Date filter string parameters for get_tasks handler.
 
@@ -829,26 +798,6 @@ to clients that double-encode their parameters.
 Examples:
     - Dict input: {"include_tags": ["work"], "match_mode": "any"}
     - JSON string input: '{"include_tags": ["work"], "match_mode": "any"}'
-    - None input: None (returns None)
-    - Empty string input: "" (returns None)
-
-"""
-
-AnnotatedGetTasksInput = Annotated[
-    GetTasksToolInput | None,
-    BeforeValidator(parse_json_str),
-]
-"""GetTasksToolInput that can be passed as JSON string or dict.
-
-This type wraps GetTasksToolInput with a BeforeValidator that automatically
-parses JSON strings before Pydantic validation. Supports nested dataclasses
-like tag_filters and date_filters within the JSON.
-
-Examples:
-    - Dict input with nested objects:
-      {"status": ["not_completed"], "tag_filters": {"include_tags": ["work"]}}
-    - JSON string input:
-      '{"status": ["not_completed"], "tag_filters": {"include_tags": ["work"]}}'
     - None input: None (returns None)
     - Empty string input: "" (returns None)
 

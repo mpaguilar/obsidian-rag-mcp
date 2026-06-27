@@ -83,7 +83,7 @@ class TestMCPClientJsonStringIntegration:
             assert result == {"results": []}
 
     def test_get_tasks_simulates_librechat_client(self, setup_registry):
-        """Test simulating LibreChat client for get_tasks."""
+        """Test simulating LibreChat client for get_tasks with flat params."""
         from obsidian_rag.mcp_server.server import get_tasks
 
         with patch(
@@ -91,18 +91,22 @@ class TestMCPClientJsonStringIntegration:
         ) as mock_handler:
             mock_handler.return_value = {"results": []}
 
-            # Simulate LibreChat double-encoding with nested objects
-            client_params = json.dumps(
-                {
-                    "status": ["not_completed"],
-                    "tag_filters": {"include_tags": ["work"], "match_mode": "all"},
-                    "date_filters": {"due_after": "2026-01-01", "match_mode": "any"},
-                }
+            # Simulate LibreChat double-encoding with flat parameters
+            client_tag_filters = json.dumps(
+                {"include_tags": ["work"], "match_mode": "all"}
+            )
+            client_date_filters = json.dumps(
+                {"due_after": "2026-01-01", "match_mode": "any"}
             )
 
-            result = get_tasks(params=client_params)
+            result = get_tasks(
+                status=["not_completed"],
+                tag_filters=client_tag_filters,
+                date_filters=client_date_filters,
+            )
 
             assert result == {"results": []}
+            mock_handler.assert_called_once()
 
 
 class TestFullFilterSerialization:
@@ -151,19 +155,15 @@ class TestFullFilterSerialization:
             {"path": "kind", "operator": "equals", "value": "note"}
         ]
 
-    def test_get_tasks_tool_input_round_trip(self):
-        """Test that GetTasksToolInput serializes and deserializes correctly."""
-        import json
+    def test_get_tasks_request_assembly(self):
+        """Test that flat parameters correctly assemble GetTasksRequest."""
         from obsidian_rag.mcp_server.handlers import (
-            AnnotatedGetTasksInput,
-            GetTasksToolInput,
+            GetTasksRequest,
             TagFilterStrings,
             TaskDateFilterStrings,
         )
-        from pydantic import TypeAdapter
 
-        # Create a full GetTasksToolInput
-        original = GetTasksToolInput(
+        request = GetTasksRequest(
             status=["not_completed", "in_progress"],
             tag_filters=TagFilterStrings(
                 include_tags=["work"], exclude_tags=["blocked"], match_mode="all"
@@ -176,36 +176,208 @@ class TestFullFilterSerialization:
             offset=10,
         )
 
-        # Serialize to JSON
-        json_str = json.dumps(
-            {
-                "status": original.status,
-                "tag_filters": {
-                    "include_tags": original.tag_filters.include_tags,
-                    "exclude_tags": original.tag_filters.exclude_tags,
-                    "match_mode": original.tag_filters.match_mode,
-                },
-                "date_filters": {
-                    "due_after": original.date_filters.due_after,
-                    "due_before": original.date_filters.due_before,
-                    "match_mode": original.date_filters.match_mode,
-                },
-                "priority": original.priority,
-                "limit": original.limit,
-                "offset": original.offset,
-            }
+        assert request.status == ["not_completed", "in_progress"]
+        assert request.tag_filters.include_tags == ["work"]
+        assert request.tag_filters.exclude_tags == ["blocked"]
+        assert request.tag_filters.match_mode == "all"
+        assert request.date_filters.due_after == "2026-01-01"
+        assert request.date_filters.due_before == "2026-12-31"
+        assert request.date_filters.match_mode == "any"
+        assert request.priority == ["high"]
+        assert request.limit == 50
+        assert request.offset == 10
+
+
+class TestFlatParameterParsing:
+    """Tests for flat parameter parsing via _parse_tag_filters/_parse_date_filters."""
+
+    def test_parse_tag_filters_with_json_string(self):
+        """Test that _parse_tag_filters correctly parses JSON string."""
+        from obsidian_rag.mcp_server.server import _parse_tag_filters
+
+        json_str = '{"include_tags": ["work"], "match_mode": "any"}'
+        result = _parse_tag_filters(json_str)
+
+        assert result.include_tags == ["work"]
+        assert result.match_mode == "any"
+
+    def test_parse_tag_filters_with_dict(self):
+        """Test that _parse_tag_filters correctly parses dict input."""
+        from obsidian_rag.mcp_server.server import _parse_tag_filters
+
+        filters = {"include_tags": ["work", "urgent"], "exclude_tags": ["blocked"]}
+        result = _parse_tag_filters(filters)
+
+        assert result.include_tags == ["work", "urgent"]
+        assert result.exclude_tags == ["blocked"]
+
+    def test_parse_tag_filters_with_none(self):
+        """Test that _parse_tag_filters returns defaults for None."""
+        from obsidian_rag.mcp_server.server import _parse_tag_filters
+
+        result = _parse_tag_filters(None)
+
+        assert result.include_tags is None
+        assert result.exclude_tags is None
+        assert result.match_mode == "all"
+
+    def test_parse_date_filters_with_json_string(self):
+        """Test that _parse_date_filters correctly parses JSON string."""
+        from obsidian_rag.mcp_server.server import _parse_date_filters
+
+        json_str = '{"due_after": "2026-01-01", "match_mode": "any"}'
+        result = _parse_date_filters(json_str)
+
+        assert result.due_after == "2026-01-01"
+        assert result.match_mode == "any"
+
+    def test_parse_date_filters_with_dict(self):
+        """Test that _parse_date_filters correctly parses dict input."""
+        from obsidian_rag.mcp_server.server import _parse_date_filters
+
+        filters = {"due_after": "2026-01-01", "due_before": "2026-12-31"}
+        result = _parse_date_filters(filters)
+
+        assert result.due_after == "2026-01-01"
+        assert result.due_before == "2026-12-31"
+
+    def test_parse_date_filters_with_none(self):
+        """Test that _parse_date_filters returns defaults for None."""
+        from obsidian_rag.mcp_server.server import _parse_date_filters
+
+        result = _parse_date_filters(None)
+
+        assert result.due_after is None
+        assert result.due_before is None
+        assert result.match_mode == "all"
+
+
+class TestGetTasksFlatParameters:
+    """Tests for get_tasks with flat parameter format."""
+
+    @pytest.fixture
+    def mock_registry(self):
+        """Create a mock registry for testing."""
+        from obsidian_rag.mcp_server.tool_definitions import MCPToolRegistry
+
+        registry = MCPToolRegistry(
+            db_manager=MagicMock(),
+            embedding_provider=MagicMock(),
+            settings=MagicMock(),
         )
+        return registry
 
-        # Deserialize through AnnotatedGetTasksInput
-        adapter = TypeAdapter(AnnotatedGetTasksInput)
-        result = adapter.validate_python(json_str)
+    @pytest.fixture
+    def setup_registry(self, mock_registry):
+        """Setup and teardown for registry tests."""
+        from obsidian_rag.mcp_server import tool_definitions as tool_definitions_module
 
-        assert isinstance(result, GetTasksToolInput)
-        assert result.status == ["not_completed", "in_progress"]
-        assert result.tag_filters.include_tags == ["work"]
-        assert result.date_filters.due_after == "2026-01-01"
-        assert result.limit == 50
-        assert result.offset == 10
+        original_registry = tool_definitions_module._tool_registry
+        tool_definitions_module._tool_registry = mock_registry
+
+        yield mock_registry
+
+        tool_definitions_module._tool_registry = original_registry
+
+    def test_get_tasks_with_status(self, setup_registry):
+        """Test get_tasks(status=[\"not_completed\"]) works with flat params."""
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        with patch(
+            "obsidian_rag.mcp_server.handlers._get_tasks_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {"results": []}
+
+            result = get_tasks(status=["not_completed"])
+
+            assert result == {"results": []}
+            mock_handler.assert_called_once()
+            call_args = mock_handler.call_args
+            request = call_args[1]["request"]
+            assert request.status == ["not_completed"]
+
+    def test_get_tasks_with_tag_filters_json_string(self, setup_registry):
+        """Test get_tasks(tag_filters='{\"include_tags\": [\"work\"]}') parses JSON."""
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        with patch(
+            "obsidian_rag.mcp_server.handlers._get_tasks_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {"results": []}
+
+            result = get_tasks(tag_filters='{"include_tags": ["work"]}')
+
+            assert result == {"results": []}
+            mock_handler.assert_called_once()
+            call_args = mock_handler.call_args
+            request = call_args[1]["request"]
+            assert request.tag_filters.include_tags == ["work"]
+
+    def test_get_tasks_with_date_filters_json_string(self, setup_registry):
+        """Test get_tasks(date_filters='{\"due_after\": \"2026-01-01\"}') parses JSON."""
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        with patch(
+            "obsidian_rag.mcp_server.handlers._get_tasks_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {"results": []}
+
+            result = get_tasks(date_filters='{"due_after": "2026-01-01"}')
+
+            assert result == {"results": []}
+            mock_handler.assert_called_once()
+            call_args = mock_handler.call_args
+            request = call_args[1]["request"]
+            assert request.date_filters.due_after == "2026-01-01"
+
+    def test_get_tasks_with_no_params(self, setup_registry):
+        """Test get_tasks() with no params returns all tasks with defaults."""
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        with patch(
+            "obsidian_rag.mcp_server.handlers._get_tasks_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {"results": []}
+
+            result = get_tasks()
+
+            assert result == {"results": []}
+            mock_handler.assert_called_once()
+            call_args = mock_handler.call_args
+            request = call_args[1]["request"]
+            assert request.status is None
+            assert request.tag_filters.include_tags is None
+            assert request.date_filters.due_after is None
+            assert request.priority is None
+            assert request.include_content is True
+            assert request.limit == 20
+            assert request.offset == 0
+
+    def test_get_tasks_with_dict_filters(self, setup_registry):
+        """Test get_tasks with dict tag_filters and date_filters."""
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        with patch(
+            "obsidian_rag.mcp_server.handlers._get_tasks_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {"results": []}
+
+            result = get_tasks(
+                status=["in_progress"],
+                tag_filters={"include_tags": ["urgent"], "match_mode": "any"},
+                date_filters={"due_before": "2026-12-31"},
+                priority=["high"],
+            )
+
+            assert result == {"results": []}
+            mock_handler.assert_called_once()
+            call_args = mock_handler.call_args
+            request = call_args[1]["request"]
+            assert request.status == ["in_progress"]
+            assert request.tag_filters.include_tags == ["urgent"]
+            assert request.tag_filters.match_mode == "any"
+            assert request.date_filters.due_before == "2026-12-31"
+            assert request.priority == ["high"]
 
 
 class TestBackwardCompatibility:
@@ -281,40 +453,70 @@ class TestBackwardCompatibility:
             assert result == {"results": []}
 
     def test_get_tasks_with_dataclass_still_works(self, setup_registry):
-        """Test that passing dataclass to get_tasks still works."""
+        """Test that passing dataclass to get_tasks tag_filters still works."""
         from obsidian_rag.mcp_server.server import get_tasks
-        from obsidian_rag.mcp_server.handlers import GetTasksToolInput
+        from obsidian_rag.mcp_server.handlers import TagFilterStrings
 
         with patch(
             "obsidian_rag.mcp_server.handlers._get_tasks_handler"
         ) as mock_handler:
             mock_handler.return_value = {"results": []}
 
-            params = GetTasksToolInput(status=["not_completed"])
-            result = get_tasks(params=params)
+            tag_filters = TagFilterStrings(include_tags=["work"], match_mode="all")
+            result = get_tasks(tag_filters=tag_filters)
 
             assert result == {"results": []}
+            mock_handler.assert_called_once()
+            call_args = mock_handler.call_args
+            request = call_args[1]["request"]
+            assert request.tag_filters.include_tags == ["work"]
 
     def test_get_tasks_with_none_still_works(self, setup_registry):
-        """Test that passing None to get_tasks still works (creates defaults)."""
+        """Test that passing None to get_tasks filters still works."""
         from obsidian_rag.mcp_server.server import get_tasks
-        from obsidian_rag.mcp_server.handlers import GetTasksToolInput
 
         with patch(
             "obsidian_rag.mcp_server.handlers._get_tasks_handler"
         ) as mock_handler:
             mock_handler.return_value = {"results": []}
 
-            # This should create default GetTasksToolInput
-            # Note: get_tasks doesn't accept None, but tests the dataclass path
-            params = GetTasksToolInput()  # All defaults
-            result = get_tasks(params=params)
+            result = get_tasks(status=None, tag_filters=None, date_filters=None)
 
             assert result == {"results": []}
+            mock_handler.assert_called_once()
+            call_args = mock_handler.call_args
+            request = call_args[1]["request"]
+            assert request.status is None
+            assert request.tag_filters.include_tags is None
+            assert request.date_filters.due_after is None
 
 
 class TestErrorHandling:
     """Tests for error handling with JSON string inputs."""
+
+    @pytest.fixture
+    def mock_registry(self):
+        """Create a mock registry for testing."""
+        from obsidian_rag.mcp_server.tool_definitions import MCPToolRegistry
+
+        registry = MCPToolRegistry(
+            db_manager=MagicMock(),
+            embedding_provider=MagicMock(),
+            settings=MagicMock(),
+        )
+        return registry
+
+    @pytest.fixture
+    def setup_registry(self, mock_registry):
+        """Setup and teardown for registry tests."""
+        from obsidian_rag.mcp_server import tool_definitions as tool_definitions_module
+
+        original_registry = tool_definitions_module._tool_registry
+        tool_definitions_module._tool_registry = mock_registry
+
+        yield mock_registry
+
+        tool_definitions_module._tool_registry = original_registry
 
     def test_malformed_json_raises_validation_error(self):
         """Test that malformed JSON raises ValidationError."""
@@ -339,31 +541,46 @@ class TestErrorHandling:
         with pytest.raises(ValidationError):
             adapter.validate_python(invalid_value)
 
-    def test_wrong_type_in_nested_object_raises_error(self):
-        """Test that wrong type in nested object raises error."""
-        from obsidian_rag.mcp_server.handlers import AnnotatedGetTasksInput
-        from pydantic import TypeAdapter, ValidationError
+    def test_malformed_json_in_tag_filters_raises_value_error(self, setup_registry):
+        """Test that malformed JSON in tag_filters raises ValueError."""
+        from obsidian_rag.mcp_server.server import get_tasks
 
-        adapter = TypeAdapter(AnnotatedGetTasksInput)
-        # tag_filters.match_mode must be string "all" or "any"
-        invalid_nested = '{"tag_filters": {"match_mode": 123}}'
+        with patch(
+            "obsidian_rag.mcp_server.handlers._get_tasks_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {"results": []}
 
-        with pytest.raises(ValidationError):
-            adapter.validate_python(invalid_nested)
+            with pytest.raises(ValueError):
+                get_tasks(tag_filters='{"include_tags": ["unclosed"}')
 
-    def test_empty_json_object_is_valid_for_get_tasks(self):
-        """Test that empty JSON object {} creates default GetTasksToolInput."""
-        from obsidian_rag.mcp_server.handlers import (
-            AnnotatedGetTasksInput,
-            GetTasksToolInput,
-        )
-        from pydantic import TypeAdapter
+    def test_malformed_json_in_date_filters_raises_value_error(self, setup_registry):
+        """Test that malformed JSON in date_filters raises ValueError."""
+        from obsidian_rag.mcp_server.server import get_tasks
 
-        adapter = TypeAdapter(AnnotatedGetTasksInput)
+        with patch(
+            "obsidian_rag.mcp_server.handlers._get_tasks_handler"
+        ) as mock_handler:
+            mock_handler.return_value = {"results": []}
 
-        result = adapter.validate_python("{}")
+            with pytest.raises(ValueError):
+                get_tasks(date_filters='{"due_after": "unclosed}')
 
-        assert isinstance(result, GetTasksToolInput)
-        assert result.status is None
-        assert result.limit == 20
-        assert result.offset == 0
+    def test_empty_json_object_for_tag_filters(self):
+        """Test that empty JSON object {} creates default TagFilterStrings."""
+        from obsidian_rag.mcp_server.server import _parse_tag_filters
+
+        result = _parse_tag_filters("{}")
+
+        assert result.include_tags is None
+        assert result.exclude_tags is None
+        assert result.match_mode == "all"
+
+    def test_empty_json_object_for_date_filters(self):
+        """Test that empty JSON object {} creates default TaskDateFilterStrings."""
+        from obsidian_rag.mcp_server.server import _parse_date_filters
+
+        result = _parse_date_filters("{}")
+
+        assert result.due_after is None
+        assert result.due_before is None
+        assert result.match_mode == "all"

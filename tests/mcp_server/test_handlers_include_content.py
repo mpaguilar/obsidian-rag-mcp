@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 from obsidian_rag.mcp_server.handlers import (
     DocumentTagParams,
     GetDocumentHandlerParams,
-    GetTasksToolInput,
     ListDocumentsHandlerParams,
     _get_tasks_handler,
 )
@@ -54,16 +53,16 @@ def test_list_documents_handler_params_include_content_false():
     assert params.include_content is False
 
 
-def test_get_tasks_tool_input_default_include_content_true():
-    """GetTasksToolInput should default include_content to True."""
-    tool_input = GetTasksToolInput()
-    assert tool_input.include_content is True
+def test_get_tasks_request_default_include_content_true():
+    """GetTasksRequest should default include_content to True."""
+    request = GetTasksRequest()
+    assert request.include_content is True
 
 
-def test_get_tasks_tool_input_include_content_false():
-    """GetTasksToolInput should accept include_content=False."""
-    tool_input = GetTasksToolInput(include_content=False)
-    assert tool_input.include_content is False
+def test_get_tasks_request_accepts_include_content_false():
+    """GetTasksRequest should accept include_content=False."""
+    request = GetTasksRequest(include_content=False)
+    assert request.include_content is False
 
 
 def test_get_tasks_handler_passes_include_content_through_filters():

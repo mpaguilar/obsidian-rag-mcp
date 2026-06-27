@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from unittest.mock import MagicMock
 
-from obsidian_rag.mcp_server.handlers import GetTasksRequest, GetTasksToolInput
+from obsidian_rag.mcp_server.handlers import GetTasksRequest
 from obsidian_rag.mcp_server.models import (
     DocumentResponse,
     TaskResponse,
@@ -155,7 +155,7 @@ def test_include_content_true_is_default_all_tools() -> None:
     tasks_request = TasksParamsGetTasksRequest()
     assert tasks_request.include_content is True
 
-    handler_input = GetTasksToolInput()
+    handler_input = GetTasksRequest()
     assert handler_input.include_content is True
 
     handler_request = GetTasksRequest()

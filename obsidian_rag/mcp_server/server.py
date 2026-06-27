@@ -22,7 +22,6 @@ from obsidian_rag.mcp_server.document_tools import (
 from obsidian_rag.mcp_server.handlers import (
     AnnotatedQueryFilter,
     DocumentTagParams,
-    GetTasksToolInput,
     IngestHandlerParams,
     QueryFilterParams,
     TagFilterStrings,
@@ -448,136 +447,92 @@ def ingest(
         raise
 
 
+def _parse_tag_filters(
+    tag_filters: str | dict | TagFilterStrings | None,
+) -> TagFilterStrings:
+    """Parse tag_filters from str/dict/dataclass to TagFilterStrings."""
+    if isinstance(tag_filters, (str, dict)):
+        parsed = parse_json_str(tag_filters)
+        if isinstance(parsed, dict):
+            return TagFilterStrings(**parsed)
+        return TagFilterStrings()
+    if tag_filters is None:
+        return TagFilterStrings()
+    return tag_filters
+
+
+def _parse_date_filters(
+    date_filters: str | dict | TaskDateFilterStrings | None,
+) -> TaskDateFilterStrings:
+    """Parse date_filters from str/dict/dataclass to TaskDateFilterStrings."""
+    if isinstance(date_filters, (str, dict)):
+        parsed = parse_json_str(date_filters)
+        if isinstance(parsed, dict):
+            return TaskDateFilterStrings(**parsed)
+        return TaskDateFilterStrings()
+    if date_filters is None:
+        return TaskDateFilterStrings()
+    return date_filters
+
+
 def get_tasks(
-    params: "GetTasksToolInput",
+    status: list[str] | None = None,
+    tag_filters: str | dict | TagFilterStrings | None = None,
+    date_filters: str | dict | TaskDateFilterStrings | None = None,
+    priority: list[str] | None = None,
+    *,
+    include_content: bool = True,
+    limit: int = 20,
+    offset: int = 0,
 ) -> dict[str, object]:
     """Query tasks with flexible filtering by status, dates, priority, and tags.
 
-    This tool provides comprehensive task filtering with support for date ranges,
-    status lists, tag filtering with include/exclude semantics, and priority
-    filtering. All filters are optional and combined with AND logic by default.
-
-    Valid Status Values:
-        - "not_completed": Tasks that are not yet completed
-        - "completed": Tasks that have been completed
-        - "in_progress": Tasks currently being worked on
-        - "cancelled": Tasks that have been cancelled
-
-    Valid Priority Values:
-        - "highest": Critical priority tasks
-        - "high": High priority tasks
-        - "normal": Normal priority tasks (default)
-        - "low": Low priority tasks
-        - "lowest": Lowest priority tasks
-
-    Tag Filtering:
-        Tags should NOT include the '#' prefix. Use plain tag names like
-        "personal/expenses" or "business/iConnections" instead of
-        "#personal/expenses" or "#business/iConnections".
-
-        Tag filters are specified in the tag_filters object:
-
-        include_tags: Tasks must have these tags (controlled by match_mode).
-            - match_mode="all" (default): Task must have ALL include tags
-            - match_mode="any": Task must have ANY of the include tags
-
-        exclude_tags: Tasks must NOT have any of these tags (always OR logic).
-
-        Examples:
-            - Find tasks with BOTH "work" AND "urgent" tags:
-              tag_filters={"include_tags": ["work", "urgent"], "match_mode": "all"}
-            - Find tasks with EITHER "work" OR "personal" tag:
-              tag_filters={"include_tags": ["work", "personal"], "match_mode": "any"}
-            - Find tasks WITHOUT "blocked" tag:
-              tag_filters={"exclude_tags": ["blocked"]}
-            - Find tasks with "work" but NOT "blocked":
-              tag_filters={"include_tags": ["work"], "exclude_tags": ["blocked"]}
-
-        Validation:
-            - Same tag cannot appear in both include_tags and exclude_tags
-            - Matching is case-insensitive ("Work" matches "work")
-
-    Date Filtering:
-        Date filters are specified in the date_filters object:
-
-        Available date fields:
-            - due_after: Filter tasks due on or after this date
-            - due_before: Filter tasks due on or before this date
-            - scheduled_after: Filter tasks scheduled on or after this date
-            - scheduled_before: Filter tasks scheduled on or before this date
-            - completion_after: Filter tasks completed on or after this date
-            - completion_before: Filter tasks completed on or before this date
-
-        match_mode: How to combine date filters
-            - "all" (default): AND logic across all date conditions
-            - "any": OR logic across all date conditions
-
-    Filter Logic:
-        - Multiple status values: OR logic (task matches ANY status)
-        - Multiple priority values: OR logic (task matches ANY priority)
-        - tag_filters.include_tags with match_mode="all" (default): AND logic
-        - tag_filters.include_tags with match_mode="any": OR logic
-        - tag_filters.exclude_tags: OR logic (task excluded if it has ANY excluded tag)
-        - Date filters: Configurable via date_filters.match_mode
-            - "all" (default): AND logic across all date conditions
-            - "any": OR logic across all date conditions
-        - Different filter types (status, tags, priority, dates): AND logic
-
     Args:
-        params: GetTasksToolInput containing all filter parameters.
+        status: List of statuses to filter by. Valid values: "not_completed",
+            "completed", "in_progress", "cancelled".
+        tag_filters: Tag filter parameters. Can be provided as a TagFilterStrings
+            object, a dict, or a JSON string. Dict/JSON string examples:
+            {"include_tags": ["work"], "match_mode": "any"}
+            '{"include_tags": ["work"], "match_mode": "any"}'
+            Tags should NOT include the '#' prefix.
+        date_filters: Date filter parameters. Can be provided as a
+            TaskDateFilterStrings object, a dict, or a JSON string.
+            Dict/JSON string examples:
+            {"due_after": "2026-01-01", "due_before": "2026-12-31"}
+            '{"due_after": "2026-01-01"}'
+        priority: List of priorities to filter by. Valid values: "highest",
+            "high", "normal", "low", "lowest".
+        include_content: If True (default), include the parent document's
+            content in each task response. When False, content fields are
+            empty strings, reducing payload size.
+        limit: Maximum number of results (default: 20, max: 10000).
+        offset: Number of results to skip (default: 0).
 
     Returns:
-        Dictionary with paginated task list response including:
-        - results: List of matching tasks with full details. Each task response
-            includes properties: Frontmatter key-value pairs from the parent
-            document (excluding tags). None if the parent document has no
-            frontmatter.
-        - total_count: Total number of tasks matching the filters
-        - has_more: True if more results are available beyond this page
-        - next_offset: The offset value to use for the next page (if has_more)
+        Dictionary with paginated task list response.
 
     Raises:
-        ValueError: If tag filter validation fails, such as when the same tag
-            appears in both include_tags and exclude_tags lists.
-
-    Notes:
-        Date comparisons are inclusive (>= for after, <= for before).
-        Returns empty results (total_count=0) if no tasks match the criteria.
-        Tag matching is case-insensitive.
+        ValueError: If tag filter validation fails or JSON parsing fails.
 
     """
-    from obsidian_rag.mcp_server.handlers import GetTasksRequest, _get_tasks_handler
+    from obsidian_rag.mcp_server.handlers import (
+        GetTasksRequest,
+        _get_tasks_handler,
+    )
 
     registry = _get_registry()
 
-    # Handle JSON string or dict input (when called directly without FastMCP validation)
-    if isinstance(params, (str, dict)):
-        parsed = parse_json_str(params)
-        if parsed is None:
-            params = GetTasksToolInput()
-        elif isinstance(parsed, dict):
-            params = GetTasksToolInput(**parsed)
-        else:
-            # Defensive fallback: parse_json_str only returns dict or None for str inputs,
-            # but this branch handles the impossible case where it returns a non-dict type.
-            params = parsed  # pragma: no cover
-
-    # Handle None params - create default GetTasksToolInput
-    if params is None:
-        params = GetTasksToolInput()
-
-    # Create default filters if not provided
-    tag_filters = params.tag_filters or TagFilterStrings()
-    date_filters = params.date_filters or TaskDateFilterStrings()
+    parsed_tag_filters = _parse_tag_filters(tag_filters)
+    parsed_date_filters = _parse_date_filters(date_filters)
 
     request = GetTasksRequest(
-        status=params.status,
-        tag_filters=tag_filters,
-        date_filters=date_filters,
-        priority=params.priority,
-        include_content=params.include_content,
-        limit=params.limit,
-        offset=params.offset,
+        status=status,
+        tag_filters=parsed_tag_filters,
+        date_filters=parsed_date_filters,
+        priority=priority,
+        include_content=include_content,
+        limit=limit,
+        offset=offset,
     )
 
     return _get_tasks_handler(
