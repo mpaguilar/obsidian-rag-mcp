@@ -91,12 +91,11 @@ Database connection management using SQLAlchemy with:
 - `tags` are extracted separately and normalized (string or list)
 - All other properties including `kind` are stored in `frontmatter_json`
 - Handles corrupted frontmatter gracefully (logs warning, continues)
-- **Tab rejection pre-validation:**
-  - `_has_indentation_tabs()` helper detects tab characters at indentation positions (start of line or after whitespace)
-  - `FrontMatterParsingError` is raised when indentation tabs are detected
-  - Error message includes line numbers and recommends "replace tabs with spaces"
-  - Tabs inside quoted string values are accepted (valid YAML)
-  - Pre-validation runs before `yaml.safe_load()` — existing `YAMLError` handling remains unchanged
+- **Tab normalization:**
+  - `_normalize_indentation_tabs()` helper converts indentation-position tab characters to 2 spaces before `yaml.safe_load()`
+  - Only the leading whitespace run of each line is transformed; tabs in quoted string values and mid-line positions are untouched
+  - Normalization runs before `yaml.safe_load()` — existing `YAMLError` handling remains unchanged as graceful fallback for genuinely malformed YAML
+  - DEBUG log emitted when normalization alters content (frontmatter contained tabs)
 
 #### Body Tag Extraction (`body_tags.py`)
 
@@ -569,7 +568,7 @@ File System → Scanner → FrontMatter Parser → Task Parser → Database
 1. Scanner discovers `.md` files
 2. MD5 checksum calculated and compared with database
 3. If changed or new:
-   - FrontMatter extracted and parsed (including tab pre-validation)
+   - FrontMatter extracted and parsed (indentation tabs normalized to spaces before YAML parsing)
    - Tasks extracted from content
    - **Document-level tags merged into task tags** (case-insensitive dedup, lowercased) via `tag_merging.py`
    - Vector embeddings generated via LLM provider

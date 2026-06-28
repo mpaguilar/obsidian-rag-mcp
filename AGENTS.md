@@ -1191,3 +1191,36 @@ Used global registry pattern to maintain FastMCP compatibility while achieving t
 - All ruff checks pass
 - All mypy type checks pass on source code
 - All source files under 1000 lines (ingestion.py at 999, body_tags.py at 124, tag_merging.py at 77)
+
+### 043.remove-tab-error (Completed 2026-06-28)
+
+**Objective:** Remove the tab-rejection hard-fail from frontmatter parsing (introduced by checkpoint 042) and replace it with tab normalization so ingestion succeeds when frontmatter contains indentation tabs, preserving frontmatter data instead of crashing or silently dropping it.
+
+**Changes Made:**
+- **Updated `obsidian_rag/parsing/frontmatter.py`** (265 → 274 lines): Deleted `_has_indentation_tabs()` (lines 68-88), `_validate_no_indentation_tabs()` (lines 91-109), and `FrontMatterParsingError` class (lines 112-113). Removed the `_validate_no_indentation_tabs(yaml_content)` call at line 143 in `extract_frontmatter()`. Added `_normalize_indentation_tabs()` helper that converts leading whitespace-run tab characters to 2 spaces before `yaml.safe_load()` — only indentation-position tabs are transformed; tabs in quoted string values and mid-line positions are untouched. Wired normalization into `extract_frontmatter()` after the `FRONTMATTER_PATTERN` match, before `_parse_yaml_frontmatter()`, with a DEBUG log when normalization altered content. Refactored `_parse_yaml_frontmatter()` extracted from inline `try` block in `extract_frontmatter()` to a separate function (keeps McCabe complexity within limits).
+- **Deleted `tests/test_parsing_frontmatter_tabs.py`** (119 lines, 15 tests): Entire file exclusively tested `_has_indentation_tabs` and tab-rejection behavior. Deleted per CONVENTIONS.md (not emptied).
+- **Deleted `tests/test_services_ingestion_tab_rejection.py`** (223 lines, 6 tests): Entire file exclusively tested tab-rejection behavior during ingestion. Deleted per CONVENTIONS.md (not emptied).
+- **Created `tests/test_parsing_frontmatter_normalize_tabs.py`** (64 lines, 10 tests): Unit tests for `_normalize_indentation_tabs()` covering pure-tab indentation, tab-after-spaces, multi-level nesting, quoted-value tabs untouched, mid-line tabs untouched, blank/tab-only lines, no-tabs passthrough, empty string, consecutive tabs, and preserves non-leading content.
+- **Created `tests/test_services_ingestion_tab_normalization.py`** (158 lines, 4 tests): Integration tests for tab-normalized ingestion — file with tab frontmatter succeeds without error, tags preserved, properties preserved, and files without tabs unchanged (regression check).
+- **Updated `tests/test_parsing_frontmatter.py`**: Added `test_extract_frontmatter_normalizes_indentation_tabs` and `test_extract_frontmatter_no_normalization_log_when_no_tabs` for normalization integration in the existing frontmatter test file.
+- **Updated `ARCHITECTURE.md`**: Replaced "Tab rejection pre-validation" bullet block (lines 94-98) with "Tab normalization" documentation. Changed "including tab pre-validation" to "indentation tabs normalized to spaces before YAML parsing" in the ingestion flow description (line 572).
+
+**Key Design Decisions:**
+- **Option B (normalize) chosen**: Requirements confirmed Option B — preserves frontmatter data (tags, properties) instead of silently dropping it as Option A (graceful revert) would. Option A would have reintroduced the exact silent frontmatter data loss that 042 was created to surface.
+- **Leading whitespace run only**: Only indentation-position tabs cause `ScannerError`; tabs in quoted string values and mid-line positions are untouched by normalization.
+- **2 spaces per tab**: Matches project's 2-space YAML convention per CONVENTIONS.md. YAML only requires consistent indentation per nesting level, so any fixed width works for pure-tab indentation.
+- **`FrontMatterParsingError` fully deleted**: Only referenced by removed tab code and the two test files being deleted. Verified via grep: not exported from `parsing/__init__.py`, not imported by `services/` or any other module.
+- **DEBUG log only on alteration**: Per REQ-002, a DEBUG log aids diagnosis when normalization alters content. Uses pre-formatted `_msg` variable per CONVENTIONS.md. No log emitted when content is unchanged (no tabs).
+- **`_parse_yaml_frontmatter()` extraction**: The `try: yaml.safe_load()` block was extracted from `extract_frontmatter()` into a separate `_parse_yaml_frontmatter()` function. This keeps `extract_frontmatter()` McCabe complexity low and makes the YAML parsing independently testable.
+
+**No breaking changes:** Default behavior unchanged for files without tab frontmatter. Files with tab frontmatter now ingest successfully instead of crashing — an improvement, not a regression. No schema changes, no Alembic migration, no config changes. AGENTS.md checkpoint history for 042 is untouched.
+
+**Verification:**
+- All 2013 tests pass (1 skipped pre-existing)
+- 100% code coverage (5179 statements, 1012 branches)
+- All ruff checks pass; ruff format clean
+- mypy clean on source code (55 source files, no issues)
+- bandit clean (0 violations)
+- All source files under 1000 lines (ingestion.py at 999, frontmatter.py at 274)
+- 0 grep matches for `FrontMatterParsingError`, `_has_indentation_tabs`, `_validate_no_indentation_tabs` in `obsidian_rag/` .py files
+- Code review: 4/4 reviewers APPROVED, no CHANGES REQUESTED

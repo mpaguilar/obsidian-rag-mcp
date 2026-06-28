@@ -306,3 +306,27 @@ Content here.
         assert metadata["schedule"]["start"] == "2024-03-15"
         assert metadata["schedule"]["end"] == "2024-04-01"
         assert isinstance(metadata["schedule"]["start"], str)
+
+
+def test_extract_frontmatter_normalizes_indentation_tabs(caplog) -> None:
+    """Frontmatter with indentation tabs is normalized and parsed correctly."""
+    import logging
+    from obsidian_rag.parsing.frontmatter import extract_frontmatter
+
+    content = "---\ntags:\n\t- work\n\t- personal\n---\nBody text"
+    with caplog.at_level(logging.DEBUG):
+        result, remaining = extract_frontmatter(content)
+    assert "work" in result.get("tags", [])
+    assert "personal" in result.get("tags", [])
+    assert "Frontmatter indentation tabs normalized" in caplog.text
+
+
+def test_extract_frontmatter_no_normalization_log_when_no_tabs(caplog) -> None:
+    """No DEBUG normalization log when frontmatter has no tabs."""
+    import logging
+    from obsidian_rag.parsing.frontmatter import extract_frontmatter
+
+    content = "---\ntags:\n  - work\n---\nBody text"
+    with caplog.at_level(logging.DEBUG):
+        result, remaining = extract_frontmatter(content)
+    assert "Frontmatter indentation tabs normalized" not in caplog.text

@@ -65,52 +65,71 @@ FRONTMATTER_PATTERN = re.compile(
 )
 
 
-def _has_indentation_tabs(yaml_content: str) -> list[int]:
-    """Detect tab characters at indentation positions in YAML content.
+def _normalize_indentation_tabs(yaml_content: str) -> str:
+    """Convert indentation-position tab characters to spaces in YAML frontmatter.
 
-    Only tabs at line-start indentation positions are flagged.
-    Tabs in quoted string values, inline after key-colon, or in
-    non-indentation positions are valid YAML and NOT flagged.
+    Only tabs in the leading whitespace run (indentation) are converted.
+    Tabs inside quoted string values or mid-line positions are untouched.
+    Each indentation tab is replaced with 2 spaces, matching the project convention.
 
     Args:
-        yaml_content: The raw YAML frontmatter text to scan.
+        yaml_content: The raw YAML frontmatter text to normalize.
 
     Returns:
-        List of line numbers (1-based) where indentation tabs were found.
-        Empty list if no indentation tabs detected.
+        The normalized YAML string with indentation tabs replaced by spaces.
+        Returns the input unchanged if it contains no indentation tabs.
 
     """
-    tab_lines: list[int] = []
-    for line_num, line in enumerate(yaml_content.split("\n"), start=1):
-        stripped = line.lstrip(" ")
-        if stripped.startswith("\t"):
-            tab_lines.append(line_num)
-    return tab_lines
+    _msg = "_normalize_indentation_tabs starting"
+    log.debug(_msg)
+    if not yaml_content:
+        _msg = "_normalize_indentation_tabs returning empty input unchanged"
+        log.debug(_msg)
+        return yaml_content
+    lines = yaml_content.split("\n")
+    normalized_lines: list[str] = []
+    for line in lines:
+        leading_len = len(line) - len(line.lstrip())
+        if leading_len == 0:
+            normalized_lines.append(line)
+            continue
+        leading_whitespace = line[:leading_len]
+        rest_of_line = line[leading_len:]
+        new_leading = leading_whitespace.replace("\t", "  ")
+        normalized_lines.append(new_leading + rest_of_line)
+    result = "\n".join(normalized_lines)
+    _msg = "_normalize_indentation_tabs returning"
+    log.debug(_msg)
+    return result
 
 
-def _validate_no_indentation_tabs(yaml_content: str) -> None:
-    """Raise FrontMatterParsingError if indentation tabs are found.
+def _parse_yaml_frontmatter(yaml_content: str) -> dict[str, Any]:
+    """Parse YAML frontmatter content into a dictionary.
 
     Args:
-        yaml_content: The raw YAML frontmatter text to validate.
+        yaml_content: The raw YAML frontmatter text.
 
-    Raises:
-        FrontMatterParsingError: If tab characters are found at indentation
-            positions within the YAML content.
+    Returns:
+        Parsed dictionary, or empty dict if parsing fails.
+
+    Notes:
+        If YAML is corrupted or cannot be parsed, an empty dict
+        is returned and a warning is logged.
 
     """
-    tab_lines = _has_indentation_tabs(yaml_content)
-    if tab_lines:
-        _msg = (
-            f"Tab characters found in frontmatter indentation at lines "
-            f"{tab_lines}. Replace tabs with spaces for indentation."
-        )
+    try:
+        loaded = yaml.safe_load(yaml_content)
+        if loaded is None:
+            return {}
+        if not isinstance(loaded, dict):
+            _msg = f"FrontMatter is not a dictionary, got {type(loaded)}"
+            log.warning(_msg)
+            return {}
+        return loaded
+    except yaml.YAMLError as e:
+        _msg = f"Failed to parse FrontMatter YAML: {e}"
         log.warning(_msg)
-        raise FrontMatterParsingError(_msg)
-
-
-class FrontMatterParsingError(Exception):
-    """Exception raised when FrontMatter parsing fails."""
+        return {}
 
 
 def extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
@@ -140,23 +159,13 @@ def extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     yaml_content = match.group(1)
     remaining_content = content[match.end() :]
 
-    _validate_no_indentation_tabs(yaml_content)
+    normalized = _normalize_indentation_tabs(yaml_content)
+    if normalized != yaml_content:
+        _msg = "Frontmatter indentation tabs normalized to spaces for YAML parsing"
+        log.debug(_msg)
+    yaml_content = normalized
 
-    frontmatter: dict[str, Any]
-    try:
-        loaded = yaml.safe_load(yaml_content)
-        if loaded is None:
-            frontmatter = {}
-        elif not isinstance(loaded, dict):
-            _msg = f"FrontMatter is not a dictionary, got {type(loaded)}"
-            log.warning(_msg)
-            frontmatter = {}
-        else:
-            frontmatter = loaded
-    except yaml.YAMLError as e:
-        _msg = f"Failed to parse FrontMatter YAML: {e}"
-        log.warning(_msg)
-        frontmatter = {}
+    frontmatter = _parse_yaml_frontmatter(yaml_content)
 
     _msg = f"Successfully extracted FrontMatter with {len(frontmatter)} keys"
     log.debug(_msg)
