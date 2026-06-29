@@ -99,6 +99,7 @@ def test_create_document_response_backward_compatible_no_include_content() -> No
 def test_create_task_response_backward_compatible_no_include_content() -> None:
     """create_task_response without include_content should include raw_text."""
     task = MagicMock()
+    task.inline_fields = None
     task.id = uuid.uuid4()
     task.raw_text = "- [ ] secret task"
     task.status = "not_completed"

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from obsidian_rag.mcp_server.handlers import TagFilterStrings, TaskDateFilterStrings
+from obsidian_rag.mcp_server.models import PropertyFilter
 
 
 @pytest.fixture
@@ -92,3 +93,100 @@ def test_get_tasks_defaults(patched_handler: MagicMock) -> None:
     assert request.include_content is True
     assert request.limit == 20
     assert request.offset == 0
+    assert request.inline_filters is None
+
+
+def test_get_tasks_passes_inline_filters_list(patched_handler: MagicMock) -> None:
+    """List of PropertyFilter objects reaches the handler request."""
+    from obsidian_rag.mcp_server.server import get_tasks
+
+    inline_filters = [
+        PropertyFilter(path="vendor", operator="equals", value="Amazon"),
+        PropertyFilter(path="status", operator="in", value=["active", "pending"]),
+    ]
+    get_tasks(inline_filters=inline_filters)
+
+    request = patched_handler.call_args.kwargs["request"]
+    assert request.inline_filters is inline_filters
+    assert len(request.inline_filters) == 2
+    assert request.inline_filters[0].path == "vendor"
+    assert request.inline_filters[0].operator == "equals"
+    assert request.inline_filters[0].value == "Amazon"
+    assert request.inline_filters[1].path == "status"
+    assert request.inline_filters[1].operator == "in"
+    assert request.inline_filters[1].value == ["active", "pending"]
+
+
+def test_get_tasks_passes_inline_filters_dict(patched_handler: MagicMock) -> None:
+    """Dict input is parsed into a list of PropertyFilter."""
+    from obsidian_rag.mcp_server.server import get_tasks
+
+    get_tasks(
+        inline_filters={"path": "vendor", "operator": "equals", "value": "Amazon"}
+    )
+
+    request = patched_handler.call_args.kwargs["request"]
+    assert request.inline_filters is not None
+    assert len(request.inline_filters) == 1
+    assert request.inline_filters[0].path == "vendor"
+    assert request.inline_filters[0].operator == "equals"
+    assert request.inline_filters[0].value == "Amazon"
+
+
+def test_get_tasks_passes_inline_filters_json_str(patched_handler: MagicMock) -> None:
+    """JSON string input is parsed into a list of PropertyFilter."""
+    from obsidian_rag.mcp_server.server import get_tasks
+
+    get_tasks(
+        inline_filters='{"path": "vendor", "operator": "equals", "value": "Amazon"}'
+    )
+
+    request = patched_handler.call_args.kwargs["request"]
+    assert request.inline_filters is not None
+    assert len(request.inline_filters) == 1
+    assert request.inline_filters[0].path == "vendor"
+    assert request.inline_filters[0].operator == "equals"
+    assert request.inline_filters[0].value == "Amazon"
+
+
+def test_get_tasks_passes_inline_filters_json_list_str(
+    patched_handler: MagicMock,
+) -> None:
+    """JSON list string input is parsed into multiple PropertyFilter objects."""
+    from obsidian_rag.mcp_server.server import get_tasks
+
+    get_tasks(
+        inline_filters='[{"path": "vendor", "operator": "equals", "value": "Amazon"}, {"path": "priority", "operator": "equals", "value": "high"}]'
+    )
+
+    request = patched_handler.call_args.kwargs["request"]
+    assert request.inline_filters is not None
+    assert len(request.inline_filters) == 2
+    assert request.inline_filters[0].path == "vendor"
+    assert request.inline_filters[0].operator == "equals"
+    assert request.inline_filters[0].value == "Amazon"
+    assert request.inline_filters[1].path == "priority"
+    assert request.inline_filters[1].operator == "equals"
+    assert request.inline_filters[1].value == "high"
+
+
+def test_get_tasks_inline_filters_none(patched_handler: MagicMock) -> None:
+    """Explicit None for inline_filters stays None in the request."""
+    from obsidian_rag.mcp_server.server import get_tasks
+
+    get_tasks(inline_filters=None)
+
+    request = patched_handler.call_args.kwargs["request"]
+    assert request.inline_filters is None
+
+
+def test_get_tasks_inline_filters_invalid_json_scalar(
+    patched_handler: MagicMock,
+) -> None:
+    """JSON string parsing to a scalar returns None for inline_filters."""
+    from obsidian_rag.mcp_server.server import get_tasks
+
+    get_tasks(inline_filters='"just_a_string"')
+
+    request = patched_handler.call_args.kwargs["request"]
+    assert request.inline_filters is None

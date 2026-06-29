@@ -14,6 +14,28 @@ from alembic.script import ScriptDirectory
 log = logging.getLogger(__name__)
 
 
+def _get_alembic_config() -> Config:
+    """Create Alembic Config from pyproject.toml.
+
+    Uses the toml_file parameter to properly load Alembic settings
+    from the [tool.alembic] section in pyproject.toml.
+
+    Returns:
+        Alembic Config object with script_location set from pyproject.toml.
+
+    Raises:
+        pytest.skip: If pyproject.toml is not found.
+    """
+    pyproject_toml = Path(__file__).parent.parent / "pyproject.toml"
+    if not pyproject_toml.exists():
+        pytest.skip("pyproject.toml not found")
+    alembic_cfg = Config(toml_file=str(pyproject_toml))
+    alembic_cfg.set_main_option(
+        "sqlalchemy.url", "postgresql+psycopg://localhost/test"
+    )
+    return alembic_cfg
+
+
 class TestMigrationChain:
     """Tests for migration chain integrity."""
 
@@ -29,12 +51,7 @@ class TestMigrationChain:
         _msg = "test_migration_chain_is_valid starting"
         log.debug(_msg)
 
-        # Load alembic configuration
-        alembic_ini = Path(__file__).parent.parent / "alembic.ini"
-        if not alembic_ini.exists():
-            pytest.skip("alembic.ini not found")
-
-        alembic_cfg = Config(str(alembic_ini))
+        alembic_cfg = _get_alembic_config()
         script = ScriptDirectory.from_config(alembic_cfg)
 
         # Get the revision map - this validates the chain
@@ -86,11 +103,7 @@ class TestMigrationChain:
         _msg = "test_migration_002_exists starting"
         log.debug(_msg)
 
-        alembic_ini = Path(__file__).parent.parent / "alembic.ini"
-        if not alembic_ini.exists():
-            pytest.skip("alembic.ini not found")
-
-        alembic_cfg = Config(str(alembic_ini))
+        alembic_cfg = _get_alembic_config()
         script = ScriptDirectory.from_config(alembic_cfg)
 
         # Try to get revision

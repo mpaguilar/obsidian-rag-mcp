@@ -109,7 +109,7 @@ class TestTaskOperations:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         parsed_tasks = [(1, mock_task)]
 
@@ -121,6 +121,60 @@ class TestTaskOperations:
         assert added_task.document_id == "doc-id"
         assert added_task.line_number == 1
         assert added_task.description == "Test task"
+
+    def test_create_tasks_inline_fields_contains_well_known_fields(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test Task.inline_fields is populated from parsed task inline fields."""
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.id = "doc-id"
+        mock_document.tags = None
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] Test task [project:: alpha] [effort:: high]"
+        mock_task.status = "not_completed"
+        mock_task.description = "Test task"
+        mock_task.tags = []
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = None
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.inline_fields = {"project": "alpha", "effort": "high"}
+
+        ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
+
+        created_task = mock_session.add.call_args[0][0]
+        assert created_task.inline_fields == {"project": "alpha", "effort": "high"}
+
+    def test_create_tasks_inline_fields_with_due_and_vendor(
+        self,
+        ingestion_service: IngestionService,
+    ) -> None:
+        """Test well-known fields (due) and custom fields (vendor) both land in inline_fields."""
+        mock_session = MagicMock()
+        mock_document = MagicMock()
+        mock_document.id = "doc-id"
+        mock_document.tags = None
+
+        mock_task = MagicMock()
+        mock_task.raw_text = "- [ ] Test task [due:: 2026-03-20] [vendor:: Amazon]"
+        mock_task.status = "not_completed"
+        mock_task.description = "Test task"
+        mock_task.tags = []
+        mock_task.repeat = None
+        mock_task.scheduled = None
+        mock_task.due = "2026-03-20"
+        mock_task.completion = None
+        mock_task.priority = "normal"
+        mock_task.inline_fields = {"due": "2026-03-20", "vendor": "Amazon"}
+
+        ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
+
+        created_task = mock_session.add.call_args[0][0]
+        assert created_task.inline_fields == {"due": "2026-03-20", "vendor": "Amazon"}
 
     def test_update_tasks_deletes_old_and_creates_new(
         self,
@@ -141,7 +195,7 @@ class TestTaskOperations:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         parsed_tasks = [(1, mock_task)]
 
@@ -173,7 +227,7 @@ class TestTaskOperations:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
 
@@ -200,7 +254,7 @@ class TestTaskOperations:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
 
@@ -227,7 +281,7 @@ class TestTaskOperations:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
 
@@ -254,7 +308,7 @@ class TestTaskOperations:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
 
@@ -281,7 +335,7 @@ class TestTaskOperations:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         ingestion_service._create_tasks(mock_session, mock_document, [(1, mock_task)])  # type: ignore[arg-type]
 
@@ -311,7 +365,7 @@ class TestTaskOperations:
         mock_new_task.due = None
         mock_new_task.completion = None
         mock_new_task.priority = "normal"
-        mock_new_task.custom_metadata = {}
+        mock_new_task.inline_fields = {}
 
         mock_session.query.return_value.filter_by.return_value.all.return_value = [
             mock_existing_task

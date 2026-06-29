@@ -55,6 +55,7 @@ obsidian_rag/                    # Main package
 │       ├── documents_tags.py    # Tag filtering logic
 │       ├── tasks.py             # Task query tools
 │       ├── tasks_dates.py       # Date parsing for task filters
+│       ├── tasks_inline_filters.py # JSONB inline field filtering for tasks
 │       ├── tasks_params.py      # Task filter parameter dataclasses
 │       ├── vaults.py            # Vault query tools (list, get, update, delete)
 │       └── vaults_params.py     # Vault update parameter dataclass
@@ -173,6 +174,48 @@ ruff check obsidian_rag/ tests/
 > **Technical Implementation Details**: For architecture patterns, component details, and data flow, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
 
 ## Checkpoint History
+
+### 044.inline-field-indexing (Completed 2026-06-28)
+
+**Objective:** Rename `custom_metadata` to `inline_fields` on the Task model, include well-known fields (due, priority, etc.) in the `inline_fields` dict during parsing, expose `inline_fields` in TaskResponse, and add `inline_filters` parameter to `get_tasks` MCP tool for JSONB filtering.
+
+**Changes Made:**
+- **Alembic migration 007**: Renamed `custom_metadata` column to `inline_fields` on tasks table via `ALTER TABLE RENAME COLUMN` (preserves all JSONB data; downgrade renames back).
+- **Updated `obsidian_rag/database/models.py`**: Renamed `custom_metadata` to `inline_fields` on Task model column. Updated docstring.
+- **Updated `obsidian_rag/parsing/tasks.py`**: Renamed `_serialize_custom_metadata` to `_serialize_inline_fields`. Renamed ParsedTask.custom_metadata to ParsedTask.inline_fields. Changed `_process_metadata_key()` to include well-known fields (scheduled, due, completion, priority, repeat) in BOTH `standard_fields` AND `inline_fields` dict (REQ-006). Changed `_extract_task_metadata()` to return `(standard_fields, inline_fields)` tuple where inline_fields contains ALL `[key:: value]` pairs.
+- **Updated `obsidian_rag/services/ingestion.py`**: Changed `_create_tasks()` to use `inline_fields=parsed_task.inline_fields` instead of `custom_metadata=parsed_task.custom_metadata`.
+- **Updated `obsidian_rag/mcp_server/models.py`**: Added `inline_fields: dict[str, str] | None = None` to TaskResponse. Updated `create_task_response()` to populate `inline_fields` from `Task.inline_fields` column (populated even when `include_content=False`, per REQ-005).
+- **Created `obsidian_rag/mcp_server/tools/tasks_inline_filters.py`** (140 lines): New module containing JSONB filtering logic for `Task.inline_fields` column. Includes `get_inline_field_path_expression()`, `build_inline_exists_condition()`, `build_inline_equals_condition()`, `build_inline_like_condition()`, `build_inline_regex_condition()`, `build_inline_in_condition()`, `validate_inline_field_path()`, `validate_inline_filter()`, `validate_inline_filters()`, and `apply_inline_field_filter()`. Supports `PropertyFilter` operators (`equals`, `contains`, `exists`, `in`, `starts_with`, `regex`). Flat key paths only (no dot notation). Maximum 10 inline filters per query. All functions use `TextClause` return type for mypy compatibility.
+- **Updated `obsidian_rag/mcp_server/tools/tasks_params.py`**: Added `inline_filters: list[PropertyFilter] | None = None` to `GetTasksFilterParams` and `GetTasksRequest` dataclasses.
+- **Updated `obsidian_rag/mcp_server/tools/tasks.py`**: Integrated inline field filtering into `get_tasks()` — validates inline filters via `validate_inline_filters()` and applies each filter via `apply_inline_field_filter()` using PostgreSQL JSONB operators (`->>`, `?`, `ILIKE`, `~`, `ANY`).
+- **Updated `obsidian_rag/mcp_server/handlers.py`**: Threaded `inline_filters` through `_get_tasks_handler()` into `GetTasksRequest`.
+- **Updated `obsidian_rag/mcp_server/server.py`**: Added `_parse_inline_filters()` and `_parse_inline_filters_str_or_dict()` helpers for manual JSON string/dict parsing (consistent with `tag_filters`/`date_filters` pattern). Added `inline_filters` keyword parameter to `get_tasks()` MCP tool wrapper with docstring documentation.
+- **Updated all test files**: Renamed `custom_metadata` to `inline_fields` in 8 test files (test_parsing_tasks.py, test_services_ingestion_tasks.py, test_services_ingestion_single.py, test_services_ingestion_bug001.py, test_services_ingestion_body_tags.py, test_services_ingestion_tab_normalization.py, test_database_models.py, test_parsing_body_tags_integration.py). Created new test files: test_parsing_tasks_inline_fields.py, test_models_task_response_inline_fields.py, test_tools_tasks_inline_filters.py, test_get_tasks_inline_filters_integration.py, test_server_inline_filters.py, test_migration_007_rename_custom_metadata.py, test_tasks_params_inline_filters.py, test_tool_definitions_inline_filters.py, test_tools_tasks_inline_filter_integration.py.
+- **Updated `ARCHITECTURE.md`**: Added inline_fields documentation for Task model, TaskResponse, well-known field duplication, inline_filters parameter, and filter combinations.
+- **Updated `AGENTS.md`**: Updated project structure to include `tasks_inline_filters.py` module. Updated Task model description.
+
+**Key Design Decisions:**
+- **Column rename preserves data**: `ALTER TABLE RENAME COLUMN` is a metadata-only operation in PostgreSQL. No data migration needed. Downgrade renames back.
+- **Well-known field duplication (REQ-006)**: Well-known fields appear in BOTH typed columns AND `inline_fields` dict. Typed columns are authoritative for date/priority queries; `inline_fields` dict provides uniform key-value access. No retroactive data migration — consumers re-ingest to get full inline_fields.
+- **Flat key paths only**: Inline fields are flat key-value pairs (no nested JSON objects), so dot notation is rejected with `ValueError`. This simplifies SQL generation and matches the actual data shape.
+- **Consistent with document property filters**: Uses the same `PropertyFilter` model and operator names as `get_documents_by_property`, reducing API surface area and client confusion.
+- **Manual JSON parsing (option b)**: `_parse_inline_filters` uses `parse_json_str` to handle str/dict inputs, consistent with `_parse_tag_filters` and `_parse_date_filters`. No `BeforeValidator` needed.
+- **PostgreSQL JSONB operators**: `inline_fields->>'key'` for value extraction, `inline_fields ? 'key'` for existence, `ILIKE` for contains/starts_with, `~` for regex, `= ANY()` for in-list.
+- **Validation before application**: `validate_inline_filters()` runs before any SQL is built, providing early error feedback for invalid operators, dot paths, or excessive filter counts.
+- **`include_content=False` retains `inline_fields`**: `inline_fields` is metadata, not content (REQ-005). Same treatment as `properties` on `DocumentResponse`.
+- **`TextClause` return type**: Builder functions return `TextClause` instead of `object` for mypy compatibility with `query.filter()`.
+
+**No breaking changes:** Default behavior unchanged (`inline_filters=None` means no filtering). Column rename preserves all data. All existing tool signatures and responses work identically without client modifications. No schema changes beyond the column rename.
+
+**Verification:**
+- All 2141 tests pass (1 skipped pre-existing)
+- 100% code coverage (5276 statements, 1044 branches)
+- All ruff checks pass; ruff format clean
+- mypy clean on source code (56 source files, no issues)
+- bandit clean (0 violations)
+- All source files under 1000 lines
+- No `custom_metadata` references remain in source code
+- Code review: 4/5 reviewers APPROVED; 1 reviewer CHANGES REQUESTED (3 easy fixes applied: docstrings expanded with Args/Returns, `Any` replaced with `TextClause`, debug logging added to public entry points)
 
 ### 042.fix-schema-and-tabs (Completed 2026-06-27)
 

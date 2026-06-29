@@ -19,28 +19,23 @@ log = logging.getLogger(__name__)
 def alembic_config(tmp_path):
     """Create Alembic configuration for testing.
 
+    Uses the project's pyproject.toml as the config source via the
+    toml_file parameter, which properly reads the [tool.alembic] section.
+
     Args:
         tmp_path: Pytest fixture providing a temporary path.
 
     Returns:
-        Config: Alembic configuration object.
+        Config: Alembic configuration object with test database URL.
     """
     _msg = "alembic_config fixture starting"
     log.debug(_msg)
 
-    # Create alembic.ini content with PostgreSQL URL
-    alembic_ini = tmp_path / "alembic.ini"
-    alembic_ini.write_text("""
-[alembic]
-script_location = alembic
-prepend_sys_path = .
-version_path_separator = os
-sqlalchemy.url = postgresql+psycopg://localhost/test
-
-[post_write_hooks]
-""")
-
-    config = Config(str(alembic_ini))
+    pyproject_toml = Path(__file__).parent.parent.parent / "pyproject.toml"
+    config = Config(toml_file=str(pyproject_toml))
+    config.set_main_option(
+        "sqlalchemy.url", "postgresql+psycopg://localhost/test"
+    )
 
     _msg = "alembic_config fixture returning"
     log.debug(_msg)

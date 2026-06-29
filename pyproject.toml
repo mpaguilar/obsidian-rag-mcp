@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "obsidian-rag"
-version = "0.43.0"
+version = "0.44.1"
 description = "CLI tool for ingesting Obsidian markdown documents into PostgreSQL with vector embeddings"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -143,6 +143,11 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
+
+[tool.alembic]
+script_location = "alembic"
+prepend_sys_path = ["."]
+version_path_separator = "os"
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]

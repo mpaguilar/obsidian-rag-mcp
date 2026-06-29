@@ -8,7 +8,7 @@ from obsidian_rag.parsing.tasks import (
     _map_priority,
     _obsidian_to_rrule,
     _parse_date,
-    _serialize_custom_metadata,
+    _serialize_inline_fields,
     parse_task_line,
     parse_tasks_from_content,
 )
@@ -309,21 +309,21 @@ class TestProcessMetadataKey:
         from obsidian_rag.parsing.tasks import _process_metadata_key
 
         standard_fields: dict = {}
-        custom_metadata: dict = {}
-        _process_metadata_key("priority", "high", standard_fields, custom_metadata)
+        inline_fields: dict = {}
+        _process_metadata_key("priority", "high", standard_fields, inline_fields)
 
         assert standard_fields["priority"] == "high"
-        assert "priority" not in custom_metadata
+        assert inline_fields["priority"] == "high"
 
     def test_process_custom_key(self):
         """Test processing a custom metadata key."""
         from obsidian_rag.parsing.tasks import _process_metadata_key
 
         standard_fields: dict = {}
-        custom_metadata: dict = {}
-        _process_metadata_key("custom_key", "value", standard_fields, custom_metadata)
+        inline_fields: dict = {}
+        _process_metadata_key("custom_key", "value", standard_fields, inline_fields)
 
-        assert custom_metadata["custom_key"] == "value"
+        assert inline_fields["custom_key"] == "value"
 
 
 class TestParseTasksFromContent:
@@ -372,30 +372,36 @@ Some other text.
         assert "Reached maximum task limit" in caplog.text
 
 
-class TestSerializeCustomMetadata:
-    """Test cases for _serialize_custom_metadata function."""
+class TestSerializeInlineFields:
+    """Test cases for _serialize_inline_fields function."""
+
+    def test_serialize_inline_fields_name_is_accessible(self):
+        """Test that _serialize_inline_fields is accessible."""
+        from obsidian_rag.parsing.tasks import _serialize_inline_fields
+
+        assert callable(_serialize_inline_fields)
 
     def test_returns_none_for_none_input(self):
         """Test that None input returns None."""
-        result = _serialize_custom_metadata(None)
+        result = _serialize_inline_fields(None)
         assert result is None
 
     def test_serializes_date_object(self):
         """Test that date objects are converted to ISO strings."""
         metadata = {"custom_date": date(2024, 3, 15)}
-        result = _serialize_custom_metadata(metadata)
+        result = _serialize_inline_fields(metadata)
         assert result == {"custom_date": "2024-03-15"}
 
     def test_serializes_datetime_object(self):
         """Test that datetime objects are converted to ISO strings."""
         metadata = {"custom_datetime": datetime(2024, 3, 15, 14, 30, 0)}
-        result = _serialize_custom_metadata(metadata)
+        result = _serialize_inline_fields(metadata)
         assert result == {"custom_datetime": "2024-03-15T14:30:00"}
 
     def test_preserves_non_date_values(self):
         """Test that non-date values are preserved."""
         metadata = {"string": "value", "number": 42, "boolean": True}
-        result = _serialize_custom_metadata(metadata)
+        result = _serialize_inline_fields(metadata)
         assert result == {"string": "value", "number": 42, "boolean": True}
 
     def test_handles_mixed_values(self):
@@ -406,7 +412,7 @@ class TestSerializeCustomMetadata:
             "number": 42,
             "datetime": datetime(2024, 3, 15, 14, 30, 0),
         }
-        result = _serialize_custom_metadata(metadata)
+        result = _serialize_inline_fields(metadata)
         assert result == {
             "string": "value",
             "date": "2024-03-15",

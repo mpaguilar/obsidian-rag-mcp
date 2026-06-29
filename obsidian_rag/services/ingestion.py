@@ -934,7 +934,7 @@ class IngestionService:
                 due=parsed_task.due,
                 completion=parsed_task.completion,
                 priority=parsed_task.priority,
-                custom_metadata=parsed_task.custom_metadata,
+                inline_fields=parsed_task.inline_fields,
             )
             session.add(task)
 

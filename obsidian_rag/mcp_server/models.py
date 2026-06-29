@@ -78,6 +78,7 @@ class TaskResponse(BaseModel):
         document_path: Path to the parent document.
         document_name: Name of the parent document.
         properties: Parent document's frontmatter key-value pairs (excluding tags), or None.
+        inline_fields: Inline field key-value pairs from the task (includes well-known fields like due, priority after re-ingestion).
 
     """
 
@@ -91,6 +92,7 @@ class TaskResponse(BaseModel):
     document_path: str
     document_name: str
     properties: dict[str, object] | None = None
+    inline_fields: dict[str, str] | None = None
 
 
 class TaskListResponse(BaseModel):
@@ -402,6 +404,7 @@ def create_task_response(
         document_path=document.file_path,
         document_name=document.file_name,
         properties=properties,
+        inline_fields=getattr(task, "inline_fields", None),
     )
     _msg = "create_task_response returning"
     log.debug(_msg)

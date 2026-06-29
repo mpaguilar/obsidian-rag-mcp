@@ -535,6 +535,7 @@ def _get_tasks_handler(
         include_content=request.include_content,
         limit=request.limit,
         offset=request.offset,
+        inline_filters=request.inline_filters,
     )
 
     with db_manager.get_session() as session:

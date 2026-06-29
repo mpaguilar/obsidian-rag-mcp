@@ -117,7 +117,7 @@ def _make_task(tag: str | None) -> MagicMock:
     task.due = None
     task.completion = None
     task.priority = "normal"
-    task.custom_metadata = {}
+    task.inline_fields = {}
     return task
 
 

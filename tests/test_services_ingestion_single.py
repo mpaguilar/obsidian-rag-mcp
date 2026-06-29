@@ -128,7 +128,7 @@ class TestIngestSingleFile:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         with patch(
             "obsidian_rag.services.ingestion.parse_frontmatter"
@@ -205,7 +205,7 @@ class TestIngestSingleFile:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         with patch(
             "obsidian_rag.services.ingestion.parse_frontmatter"
@@ -279,7 +279,7 @@ class TestIngestSingleFile:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         with patch(
             "obsidian_rag.services.ingestion.parse_frontmatter"
@@ -345,7 +345,7 @@ class TestIngestSingleFile:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
 
         with patch(
             "obsidian_rag.services.ingestion.parse_frontmatter"

@@ -3,7 +3,6 @@
 import os
 import re
 import sys
-from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
@@ -18,9 +17,10 @@ from obsidian_rag.database.models import Base
 # this is the Alembic Config object
 config = context.config
 
-# Interpret the config file for Python logging
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Logging configuration is no longer read from alembic.ini via fileConfig()
+# since the project uses pyproject.toml for Alembic settings. Alembic handles
+# logging internally when reading from pyproject.toml; if no logging sections
+# are present in pyproject.toml, Alembic uses its default logging.
 
 # add your model's MetaData object here for 'autogenerate' support
 target_metadata = Base.metadata

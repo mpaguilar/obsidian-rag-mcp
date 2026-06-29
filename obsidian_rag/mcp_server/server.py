@@ -34,7 +34,11 @@ from obsidian_rag.mcp_server.handlers import (
 )
 from obsidian_rag.mcp_server.ingest_tracker import IngestRequestTracker
 from obsidian_rag.mcp_server.middleware import SessionLoggingMiddleware
-from obsidian_rag.mcp_server.models import HealthResponse, SessionMetrics
+from obsidian_rag.mcp_server.models import (
+    HealthResponse,
+    PropertyFilter,
+    SessionMetrics,
+)
 from obsidian_rag.mcp_server.session_manager import SessionManager
 from obsidian_rag.mcp_server.tool_definitions import (
     MCPToolRegistry,
@@ -475,11 +479,57 @@ def _parse_date_filters(
     return date_filters
 
 
+def _parse_inline_filters_str_or_dict(
+    inline_filters: str | dict,
+) -> list[PropertyFilter] | None:
+    """Parse inline_filters from str/dict to list[PropertyFilter].
+
+    Args:
+        inline_filters: Filter input as JSON string or dict.
+
+    Returns:
+        List of PropertyFilter objects, or None if input is not
+        parseable as dict or list.
+
+    """
+    parsed = parse_json_str(inline_filters)
+    if isinstance(parsed, dict):
+        return [PropertyFilter(**parsed)]
+    if isinstance(parsed, list):
+        return [PropertyFilter(**f) for f in parsed]
+    return None
+
+
+def _parse_inline_filters(
+    inline_filters: str | dict | list[PropertyFilter] | None,
+) -> list[PropertyFilter] | None:
+    """Parse inline_filters from str/dict/list to list[PropertyFilter].
+
+    Args:
+        inline_filters: Filter input as JSON string, dict, list of
+            PropertyFilter objects, or None.
+
+    Returns:
+        List of PropertyFilter objects, or None if input is empty/None.
+
+    Notes:
+        Follows the same pattern as _parse_tag_filters() and
+        _parse_date_filters(). Uses parse_json_str() for str/dict inputs.
+
+    """
+    if inline_filters is None:
+        return None
+    if isinstance(inline_filters, list):
+        return inline_filters
+    return _parse_inline_filters_str_or_dict(inline_filters)
+
+
 def get_tasks(
     status: list[str] | None = None,
     tag_filters: str | dict | TagFilterStrings | None = None,
     date_filters: str | dict | TaskDateFilterStrings | None = None,
     priority: list[str] | None = None,
+    inline_filters: str | dict | list[PropertyFilter] | None = None,
     *,
     include_content: bool = True,
     limit: int = 20,
@@ -502,6 +552,13 @@ def get_tasks(
             '{"due_after": "2026-01-01"}'
         priority: List of priorities to filter by. Valid values: "highest",
             "high", "normal", "low", "lowest".
+        inline_filters: Inline field filter parameters. Can be provided as
+            a list of PropertyFilter objects, a dict, or a JSON string.
+            Dict/JSON string examples:
+            {"path": "vendor", "operator": "equals", "value": "Amazon"}
+            '[{"path": "vendor", "operator": "equals", "value": "Amazon"}]'
+            Inline fields are flat key-value pairs (no dot notation in path).
+            Maximum 10 inline filters per query.
         include_content: If True (default), include the parent document's
             content in each task response. When False, content fields are
             empty strings, reducing payload size.
@@ -524,12 +581,14 @@ def get_tasks(
 
     parsed_tag_filters = _parse_tag_filters(tag_filters)
     parsed_date_filters = _parse_date_filters(date_filters)
+    parsed_inline_filters = _parse_inline_filters(inline_filters)
 
     request = GetTasksRequest(
         status=status,
         tag_filters=parsed_tag_filters,
         date_filters=parsed_date_filters,
         priority=priority,
+        inline_filters=parsed_inline_filters,
         include_content=include_content,
         limit=limit,
         offset=offset,

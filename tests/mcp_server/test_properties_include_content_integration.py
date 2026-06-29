@@ -61,6 +61,7 @@ def _create_mock_task_doc_pair(
 ) -> tuple[MagicMock, MagicMock]:
     """Create a mock (task, document) pair for get_tasks tests."""
     task = MagicMock()
+    task.inline_fields = None
     task.id = uuid.uuid4()
     task.status = "not_completed"
     task.raw_text = "- [ ] Test task"

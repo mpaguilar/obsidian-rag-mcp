@@ -5,8 +5,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from obsidian_rag.mcp_server.handlers import TagFilterStrings, TaskDateFilterStrings
+from obsidian_rag.mcp_server.models import PropertyFilter
 from obsidian_rag.mcp_server.server import (
     _parse_date_filters,
+    _parse_inline_filters,
     _parse_tag_filters,
     get_tasks,
 )
@@ -119,6 +121,68 @@ def test_parse_date_filters_from_empty_string():
     result = _parse_date_filters("")
     assert isinstance(result, TaskDateFilterStrings)
     assert result.due_after is None
+
+
+def test_parse_inline_filters_from_json_string_list():
+    """JSON string list is parsed into list[PropertyFilter]."""
+    json_input = '[{"path": "vendor", "operator": "equals", "value": "Amazon"}]'
+    result = _parse_inline_filters(json_input)
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert isinstance(result[0], PropertyFilter)
+    assert result[0].path == "vendor"
+    assert result[0].operator == "equals"
+    assert result[0].value == "Amazon"
+
+
+def test_parse_inline_filters_from_json_string_dict():
+    """JSON string dict is parsed into list[PropertyFilter] with one item."""
+    json_input = '{"path": "status", "operator": "equals", "value": "active"}'
+    result = _parse_inline_filters(json_input)
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert isinstance(result[0], PropertyFilter)
+    assert result[0].path == "status"
+    assert result[0].operator == "equals"
+    assert result[0].value == "active"
+
+
+def test_parse_inline_filters_from_dict():
+    """Dict input is converted to list[PropertyFilter] with one item."""
+    result = _parse_inline_filters(
+        {"path": "priority", "operator": "equals", "value": "high"}
+    )
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert isinstance(result[0], PropertyFilter)
+    assert result[0].path == "priority"
+    assert result[0].operator == "equals"
+    assert result[0].value == "high"
+
+
+def test_parse_inline_filters_from_property_filter_list():
+    """list[PropertyFilter] is returned unchanged."""
+    filters = [PropertyFilter(path="type", operator="equals", value="bug")]
+    result = _parse_inline_filters(filters)
+    assert result is filters
+
+
+def test_parse_inline_filters_from_none():
+    """None returns None."""
+    result = _parse_inline_filters(None)
+    assert result is None
+
+
+def test_parse_inline_filters_from_empty_string():
+    """Empty JSON string returns None."""
+    result = _parse_inline_filters("")
+    assert result is None
+
+
+def test_parse_inline_filters_from_unexpected_type():
+    """Unexpected type returns None defensively."""
+    result = _parse_inline_filters(42)
+    assert result is None
 
 
 def test_get_tasks_passes_flat_parameters(patched_handler):
@@ -242,3 +306,66 @@ def test_get_tasks_limit_and_offset(patched_handler):
     request = mock_handler.call_args.kwargs["request"]
     assert request.limit == 50
     assert request.offset == 10
+
+
+def test_get_tasks_passes_inline_filters_dict(patched_handler):
+    """get_tasks passes inline_filters dict to the handler."""
+    mock_handler = patched_handler
+
+    result = get_tasks(
+        status=["not_completed"],
+        inline_filters={"path": "vendor", "operator": "equals", "value": "Amazon"},
+    )
+
+    assert result["total_count"] == 0
+    request = mock_handler.call_args.kwargs["request"]
+    assert request.status == ["not_completed"]
+    assert isinstance(request.inline_filters, list)
+    assert len(request.inline_filters) == 1
+    assert request.inline_filters[0].path == "vendor"
+    assert request.inline_filters[0].operator == "equals"
+    assert request.inline_filters[0].value == "Amazon"
+
+
+def test_get_tasks_accepts_inline_filters_json_string(patched_handler):
+    """get_tasks accepts inline_filters as a JSON string."""
+    mock_handler = patched_handler
+
+    result = get_tasks(
+        inline_filters='[{"path": "priority", "operator": "equals", "value": "high"}]',
+    )
+
+    assert result["total_count"] == 0
+    request = mock_handler.call_args.kwargs["request"]
+    assert isinstance(request.inline_filters, list)
+    assert len(request.inline_filters) == 1
+    assert request.inline_filters[0].path == "priority"
+    assert request.inline_filters[0].operator == "equals"
+    assert request.inline_filters[0].value == "high"
+
+
+def test_get_tasks_accepts_inline_filters_property_filter_list(patched_handler):
+    """get_tasks accepts a list of PropertyFilter objects directly."""
+    mock_handler = patched_handler
+
+    inline_filters = [
+        PropertyFilter(path="type", operator="equals", value="bug"),
+        PropertyFilter(path="severity", operator="equals", value="critical"),
+    ]
+    result = get_tasks(inline_filters=inline_filters)
+
+    assert result["total_count"] == 0
+    request = mock_handler.call_args.kwargs["request"]
+    assert request.inline_filters is inline_filters
+    assert len(request.inline_filters) == 2
+
+
+def test_get_tasks_default_inline_filters_is_none(patched_handler):
+    """get_tasks uses default inline_filters=None when none provided."""
+    mock_handler = patched_handler
+
+    result = get_tasks()
+
+    assert result["total_count"] == 0
+    request = mock_handler.call_args.kwargs["request"]
+    assert request.inline_filters is None

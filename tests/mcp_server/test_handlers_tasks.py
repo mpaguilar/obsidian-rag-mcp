@@ -8,6 +8,8 @@ from obsidian_rag.mcp_server.handlers import (
     TaskDateFilterStrings,
     _get_tasks_handler,
 )
+from obsidian_rag.mcp_server.models import PropertyFilter
+from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
 
 
 class TestGetTasksHandler:
@@ -376,3 +378,97 @@ class TestGetTasksHandlerAdditional:
         assert call_args.kwargs["filters"].include_tags == ["work", "urgent"]
         assert call_args.kwargs["filters"].exclude_tags == ["blocked"]
         assert call_args.kwargs["filters"].tag_match_mode == "all"
+
+
+class TestGetTasksRequestInlineFilters:
+    """Tests for GetTasksRequest.inline_filters field."""
+
+    def test_inline_filters_defaults_to_none(self):
+        """Test that inline_filters defaults to None."""
+        request = GetTasksRequest()
+        assert request.inline_filters is None
+
+    def test_inline_filters_can_be_set(self):
+        """Test that inline_filters can be set to a list of PropertyFilter."""
+        filters = [PropertyFilter(path="status", operator="equals", value="active")]
+        request = GetTasksRequest(inline_filters=filters)
+        assert request.inline_filters == filters
+
+
+class TestGetTasksFilterParamsInlineFilters:
+    """Tests for GetTasksFilterParams.inline_filters field."""
+
+    def test_inline_filters_defaults_to_none(self):
+        """Test that inline_filters defaults to None."""
+        params = GetTasksFilterParams()
+        assert params.inline_filters is None
+
+    def test_inline_filters_can_be_set(self):
+        """Test that inline_filters can be set to a list of PropertyFilter."""
+        filters = [PropertyFilter(path="status", operator="equals", value="active")]
+        params = GetTasksFilterParams(inline_filters=filters)
+        assert params.inline_filters == filters
+
+
+class TestGetTasksHandlerInlineFilters:
+    """Tests for _get_tasks_handler inline_filters propagation."""
+
+    def test_handler_passes_inline_filters(self):
+        """Test that handler passes inline_filters to GetTasksFilterParams."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        with patch("obsidian_rag.mcp_server.handlers.get_tasks_tool") as mock_get_tasks:
+            mock_get_tasks.return_value.model_dump.return_value = {
+                "results": [],
+                "total_count": 0,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            inline_filters = [
+                PropertyFilter(path="status", operator="equals", value="active"),
+                PropertyFilter(
+                    path="priority", operator="in", value=["high", "highest"]
+                ),
+            ]
+            request = GetTasksRequest(inline_filters=inline_filters)
+
+            _get_tasks_handler(
+                db_manager=mock_db_manager,
+                request=request,
+            )
+
+            mock_get_tasks.assert_called_once()
+            call_args = mock_get_tasks.call_args
+            filter_params = call_args.kwargs["filters"]
+            assert filter_params.inline_filters == inline_filters
+
+    def test_handler_passes_none_inline_filters_by_default(self):
+        """Test that handler passes None inline_filters when not provided."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        with patch("obsidian_rag.mcp_server.handlers.get_tasks_tool") as mock_get_tasks:
+            mock_get_tasks.return_value.model_dump.return_value = {
+                "results": [],
+                "total_count": 0,
+                "has_more": False,
+                "next_offset": None,
+            }
+
+            request = GetTasksRequest()
+
+            _get_tasks_handler(
+                db_manager=mock_db_manager,
+                request=request,
+            )
+
+            mock_get_tasks.assert_called_once()
+            call_args = mock_get_tasks.call_args
+            filter_params = call_args.kwargs["filters"]
+            assert filter_params.inline_filters is None

@@ -17,6 +17,10 @@ from obsidian_rag.mcp_server.models import (
     _validate_offset,
     create_task_response,
 )
+from obsidian_rag.mcp_server.tools.tasks_inline_filters import (
+    apply_inline_field_filter,
+    validate_inline_filters,
+)
 from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
 
 if TYPE_CHECKING:
@@ -470,6 +474,14 @@ def get_tasks(
         - exclude_tags=["blocked"]: Task must NOT have "blocked" tag
         - include_tags=["work"], exclude_tags=["blocked"]: Task has "work" but NOT "blocked"
 
+    Inline Field Filtering:
+        inline_filters: List of PropertyFilter objects to filter by inline fields.
+            Uses same operators as document property filters (equals, contains,
+            exists, in, starts_with, regex). Inline fields are flat key-value
+            pairs, so path is always a single key name (no dot notation).
+            Multiple filters use AND logic (all must match).
+            Maximum 10 inline filters per query.
+
     Args:
         session: Database session.
         filters: Filter parameters including status, date ranges, tags,
@@ -510,6 +522,12 @@ def get_tasks(
     query = _apply_date_filters(query, filters)  # type: ignore[assignment]
     query = _apply_tag_filters(query, filters)  # type: ignore[assignment]
     query = _apply_priority_filter(query, filters.priority)  # type: ignore[assignment]
+
+    # Apply inline field filters if provided
+    if filters.inline_filters:
+        validate_inline_filters(filters.inline_filters)
+        for inline_filter in filters.inline_filters:
+            query = apply_inline_field_filter(query, inline_filter)  # type: ignore[arg-type, assignment]
 
     # Order by priority and due date
     query = query.order_by(Task.priority, Task.due)

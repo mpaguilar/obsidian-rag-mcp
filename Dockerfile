@@ -18,6 +18,7 @@ WORKDIR /app
 
 # Copy package files
 COPY pyproject.toml .
+COPY alembic/ ./alembic/
 COPY obsidian_rag/ ./obsidian_rag/
 
 # Install Python dependencies

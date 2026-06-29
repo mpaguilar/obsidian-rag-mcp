@@ -237,7 +237,7 @@ class Task(Base):
         due: Due date for the task.
         completion: Completion date for the task.
         priority: Task priority level.
-        custom_metadata: Additional metadata as JSON.
+        inline_fields: Inline field key-value pairs as JSONB (includes well-known fields after re-ingestion).
         document: Parent document relationship.
 
     """
@@ -272,7 +272,7 @@ class Task(Base):
         nullable=False,
         default=TaskPriority.NORMAL.value,
     )
-    custom_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    inline_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
     document: Mapped["Document"] = relationship("Document", back_populates="tasks")

@@ -119,7 +119,7 @@ class TestTask:
             due=date(2024, 3, 15),
             completion=None,
             priority=TaskPriority.HIGH.value,
-            custom_metadata={"project": "test"},
+            inline_fields={"project": "test"},
         )
 
         assert task.tags == ["important", "work"]
@@ -127,7 +127,23 @@ class TestTask:
         assert task.due is not None
         assert task.due.year == 2024
         assert task.priority == TaskPriority.HIGH.value
-        assert task.custom_metadata == {"project": "test"}
+        assert task.inline_fields == {"project": "test"}
+
+    def test_task_inline_fields_column_type(self):
+        """Test Task inline_fields column uses JSON type and is accessible."""
+        from sqlalchemy import JSON
+
+        task = Task(
+            document_id=uuid.uuid4(),
+            line_number=1,
+            raw_text="- [ ] Task",
+            status=TaskStatus.NOT_COMPLETED.value,
+            description="Task",
+            inline_fields={"key": "value"},
+        )
+
+        assert task.inline_fields == {"key": "value"}
+        assert isinstance(Task.inline_fields.property.columns[0].type, JSON)
 
 
 class TestArrayType:

@@ -62,7 +62,9 @@ The `content_vector` column uses HNSW (Hierarchical Navigable Small World) index
 - `due` (DATE, nullable)
 - `completion` (DATE, nullable)
 - `priority` (ENUM: 'highest', 'high', 'normal', 'low', 'lowest', default 'normal')
-- `custom_metadata` (JSONB) - other [key:: value] pairs
+- `inline_fields` (JSONB) - all inline metadata fields including well-known fields and custom [key:: value] pairs
+
+**Well-known field duplication:** During ingestion, well-known fields (`scheduled`, `due`, `completion`, `priority`, `repeat`) are stored in both their dedicated typed columns AND the `inline_fields` JSONB dict. This ensures typed columns provide efficient filtering while `inline_fields` preserves the complete inline metadata context. Custom fields (any `[key:: value]` not in the well-known set) are stored only in `inline_fields`.
 
 **document_chunks table:**
 - `id` (UUID, PK)
@@ -383,6 +385,12 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
   - `completion_after`/`completion_before`: Date range filtering for completion dates (inclusive)
   - `date_match_mode`: "all" (AND logic, default) or "any" (OR logic)
 - `priority`: List of priorities to filter by (e.g., ['high', 'highest'])
+- `inline_filters`: Inline field filter specification. Accepts `str` (JSON string), `dict`, or dataclass. Parsed manually before validation.
+  - Uses `PropertyFilter` operators (`equals`, `contains`, `exists`, `in`, `starts_with`, `regex`) applied to task `inline_fields`
+  - `path`: Dot-separated path to the field within `inline_fields` (e.g., `"repeat"`, `"custom_key"`)
+  - `operator`: Filter operator (same as property filters)
+  - `value`: Value to compare against (not required for `exists` operator)
+  - Multiple inline filters are combined with AND logic
 - `include_content`: Whether to include task content in response (default: True)
 - `limit`: Maximum results (default: 20, max: 10000)
 - `offset`: Result offset for pagination (default: 0)
@@ -446,9 +454,10 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 - Conflicting tags (in both include and exclude) are rejected with validation error
 
 **Filter Combinations:**
-- Property filters and tag filters can be combined (AND logic between filter types)
+- Property filters, tag filters, and inline_filters can be combined (AND logic between filter types)
 - Multiple property filters within include list use AND logic
 - Multiple property filters within exclude list use OR logic (any match excludes)
+- Multiple inline filters are combined with AND logic
 
 **Ingest Tools:**
 - `ingest`: Ingest markdown files and return processing statistics
@@ -469,7 +478,7 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 Pydantic models for request/response validation:
 
 **Task Models:**
-- `TaskResponse`: Single task with document info, `properties` (parent document's frontmatter key-value pairs excluding tags), and `include_content` support
+- `TaskResponse`: Single task with document info, `properties` (parent document's frontmatter key-value pairs excluding tags), `inline_fields` (all inline metadata from the task's JSONB column), and `include_content` support
 - `TaskListResponse`: Paginated task list
 
 **Document Models:**
@@ -570,9 +579,10 @@ File System → Scanner → FrontMatter Parser → Task Parser → Database
 3. If changed or new:
    - FrontMatter extracted and parsed (indentation tabs normalized to spaces before YAML parsing)
    - Tasks extracted from content
-   - **Document-level tags merged into task tags** (case-insensitive dedup, lowercased) via `tag_merging.py`
-   - Vector embeddings generated via LLM provider
-   - Document and tasks stored in PostgreSQL
+    - **Document-level tags merged into task tags** (case-insensitive dedup, lowercased) via `tag_merging.py`
+    - **Well-known fields** (`scheduled`, `due`, `completion`, `priority`, `repeat`) stored in both typed columns AND `inline_fields` JSONB dict
+    - Vector embeddings generated via LLM provider
+    - Document and tasks stored in PostgreSQL
 4. If deleted from filesystem: hard delete from database
 
 ### Query Flow

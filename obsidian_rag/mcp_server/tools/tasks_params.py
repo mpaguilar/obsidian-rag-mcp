@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Literal
 
+from obsidian_rag.mcp_server.models import PropertyFilter
+
 if TYPE_CHECKING:
     from obsidian_rag.mcp_server.handlers import TagFilterStrings, TaskDateFilterStrings
 
@@ -52,6 +54,14 @@ class GetTasksFilterParams:
         - exclude_tags=["blocked"]: Task must NOT have "blocked" tag
         - include_tags=["work"], exclude_tags=["blocked"]: Task has "work" but NOT "blocked"
 
+    Inline Field Filtering:
+        inline_filters: List of PropertyFilter objects to filter by inline fields.
+            Uses same operators as document property filters (equals, contains,
+            exists, in, starts_with, regex). Inline fields are flat key-value
+            pairs, so path is always a single key name (no dot notation).
+            Multiple filters use AND logic (all must match).
+            Maximum 10 inline filters per query.
+
     Attributes:
         status: List of statuses to filter by.
             Valid values: "not_completed", "completed", "in_progress", "cancelled".
@@ -76,6 +86,8 @@ class GetTasksFilterParams:
             task response (default: True).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
+        inline_filters: Optional list of PropertyFilter objects for filtering by
+            inline fields. Defaults to None.
 
     """
 
@@ -94,6 +106,7 @@ class GetTasksFilterParams:
     include_content: bool = True
     limit: int = 20
     offset: int = 0
+    inline_filters: list[PropertyFilter] | None = None
 
 
 @dataclass
@@ -129,6 +142,8 @@ class GetTasksRequest:
             task response.
         limit: Maximum number of results.
         offset: Number of results to skip.
+        inline_filters: Optional list of PropertyFilter objects for filtering by
+            inline fields.
 
     """
 
@@ -139,3 +154,4 @@ class GetTasksRequest:
     include_content: bool = True
     limit: int = 20
     offset: int = 0
+    inline_filters: list[PropertyFilter] | None = None

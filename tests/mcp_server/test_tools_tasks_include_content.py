@@ -26,7 +26,10 @@ def _create_mock_session(results: list[tuple[MagicMock, MagicMock]]) -> MagicMoc
     return mock_session
 
 
-def _create_task(raw_text: str = "- [ ] Test task") -> MagicMock:
+def _create_task(
+    raw_text: str = "- [ ] Test task",
+    inline_fields: dict[str, str] | None = None,
+) -> MagicMock:
     """Create a mock Task model with common attributes."""
     task = MagicMock()
     task.id = uuid.uuid4()
@@ -38,6 +41,7 @@ def _create_task(raw_text: str = "- [ ] Test task") -> MagicMock:
     task.due = None
     task.scheduled = None
     task.completion = None
+    task.inline_fields = inline_fields
     return task
 
 
@@ -151,3 +155,65 @@ def test_get_tasks_properties_none_no_frontmatter() -> None:
     result = get_tasks(mock_session, filters)
 
     assert result.results[0].properties is None
+
+
+def test_get_tasks_include_content_false_keeps_inline_fields() -> None:
+    """Test that inline_fields is populated when include_content=False."""
+    task = _create_task(
+        raw_text="- [ ] Something important",
+        inline_fields={"due": "2026-01-01", "priority": "high"},
+    )
+    doc = _create_document()
+    mock_session = _create_mock_session([(task, doc)])
+
+    filters = GetTasksFilterParams(include_content=False)
+    result = get_tasks(mock_session, filters)
+
+    assert result.results[0].raw_text == ""
+    assert result.results[0].inline_fields == {"due": "2026-01-01", "priority": "high"}
+
+
+def test_get_tasks_include_content_true_keeps_inline_fields() -> None:
+    """Test that inline_fields is populated when include_content=True."""
+    task = _create_task(
+        raw_text="- [ ] Something important",
+        inline_fields={"repeat": "daily", "custom": "value"},
+    )
+    doc = _create_document()
+    mock_session = _create_mock_session([(task, doc)])
+
+    filters = GetTasksFilterParams(include_content=True)
+    result = get_tasks(mock_session, filters)
+
+    assert result.results[0].raw_text == "- [ ] Something important"
+    assert result.results[0].inline_fields == {"repeat": "daily", "custom": "value"}
+
+
+def test_get_tasks_inline_fields_none_when_task_has_none() -> None:
+    """Test that inline_fields is None when task has no inline_fields."""
+    task = _create_task(inline_fields=None)
+    doc = _create_document()
+    mock_session = _create_mock_session([(task, doc)])
+
+    filters = GetTasksFilterParams(include_content=False)
+    result = get_tasks(mock_session, filters)
+
+    assert result.results[0].inline_fields is None
+
+
+def test_get_tasks_inline_fields_preserved_with_properties() -> None:
+    """Test that inline_fields and properties are both preserved when include_content=False."""
+    task = _create_task(
+        raw_text="- [ ] Something important",
+        inline_fields={"scheduled": "2026-01-01", "repeat": "weekly"},
+    )
+    doc = _create_document({"author": "Alice", "tags": ["work"]})
+    mock_session = _create_mock_session([(task, doc)])
+
+    filters = GetTasksFilterParams(include_content=False)
+    result = get_tasks(mock_session, filters)
+
+    response = result.results[0]
+    assert response.raw_text == ""
+    assert response.inline_fields == {"scheduled": "2026-01-01", "repeat": "weekly"}
+    assert response.properties == {"author": "Alice"}

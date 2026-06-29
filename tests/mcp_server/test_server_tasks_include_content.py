@@ -67,3 +67,45 @@ def test_get_tasks_wrapper_include_content_via_json_filter(
     assert isinstance(request, GetTasksRequest)
     assert request.tag_filters.include_tags == ["work"]
     assert request.include_content is False
+
+
+@patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+@patch("obsidian_rag.mcp_server.server._get_registry")
+def test_get_tasks_wrapper_inline_fields_preserved_when_content_hidden(
+    mock_get_registry: MagicMock,
+    mock_handler: MagicMock,
+) -> None:
+    """inline_fields should be present in response even when include_content=False."""
+    mock_registry = MagicMock()
+    mock_get_registry.return_value = mock_registry
+    mock_handler.return_value = {
+        "results": [
+            {
+                "id": "test-task-id",
+                "raw_text": "",
+                "status": "not_completed",
+                "description": "Test task",
+                "due": None,
+                "priority": "normal",
+                "tags": [],
+                "document_path": "/test/doc.md",
+                "document_name": "doc.md",
+                "properties": None,
+                "inline_fields": {"due": "2026-01-01", "priority": "high"},
+            }
+        ],
+        "total_count": 1,
+    }
+
+    from obsidian_rag.mcp_server.server import get_tasks
+
+    result = get_tasks(include_content=False)
+
+    request = mock_handler.call_args.kwargs["request"]
+    assert request.include_content is False
+    assert len(result["results"]) == 1
+    assert result["results"][0]["raw_text"] == ""
+    assert result["results"][0]["inline_fields"] == {
+        "due": "2026-01-01",
+        "priority": "high",
+    }

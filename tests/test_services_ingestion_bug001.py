@@ -310,7 +310,7 @@ class TestBug001NewDocumentChunks:
         mock_task.due = None
         mock_task.completion = None
         mock_task.priority = "normal"
-        mock_task.custom_metadata = {}
+        mock_task.inline_fields = {}
         mock_parse_tasks.return_value = [(1, mock_task)]
 
         # Create mock session

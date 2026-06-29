@@ -13,34 +13,34 @@ from obsidian_rag.database.models import TaskPriority, TaskStatus
 log = logging.getLogger(__name__)
 
 
-def _serialize_custom_metadata(
-    metadata: dict[str, Any] | None,
+def _serialize_inline_fields(
+    fields: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    """Serialize custom metadata values for JSON storage.
+    """Serialize inline field values for JSON storage.
 
     Converts date and datetime objects to ISO format strings.
 
     Args:
-        metadata: Dictionary of custom metadata values.
+        fields: Dictionary of inline field values.
 
     Returns:
-        Serialized metadata dictionary or None if input is None.
+        Serialized fields dictionary or None if input is None.
 
     """
-    _msg = "_serialize_custom_metadata starting"
+    _msg = "_serialize_inline_fields starting"
     log.debug(_msg)
-    if metadata is None:
-        _msg = "_serialize_custom_metadata returning"
+    if fields is None:
+        _msg = "_serialize_inline_fields returning"
         log.debug(_msg)
         return None
 
     result: dict[str, Any] = {}
-    for key, value in metadata.items():
+    for key, value in fields.items():
         if isinstance(value, (date, datetime)):
             result[key] = value.isoformat()
         else:
             result[key] = value
-    _msg = "_serialize_custom_metadata returning"
+    _msg = "_serialize_inline_fields returning"
     log.debug(_msg)
     return result
 
@@ -73,7 +73,7 @@ class ParsedTask:
         due: Due date for the task.
         completion: Completion date for the task.
         priority: Task priority level.
-        custom_metadata: Additional key-value metadata.
+        inline_fields: Additional key-value inline fields.
         raw_text: Original task line.
 
     """
@@ -86,7 +86,7 @@ class ParsedTask:
     due: datetime | None = None
     completion: datetime | None = None
     priority: str = TaskPriority.NORMAL.value
-    custom_metadata: dict[str, Any] | None = None
+    inline_fields: dict[str, Any] | None = None
     raw_text: str = ""
 
 
@@ -303,15 +303,30 @@ def _process_metadata_key(
     key: str,
     value: str,
     standard_fields: dict[str, Any],
-    custom_metadata: dict[str, Any],
+    inline_fields: dict[str, Any],
 ) -> None:
-    """Process a single metadata key-value pair."""
+    """Process a single metadata key-value pair.
+
+    Well-known fields are stored in BOTH standard_fields (for typed columns)
+    AND inline_fields (for the JSONB dict). Non-well-known fields go to
+    inline_fields only.
+
+    Args:
+        key: The metadata key.
+        value: The metadata value.
+        standard_fields: Dictionary for typed standard fields.
+        inline_fields: Dictionary for all inline fields (JSONB storage).
+
+    """
     _msg = "_process_metadata_key starting"
     log.debug(_msg)
     key_lower = key.lower()
 
-    if not _process_standard_field(key_lower, value, standard_fields):
-        custom_metadata[key] = value
+    # ALL fields go into inline_fields (the JSONB dict)
+    inline_fields[key] = value
+
+    # Well-known fields ALSO go into standard_fields (for typed columns)
+    _process_standard_field(key_lower, value, standard_fields)
     _msg = "_process_metadata_key returning"
     log.debug(_msg)
 
@@ -323,13 +338,16 @@ def _extract_task_metadata(task_text: str) -> tuple[dict[str, Any], dict[str, An
         task_text: The raw task text with metadata.
 
     Returns:
-        Tuple of (standard_fields, custom_metadata).
+        Tuple of (standard_fields, inline_fields).
         standard_fields contains: scheduled, due, completion, priority, repeat
+            (for typed columns).
+        inline_fields contains ALL [key:: value] pairs (for JSONB dict),
+            including well-known fields.
 
     """
     _msg = "_extract_task_metadata starting"
     log.debug(_msg)
-    custom_metadata: dict[str, Any] = {}
+    inline_fields: dict[str, Any] = {}
     standard_fields: dict[str, Any] = {
         "scheduled": None,
         "due": None,
@@ -343,12 +361,12 @@ def _extract_task_metadata(task_text: str) -> tuple[dict[str, Any], dict[str, An
             key.strip(),
             value.strip(),
             standard_fields,
-            custom_metadata,
+            inline_fields,
         )
 
     _msg = "_extract_task_metadata returning"
     log.debug(_msg)
-    return standard_fields, custom_metadata
+    return standard_fields, inline_fields
 
 
 def _clean_task_description(task_text: str) -> str:
@@ -398,7 +416,7 @@ def parse_task_line(line: str) -> ParsedTask | None:
     tags: list[str] | None = list(tags_match) if tags_match else None
 
     # Extract metadata
-    standard_fields, custom_metadata = _extract_task_metadata(task_text)
+    standard_fields, inline_fields = _extract_task_metadata(task_text)
 
     # Clean description
     description = _clean_task_description(task_text)
@@ -412,7 +430,7 @@ def parse_task_line(line: str) -> ParsedTask | None:
         due=standard_fields["due"],
         completion=standard_fields["completion"],
         priority=standard_fields["priority"],
-        custom_metadata=_serialize_custom_metadata(custom_metadata),
+        inline_fields=_serialize_inline_fields(inline_fields),
         raw_text=line.strip(),
     )
 
