@@ -30,9 +30,7 @@ def _get_alembic_config() -> Config:
     if not pyproject_toml.exists():
         pytest.skip("pyproject.toml not found")
     alembic_cfg = Config(toml_file=str(pyproject_toml))
-    alembic_cfg.set_main_option(
-        "sqlalchemy.url", "postgresql+psycopg://localhost/test"
-    )
+    alembic_cfg.set_main_option("sqlalchemy.url", "postgresql+psycopg://localhost/test")
     return alembic_cfg
 
 

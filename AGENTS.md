@@ -42,6 +42,7 @@ obsidian_rag/                    # Main package
 │   ├── ingest_tracker.py        # Request tracking for ingest tool deduplication
 │   ├── middleware.py            # HTTP request/response logging middleware
 │   ├── models.py                # Pydantic request/response models
+│   ├── output_file.py          # Output file write dispatcher (local/S3)
 │   ├── server.py                # FastMCP server setup and tool wrappers
 │   ├── session_manager.py       # Session lifecycle and metrics tracking
 │   ├── tool_definitions.py      # Tool implementations and MCPToolRegistry
@@ -174,6 +175,49 @@ ruff check obsidian_rag/ tests/
 > **Technical Implementation Details**: For architecture patterns, component details, and data flow, see [ARCHITECTURE.md](./ARCHITECTURE.md). For coding conventions and standards, see [CONVENTIONS.md](./CONVENTIONS.md).
 
 ## Checkpoint History
+
+### 045.output-file-interface (Completed 2026-07-01)
+
+**Objective:** Add optional `output_file` parameter to 7 MCP tools that, when provided, writes the full result JSON to a local filesystem path or S3-compatible endpoint and returns only a compact summary to the LLM context — preserving context window space for large results.
+
+**Changes Made:**
+- **Added `boto3>=1.34.0` to `pyproject.toml`**: Required dependency for S3 write support (REQ-013).
+- **Created `obsidian_rag/mcp_server/output_file.py`** (243 lines): Core module containing `write_output_file()` dispatcher, `_write_local()` (atomic write via temp file + os.replace), `_write_s3()` (boto3 PutObject), `_validate_local_path()` (/tmp/ restriction), `_validate_s3_config()` (missing field detection), `_count_items()` (item count from result structure), and `build_output_file_summary()` (compact summary builder). ValueError re-raised for validation errors; OSError/ClientError caught and returned as error dicts.
+- **Updated `obsidian_rag/mcp_server/models.py`**: Added `OutputFileConfig` Pydantic model (type, path, endpoint, bucket, key, access_key_id, secret_access_key, addressing_style) and `OutputFileResult` Pydantic model (type, path, bucket, key, bytes, item_count). No credential fields in OutputFileResult.
+- **Updated `obsidian_rag/mcp_server/server.py`** (988 lines): Added `_parse_output_file()` and `_parse_output_file_str_or_dict()` helpers following the `_parse_tag_filters` / `_parse_date_filters` pattern. Added `output_file` keyword-only parameter to 5 tool wrappers: `query_documents`, `get_documents_by_tag`, `get_documents_by_property`, `get_all_tags`, `get_tasks`. When output_file is present, handler result is written to target and compact summary returned.
+- **Updated `obsidian_rag/mcp_server/document_tools.py`** (151 lines): Added `_parse_output_file_from_wrapper()` helper (standalone to avoid circular imports with server.py). Added `output_file` keyword-only parameter to `get_document()` and `list_documents()` wrappers.
+- **Created test files**: `test_output_file_models.py` (8 tests), `test_output_file.py` (29 tests), `test_server_output_file.py` (11 tests), `test_document_tools_output_file.py` (14 tests), `test_server_output_file_tools.py` (14 tests), `test_output_file_local_integration.py` (10 tests), `test_output_file_s3_integration.py` (6 tests), `test_output_file_error.py` (12 tests).
+- **Updated `ARCHITECTURE.md`**: Documented output_file parameter, response format, local/S3 modes, applicable/non-applicable tools, error handling, and data flow.
+- **Updated `AGENTS.md`**: Added `output_file.py` to project structure.
+- **Updated `pyproject.toml` and `.bandit`**: Added B108 skip (hardcoded /tmp/ is intentional security boundary per REQ-005).
+
+**Follow-up: REQ-018 (addressing_style) + REQ-019 (boto3 timeouts) — Verified 2026-07-04:**
+- **Added `addressing_style: str | None = "virtual"` field to `OutputFileConfig`** in `models.py` (REQ-018). Default `"virtual"` for AWS S3 (bucket in hostname); `"path"` required for non-AWS S3-compatible services (Garage, MinIO — bucket in URL path). Not added to `_validate_s3_config()` required-fields list (has a default).
+- **Threaded `addressing_style` through `write_output_file()` dispatcher into `_write_s3()`** in `output_file.py` (REQ-018). Dispatcher uses `config.addressing_style or "virtual"` (None coercion at call site); `_write_s3` receives a concrete `str`. Final boto3 Config: `Config(connect_timeout=10, read_timeout=30, s3={"addressing_style": addressing_style})`.
+- **Tightened boto3 client timeouts** from `connect_timeout=60, read_timeout=60` to `connect_timeout=10, read_timeout=30` in `_write_s3()` (REQ-019) — fails fast on unreachable S3 endpoints. Combined with REQ-018 in a single `Config(...)` edit per plan.
+- **Added 5 new tests + updated 1**: `test_write_s3_addressing_style_path`, `test_write_s3_timeouts`, `test_write_output_file_dispatcher_threads_addressing_style`, `test_write_output_file_dispatcher_addressing_style_none_defaults_virtual` (test_output_file.py); `test_output_file_config_addressing_style_default`, `test_output_file_config_addressing_style_path`, `test_output_file_config_addressing_style_none_allowed`, `test_output_file_config_serialization_addressing_style` (test_output_file_models.py); updated `test_s3_client_configuration` (test_output_file_s3_integration.py) for new timeouts + addressing_style assertion.
+- **Updated `ARCHITECTURE.md`**: Added `addressing_style` to OutputFileConfig field list and documented timeouts (10s/30s) + addressing-style behavior in both the S3 mode description and the `_write_s3()` implementation bullet.
+
+**Key Design Decisions:**
+- **boto3 as required dependency**: S3 is a core feature; optional dependency complicates import paths and testing.
+- **Atomic write**: `_write_local()` uses `tempfile.mkstemp(dir=parent)` + `os.replace()` — prevents partial reads (REQ-014).
+- **/tmp/ restriction**: `_validate_local_path()` rejects paths outside `/tmp/` — prevents writing to arbitrary filesystem locations (REQ-005).
+- **No credential logging**: `_write_s3()` never logs access_key_id or secret_access_key (REQ-010). OutputFileResult does not contain credential fields.
+- **No handler layer changes**: `output_file` logic is entirely in the tool wrapper layer. Handlers return full results unchanged.
+- **Circular import avoidance**: `document_tools.py` has its own `_parse_output_file_from_wrapper()` instead of importing from `server.py`.
+- **Parameter parsing pattern**: `_parse_output_file()` follows the same str/dict/model/None pattern as `_parse_tag_filters()`, `_parse_date_filters()`, `_parse_inline_filters()`.
+- **Error handling**: ValueError (validation errors) re-raised; OSError/ClientError (operational errors) caught and returned as `{"success": False, "error": "..."}` dicts.
+
+**No breaking changes:** Default `output_file=None` preserves all existing behavior. No schema changes, no Alembic migration, no config changes. Non-applicable tools (ingest, vault tools) unchanged.
+
+**Verification:**
+- All 2253 tests pass (1 skipped pre-existing)
+- 100% code coverage (5446 statements, 1086 branches)
+- All ruff checks pass; ruff format clean
+- mypy clean on source code (57 source files, no issues)
+- bandit clean (0 violations, B108 skipped — intentional /tmp/ boundary)
+- All source files under 1000 lines (server.py at 988)
+- Code review: 3/3 reviewers APPROVED (Task 1.2 had 1 easy CHANGES REQUESTED — ARCHITECTURE.md S3 mode section updated to include timeouts + addressing_style bullets; fixed and re-verified)
 
 ### 044.inline-field-indexing (Completed 2026-06-28)
 

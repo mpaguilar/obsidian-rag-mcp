@@ -473,6 +473,48 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 - `offset`: Starting position for results
 - Response includes: `total_count`, `has_more`, `next_offset`
 
+**Output File Parameter:**
+Seven query tools support an optional `output_file` parameter that writes the full JSON result to an external destination and returns a compact summary instead of the payload:
+
+**Applicable tools:**
+- `query_documents` (server.py)
+- `get_documents_by_tag` (server.py)
+- `get_documents_by_property` (server.py)
+- `get_all_tags` (server.py)
+- `get_tasks` (server.py)
+- `get_document` (document_tools.py)
+- `list_documents` (document_tools.py)
+
+**Non-applicable tools:**
+- `ingest` (returns structured statistics, not a large result set)
+- `list_vaults`, `get_vault`, `update_vault`, `delete_vault` (vault tools return small, fixed-size metadata)
+
+**Response format when `output_file` is provided:**
+```json
+{"output_file": {"type": "local", "path": "/tmp/results.json", "bytes": 24580, "item_count": 50}}
+```
+
+**Local mode:**
+- Writes atomically via a temporary file followed by `os.replace()` to avoid partial reads
+- Restricted to `/tmp/` directory and its subdirectories for security
+- Parent directories are created automatically if they do not exist
+- On success, returns `OutputFileResult` with `type="local"`, the resolved `path`, `bytes` written, and `item_count`
+- On write failure, returns `{"success": False, "error": "..."}` with the error message
+
+**S3 mode:**
+- Uses `boto3` `PutObject` to upload the serialized JSON payload
+- Credentials (`access_key_id`, `secret_access_key`) are provided by the caller in `OutputFileConfig`; no AWS credential caching or logging is performed
+- The boto3 client is constructed with `Config(connect_timeout=10, read_timeout=30)` to fail fast on unreachable S3 endpoints
+- The `addressing_style` from `OutputFileConfig` is passed to boto3 via `Config(s3={"addressing_style": ...})`; the default `"virtual"` works with AWS S3, while `"path"` is required for Garage/MinIO
+- The `endpoint` URL is optional and passed through to boto3 for S3-compatible services (e.g., MinIO)
+- On success, returns `OutputFileResult` with `type="s3"`, `bucket`, `key`, `bytes`, and `item_count`
+- On upload failure, returns `{"success": False, "error": "..."}` with the error message
+
+**Validation behavior:**
+- Missing or malformed `output_file` fields raise `ValueError` with a descriptive message
+- Invalid local paths (outside `/tmp/`) raise `ValueError`
+- Invalid S3 configurations (missing bucket, key, or credentials) raise `ValueError`
+
 #### Models (`models.py`)
 
 Pydantic models for request/response validation:
@@ -497,9 +539,41 @@ Pydantic models for request/response validation:
 - `TagFilter`: Filter for document tags with include/exclude lists and match_mode
 - `QueryFilterParams`: Combined filter parameters for property and tag filtering
 
+**Output File Models:**
+- `OutputFileConfig`: Configuration for writing tool results to an external file. Fields:
+  - `type`: `"local"` or `"s3"`
+  - `path`: Absolute local file path (local mode)
+  - `endpoint`: Optional S3-compatible endpoint URL (s3 mode)
+  - `bucket`: S3 bucket name (s3 mode)
+  - `key`: S3 object key (s3 mode)
+  - `access_key_id`: AWS access key (s3 mode, from caller)
+  - `secret_access_key`: AWS secret key (s3 mode, from caller)
+  - `addressing_style`: S3 addressing style. `"virtual"` (default) for AWS S3
+    (bucket in hostname: `bucket.endpoint/key`); `"path"` for non-AWS
+    S3-compatible services such as Garage and MinIO (bucket in URL path:
+    `endpoint/bucket/key`). Clients targeting Garage/MinIO MUST set
+    `addressing_style="path"`.
+- `OutputFileResult`: Summary returned when `output_file` is used instead of the full payload. Fields:
+  - `type`: `"local"` or `"s3"`
+  - `path` / `bucket` / `key`: Location of the written file
+  - `bytes`: Size of the written JSON payload
+  - `item_count`: Number of result items written
+
 **Health Model:**
 - `HealthResponse`: Health check status with session metrics
 - `SessionMetrics`: Session tracking metrics (total created/destroyed, active count, connection rate)
+
+#### Output File (`output_file.py`)
+
+Core write dispatcher for tool results to external destinations, used by MCP query tools when `output_file` is provided:
+
+- **`write_output_file()`**: Main dispatcher that routes to local or S3 writer based on `OutputFileConfig.type`
+- **`_write_local()`**: Writes JSON payload to a local file atomically using a temp file + `os.replace()`; restricted to `/tmp/` and its subdirectories; auto-creates parent directories
+- **`_write_s3()`**: Uploads JSON payload via `boto3` `PutObject`; credentials come from the caller config; optional `endpoint` passed through for S3-compatible services. The boto3 client is constructed with `Config(connect_timeout=10, read_timeout=30)` to fail fast on unreachable S3 endpoints. The `addressing_style` from `OutputFileConfig` is passed to boto3 via `Config(s3={"addressing_style": ...})`; the default `"virtual"` works with AWS S3, while `"path"` is required for Garage/MinIO.
+- **`_validate_local_path()`**: Validates that the local path is within `/tmp/` and has a valid parent directory
+- **`_validate_s3_config()`**: Validates that bucket, key, and both credentials are present
+- **`build_output_file_summary()`**: Builds the compact `OutputFileResult` dict returned to the caller
+- **`_count_items()`**: Counts the number of items in a result payload for the `item_count` field
 
 #### Authentication
 
@@ -595,6 +669,10 @@ CLI Query → Config → LLM Provider → Vector Generation → Database Search 
 2. For semantic search: query text converted to vector via LLM provider
 3. Database query executed with vector similarity
 4. Results formatted and returned
+
+When `output_file` is provided on an MCP query tool:
+- Handler result → JSON serialization → write to target destination → compact `OutputFileResult` summary returned
+- When absent: unchanged flow (full result payload returned directly)
 
 ## Design Decisions
 

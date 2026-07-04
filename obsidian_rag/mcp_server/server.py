@@ -36,9 +36,11 @@ from obsidian_rag.mcp_server.ingest_tracker import IngestRequestTracker
 from obsidian_rag.mcp_server.middleware import SessionLoggingMiddleware
 from obsidian_rag.mcp_server.models import (
     HealthResponse,
+    OutputFileConfig,
     PropertyFilter,
     SessionMetrics,
 )
+from obsidian_rag.mcp_server.output_file import write_output_file
 from obsidian_rag.mcp_server.session_manager import SessionManager
 from obsidian_rag.mcp_server.tool_definitions import (
     MCPToolRegistry,
@@ -103,6 +105,7 @@ def query_documents(
     use_chunks: bool = False,
     rerank: bool = False,
     include_content: bool = True,
+    output_file: str | dict | OutputFileConfig | None = None,
 ) -> dict[str, object]:
     """Semantic search over document content with optional filters.
 
@@ -124,6 +127,10 @@ def query_documents(
         include_content: If True (default), include full document content in
             responses. When False, the 'content' field is an empty string,
             reducing payload size.
+        output_file: Optional output file configuration. When provided, the
+            full result is written to the specified target (local or S3) and
+            a compact summary is returned instead. Can be passed as a dict,
+            JSON string, or OutputFileConfig object.
 
     Returns:
         Document list response with pagination and similarity scores.
@@ -137,7 +144,7 @@ def query_documents(
     pagination = PaginationParams(
         limit=limit, offset=offset, include_content=include_content
     )
-    return query_documents_tool(
+    result = query_documents_tool(
         db_manager=registry.db_manager,
         embedding_provider=registry.embedding_provider,
         query=query,
@@ -147,6 +154,10 @@ def query_documents(
         rerank=rerank,
         include_content=include_content,
     )
+    parsed_output_file = _parse_output_file(output_file)
+    if parsed_output_file is not None:
+        return write_output_file(result, parsed_output_file)
+    return result
 
 
 def get_documents_by_tag(
@@ -156,6 +167,7 @@ def get_documents_by_tag(
     offset: int = 0,
     *,
     include_content: bool = True,
+    output_file: str | dict | OutputFileConfig | None = None,
 ) -> dict[str, object]:
     """Query documents filtered by tags with include/exclude semantics.
 
@@ -174,6 +186,10 @@ def get_documents_by_tag(
         include_content: If True (default), include full document content in
             responses. When False, the 'content' field is an empty string,
             reducing payload size.
+        output_file: Optional output file configuration. When provided, the
+            full result is written to the specified target (local or S3) and
+            a compact summary is returned instead. Can be passed as a dict,
+            JSON string, or OutputFileConfig object.
 
     Returns:
         Document list response with pagination and relative paths.
@@ -215,7 +231,11 @@ def get_documents_by_tag(
         "offset": offset,
         "include_content": include_content,
     }
-    return _get_documents_by_tag_handler(registry.db_manager, params)
+    result = _get_documents_by_tag_handler(registry.db_manager, params)
+    parsed_output_file = _parse_output_file(output_file)
+    if parsed_output_file is not None:
+        return write_output_file(result, parsed_output_file)
+    return result
 
 
 def get_documents_by_property(
@@ -225,6 +245,7 @@ def get_documents_by_property(
     offset: int = 0,
     *,
     include_content: bool = True,
+    output_file: str | dict | OutputFileConfig | None = None,
 ) -> dict[str, object]:
     """Query documents filtered by frontmatter properties.
 
@@ -240,6 +261,10 @@ def get_documents_by_property(
         include_content: If True (default), include full document content in
             responses. When False, the 'content' field is an empty string,
             reducing payload size.
+        output_file: Optional output file configuration. When provided, the
+            full result is written to the specified target (local or S3) and
+            a compact summary is returned instead. Can be passed as a dict,
+            JSON string, or OutputFileConfig object.
 
     Returns:
         Document list response with pagination and relative paths.
@@ -299,7 +324,7 @@ def get_documents_by_property(
     )
 
     with registry.db_manager.get_session() as session:
-        result = get_documents_by_property_tool(
+        raw_result = get_documents_by_property_tool(
             session=session,
             property_filters=property_filter_params,
             tag_filter=tag_filter,
@@ -307,13 +332,20 @@ def get_documents_by_property(
             pagination=pagination,
             include_content=include_content,
         )
-        return result.model_dump()
+        result = raw_result.model_dump()
+
+    parsed_output_file = _parse_output_file(output_file)
+    if parsed_output_file is not None:
+        return write_output_file(result, parsed_output_file)
+    return result
 
 
 def get_all_tags(
     pattern: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    *,
+    output_file: str | dict | OutputFileConfig | None = None,
 ) -> dict[str, object]:
     """Query all unique document tags with optional pattern filtering.
 
@@ -322,13 +354,21 @@ def get_all_tags(
             Supports * (any chars), ? (single char), [abc] (char class).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
+        output_file: Optional output file configuration. When provided, the
+            full result is written to the specified target (local or S3) and
+            a compact summary is returned instead. Can be passed as a dict,
+            JSON string, or OutputFileConfig object.
 
     Returns:
         Dictionary with tag list response and pagination info.
 
     """
     registry = _get_registry()
-    return get_all_tags_tool(registry.db_manager, pattern, limit, offset)
+    result = get_all_tags_tool(registry.db_manager, pattern, limit, offset)
+    parsed_output_file = _parse_output_file(output_file)
+    if parsed_output_file is not None:
+        return write_output_file(result, parsed_output_file)
+    return result
 
 
 def list_vaults(
@@ -524,6 +564,47 @@ def _parse_inline_filters(
     return _parse_inline_filters_str_or_dict(inline_filters)
 
 
+def _parse_output_file_str_or_dict(
+    output_file: str | dict,
+) -> OutputFileConfig | None:
+    """Parse output_file from str/dict to OutputFileConfig.
+
+    Args:
+        output_file: Filter input as JSON string or dict.
+
+    Returns:
+        OutputFileConfig object, or None if input is not parseable as dict.
+    """
+    parsed = parse_json_str(output_file)
+    if isinstance(parsed, dict):
+        return OutputFileConfig(**parsed)
+    return None
+
+
+def _parse_output_file(
+    output_file: str | dict | OutputFileConfig | None,
+) -> OutputFileConfig | None:
+    """Parse output_file from str/dict/model to OutputFileConfig or None.
+
+    Args:
+        output_file: Output file config as JSON string, dict, OutputFileConfig
+            object, or None.
+
+    Returns:
+        OutputFileConfig object, or None if input is None/empty.
+
+    Notes:
+        Follows the same pattern as _parse_tag_filters() and
+        _parse_date_filters(). Uses parse_json_str() for str/dict inputs.
+
+    """
+    if output_file is None:
+        return None
+    if isinstance(output_file, OutputFileConfig):
+        return output_file
+    return _parse_output_file_str_or_dict(output_file)
+
+
 def get_tasks(
     status: list[str] | None = None,
     tag_filters: str | dict | TagFilterStrings | None = None,
@@ -534,6 +615,7 @@ def get_tasks(
     include_content: bool = True,
     limit: int = 20,
     offset: int = 0,
+    output_file: str | dict | OutputFileConfig | None = None,
 ) -> dict[str, object]:
     """Query tasks with flexible filtering by status, dates, priority, and tags.
 
@@ -564,6 +646,10 @@ def get_tasks(
             empty strings, reducing payload size.
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
+        output_file: Optional output file configuration. When provided, the
+            full result is written to the specified target (local or S3) and
+            a compact summary is returned instead. Can be passed as a dict,
+            JSON string, or OutputFileConfig object.
 
     Returns:
         Dictionary with paginated task list response.
@@ -594,10 +680,14 @@ def get_tasks(
         offset=offset,
     )
 
-    return _get_tasks_handler(
+    result = _get_tasks_handler(
         db_manager=registry.db_manager,
         request=request,
     )
+    parsed_output_file = _parse_output_file(output_file)
+    if parsed_output_file is not None:
+        return write_output_file(result, parsed_output_file)
+    return result
 
 
 async def health_check(_request: Request) -> JSONResponse:

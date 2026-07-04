@@ -223,6 +223,55 @@ class TagListResponse(BaseModel):
     next_offset: int | None
 
 
+class OutputFileConfig(BaseModel):
+    """Configuration for writing tool results to an output file.
+
+    Attributes:
+        type: Target type — "local" for filesystem, "s3" for S3-compatible endpoint.
+        path: Local filesystem path (required when type="local"). Must be under /tmp/.
+        endpoint: S3 endpoint URL (required when type="s3").
+        bucket: S3 bucket name (required when type="s3").
+        key: S3 object key (required when type="s3").
+        access_key_id: S3 access key (required when type="s3"). Never logged.
+        secret_access_key: S3 secret key (required when type="s3"). Never logged.
+        addressing_style: S3 addressing style. "virtual" (default) uses AWS
+            virtual-hosted style where the bucket is part of the hostname
+            (bucket.endpoint/key). "path" uses path-style where the bucket is
+            part of the URL path (endpoint/bucket/key); REQUIRED for non-AWS
+            S3-compatible services such as Garage and MinIO. Clients targeting
+            Garage/MinIO MUST set addressing_style="path".
+    """
+
+    type: Literal["local", "s3"]
+    path: str | None = None
+    endpoint: str | None = None
+    bucket: str | None = None
+    key: str | None = None
+    access_key_id: str | None = None
+    secret_access_key: str | None = None
+    addressing_style: str | None = "virtual"
+
+
+class OutputFileResult(BaseModel):
+    """Compact summary returned to LLM context after writing result to output file.
+
+    Attributes:
+        type: "local" or "s3" — same as OutputFileConfig.type.
+        path: Local path written (present when type="local").
+        bucket: S3 bucket (present when type="s3").
+        key: S3 object key (present when type="s3").
+        bytes: Number of bytes written.
+        item_count: Number of result items written.
+    """
+
+    type: Literal["local", "s3"]
+    path: str | None = None
+    bucket: str | None = None
+    key: str | None = None
+    bytes: int
+    item_count: int
+
+
 class SessionMetrics(BaseModel):
     """Session metrics for health check endpoint.
 

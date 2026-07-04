@@ -33,9 +33,7 @@ def alembic_config(tmp_path):
 
     pyproject_toml = Path(__file__).parent.parent.parent / "pyproject.toml"
     config = Config(toml_file=str(pyproject_toml))
-    config.set_main_option(
-        "sqlalchemy.url", "postgresql+psycopg://localhost/test"
-    )
+    config.set_main_option("sqlalchemy.url", "postgresql+psycopg://localhost/test")
 
     _msg = "alembic_config fixture returning"
     log.debug(_msg)

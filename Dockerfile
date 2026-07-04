@@ -21,6 +21,10 @@ COPY pyproject.toml .
 COPY alembic/ ./alembic/
 COPY obsidian_rag/ ./obsidian_rag/
 
+# Copy internal certificates
+COPY --from=certs * /usr/local/share/ca-certificates/
+RUN /usr/sbin/update-ca-certificates
+
 # Install Python dependencies
 RUN pip install --no-cache-dir -e "."
 
