@@ -212,7 +212,7 @@ def query_documents_tool(
             query_text=query,
             include_content=include_content,
         )
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
 
 def _create_openai_provider(config: EndpointConfig) -> EmbeddingProvider:

@@ -332,7 +332,7 @@ def get_documents_by_property(
             pagination=pagination,
             include_content=include_content,
         )
-        result = raw_result.model_dump()
+        result = raw_result.model_dump(mode="json")
 
     parsed_output_file = _parse_output_file(output_file)
     if parsed_output_file is not None:
@@ -753,7 +753,7 @@ async def health_check_handler(db_manager: DatabaseManager) -> JSONResponse:
         version=version,
         database=db_status,
         sessions=session_metrics,
-    ).model_dump()
+    ).model_dump(mode="json")
 
     return JSONResponse(health_data)
 

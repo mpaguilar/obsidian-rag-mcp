@@ -39,7 +39,9 @@ class TestGetTasksHandler:
             None,  # completion_before
         ]
 
-        mock_get_tasks.return_value = MagicMock(model_dump=lambda: {"results": []})
+        mock_get_tasks.return_value = MagicMock(
+            model_dump=lambda **kwargs: {"results": []}
+        )
 
         date_filters = TaskDateFilterStrings(
             due_after="2026-01-01",
@@ -70,7 +72,9 @@ class TestGetTasksHandler:
             return_value=False
         )
 
-        mock_get_tasks.return_value = MagicMock(model_dump=lambda: {"results": []})
+        mock_get_tasks.return_value = MagicMock(
+            model_dump=lambda **kwargs: {"results": []}
+        )
 
         request = GetTasksRequest(
             status=["not_completed"],
@@ -295,7 +299,9 @@ class TestGetTasksHandlerAdditional:
             None,  # completion_before
         ]
 
-        mock_get_tasks.return_value = MagicMock(model_dump=lambda: {"results": []})
+        mock_get_tasks.return_value = MagicMock(
+            model_dump=lambda **kwargs: {"results": []}
+        )
 
         date_filters = TaskDateFilterStrings(
             due_after="2026-01-01",
@@ -326,7 +332,9 @@ class TestGetTasksHandlerAdditional:
             return_value=False
         )
 
-        mock_get_tasks.return_value = MagicMock(model_dump=lambda: {"results": []})
+        mock_get_tasks.return_value = MagicMock(
+            model_dump=lambda **kwargs: {"results": []}
+        )
 
         request = GetTasksRequest(
             status=["not_completed"],
@@ -355,7 +363,9 @@ class TestGetTasksHandlerAdditional:
             return_value=False
         )
 
-        mock_get_tasks.return_value = MagicMock(model_dump=lambda: {"results": []})
+        mock_get_tasks.return_value = MagicMock(
+            model_dump=lambda **kwargs: {"results": []}
+        )
 
         tag_filters = TagFilterStrings(
             include_tags=["work", "urgent"],

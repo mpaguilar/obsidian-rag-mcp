@@ -176,6 +176,41 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 046.uuid-serialization-fix (Completed 2026-07-07)
+
+**Objective:** Fix `TypeError: Object of type UUID is not JSON serializable` raised by `write_output_file()` (and external tool wrappers like `mcp_s3_call` that re-serialize the result via `json.dumps()`) when MCP tool results contained `uuid.UUID`/`datetime`/`date` Python objects preserved by `model_dump()` (default mode).
+
+**Changes Made:**
+- **Updated `obsidian_rag/mcp_server/handlers.py`** (8 sites): Changed `result.model_dump()` → `result.model_dump(mode="json")` at the 8 handler return points — `_get_documents_by_tag_handler`, `_get_all_tags_handler`, `_list_vaults_handler`, `_get_tasks_handler`, `_get_vault_handler`, `_update_vault_handler`, `_get_document_handler`, `_list_documents_handler`. `mode="json"` performs source-level coercion (`uuid.UUID` → hex str, `datetime` → ISO 8601 str, `date` → ISO 8601 str).
+- **Updated `obsidian_rag/mcp_server/tool_definitions.py`** (line 215): Changed `result.model_dump()` → `result.model_dump(mode="json")` inside `query_documents_tool()`.
+- **Updated `obsidian_rag/mcp_server/server.py`** (2 sites): Changed `raw_result.model_dump()` → `raw_result.model_dump(mode="json")` in `get_documents_by_property()` wrapper (line 335) and `HealthResponse(...).model_dump()` → `HealthResponse(...).model_dump(mode="json")` in `health_check_handler()` (line 756). The health check change removes reliance on starlette's `JSONResponse` encoder for consistency with the source-fix strategy.
+- **Updated `obsidian_rag/mcp_server/output_file.py`** (lines 35, 39): Added `default=str` to both `json.dumps(result)` calls in `write_output_file()` (local and S3 branches), with rationale comments documenting REQ-002 (defense-in-depth against future regressions where a non-serializable object leaks into the result dict).
+- **Created `tests/mcp_server/test_output_file_uuid_serialization.py`** (257 lines, 7 tests): Verifies `write_output_file()` succeeds when the result dict contains `uuid.UUID`, `datetime`, `date` objects (local + S3 paths); asserts written JSON contains canonical strings (not Python repr); verifies `default=str` catches arbitrary objects without raising; verifies `default=str` is a no-op for already-serializable values; covers empty results list edge case.
+- **Created `tests/mcp_server/test_handlers_json_serialization.py`** (517 lines, 14 tests): Verifies every handler returning a Pydantic model with UUID/datetime fields (`_get_tasks_handler`, `_get_document_handler` by path and by UUID, `_list_documents_handler`, `_get_documents_by_tag_handler`, `get_documents_by_property` wrapper, `_get_all_tags_handler`, `_list_vaults_handler`, `_get_vault_handler` by name and by UUID, `_update_vault_handler`, `_delete_vault_handler`) and `query_documents_tool` all return dicts whose `id` fields are `str` (not `uuid.UUID`) after the `model_dump(mode="json")` change.
+- **Updated `tests/mcp_server/test_handlers_tasks.py`**: Updated 5 mock `model_dump` lambdas from `lambda: {...}` to `lambda **kwargs: {...}` to accept the new `mode="json"` kwarg.
+- **Updated `ARCHITECTURE.md`**: Documented the `default=str` defense-in-depth in `write_output_file()` description and added a new "Handler/Tool Serialization" subsection describing the `model_dump(mode="json")` source-fix strategy, type coercion rules, and the intentional `OutputFileResult.model_dump()` exception.
+
+**Key Design Decisions:**
+- **Option A (source fix) primary, Option B (defense-in-depth) secondary**: The root-cause fix is to pre-serialize at the source via `model_dump(mode="json")` so the returned dict is JSON-serializable through plain `json.dumps()`. `default=str` is added as defense-in-depth in `output_file.py` to catch any future regression where a non-serializable object leaks into the result dict.
+- **`mode="json"` is a stable Pydantic v2 API**: Project already uses Pydantic v2 (CONVENTIONS.md references `ConfigDict`, `pydantic-settings`). `mode="json"` performs source-level type coercion (UUID → hex str, datetime → ISO 8601 str, date → ISO 8601 str).
+- **`OutputFileResult.model_dump()` intentionally unchanged**: `OutputFileResult` only has `str`, `int`, `None` fields — no UUID/datetime possible. Adding `mode="json"` would be dead code.
+- **`ingest_helpers.py` `json.dumps()` intentionally unchanged**: That call serializes a params dict containing only `str`/`bool`/`None` — no UUID/datetime possible (per research Section 4, Detail 2).
+- **Health check updated for consistency**: `JSONResponse` already handles `datetime` via starlette's encoder, but applying `mode="json"` removes reliance on that encoder and is consistent with the source-fix strategy.
+- **Direct MCP calls unaffected**: FastMCP's response serializer (Pydantic `TypeAdapter`-based) already converted UUID/datetime to strings for direct calls; we now pre-serialize at the source, producing the same end JSON for direct calls while fixing the `output_file`/`mcp_s3_call` paths.
+- **Mock signature update**: `test_handlers_tasks.py` mock `model_dump` lambdas updated from `lambda: {...}` to `lambda **kwargs: {...}` so they accept the new `mode="json"` kwarg without breaking.
+
+**No breaking changes:** Direct MCP calls produce identical JSON (UUIDs as strings, datetimes as ISO 8601 strings). No schema changes, no Alembic migration, no config changes. The fix only enables previously-failing `output_file`/`mcp_s3_call` paths to succeed.
+
+**Verification:**
+- All 2273 tests pass (1 skipped pre-existing)
+- 100% code coverage (5446 statements, 1086 branches)
+- All ruff checks pass; ruff format clean (213 files)
+- mypy clean on source code (57 source files, no issues)
+- bandit clean (0 violations)
+- All source files under 1000 lines (max: ingestion.py at 999)
+- No `# noqa` in source code
+- Code review: APPROVED, no CHANGES REQUESTED
+
 ### 045.output-file-interface (Completed 2026-07-01)
 
 **Objective:** Add optional `output_file` parameter to 7 MCP tools that, when provided, writes the full result JSON to a local filesystem path or S3-compatible endpoint and returns only a compact summary to the LLM context — preserving context window space for large results.

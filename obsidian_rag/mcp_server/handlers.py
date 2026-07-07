@@ -166,7 +166,7 @@ def _get_documents_by_tag_handler(
         )
         _msg = "_get_documents_by_tag_handler returning"
         log.debug(_msg)
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
 
 def _get_all_tags_handler(
@@ -187,7 +187,7 @@ def _get_all_tags_handler(
         )
         _msg = "_get_all_tags_handler returning"
         log.debug(_msg)
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
 
 def _list_vaults_handler(
@@ -206,7 +206,7 @@ def _list_vaults_handler(
         )
         _msg = "_list_vaults_handler returning"
         log.debug(_msg)
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
 
 def _convert_property_filters(
@@ -542,7 +542,7 @@ def _get_tasks_handler(
         result = get_tasks_tool(session=session, filters=filters)
         _msg = "_get_tasks_handler returning"
         log.debug(_msg)
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
 
 def _get_vault_handler(
@@ -577,7 +577,7 @@ def _get_vault_handler(
             )
             _msg = "_get_vault_handler returning"
             log.debug(_msg)
-            return result.model_dump()
+            return result.model_dump(mode="json")
     except ValueError as err:
         _msg = f"_get_vault_handler error: {err}"
         log.error(_msg)
@@ -619,7 +619,7 @@ def _update_vault_handler(
             # Otherwise it's a VaultResponse
             _msg = "_update_vault_handler returning"
             log.debug(_msg)
-            return result.model_dump()
+            return result.model_dump(mode="json")
     except ValueError as err:
         _msg = f"_update_vault_handler error: {err}"
         log.error(_msg)
@@ -738,7 +738,7 @@ def _get_document_handler(params: GetDocumentHandlerParams) -> dict[str, object]
             )
             _msg = "_get_document_handler returning"
             log.debug(_msg)
-            return result.model_dump()
+            return result.model_dump(mode="json")
     except ValueError as err:
         _msg = f"_get_document_handler error: {err}"
         log.error(_msg)
@@ -777,7 +777,7 @@ def _list_documents_handler(params: ListDocumentsHandlerParams) -> dict[str, obj
             )
             _msg = "_list_documents_handler returning"
             log.debug(_msg)
-            return result.model_dump()
+            return result.model_dump(mode="json")
     except ValueError as err:
         _msg = f"_list_documents_handler error: {err}"
         log.error(_msg)

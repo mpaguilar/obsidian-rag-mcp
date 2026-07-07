@@ -567,13 +567,25 @@ Pydantic models for request/response validation:
 
 Core write dispatcher for tool results to external destinations, used by MCP query tools when `output_file` is provided:
 
-- **`write_output_file()`**: Main dispatcher that routes to local or S3 writer based on `OutputFileConfig.type`
+- **`write_output_file()`**: Main dispatcher that routes to local or S3 writer based on `OutputFileConfig.type`. Both branches call `json.dumps(result, default=str)` — the `default=str` is defense-in-depth: handlers/tools pre-serialize `uuid.UUID`/`datetime`/`date` to strings via `model_dump(mode="json")` (see Handler/Tool serialization below), and `default=str` catches any future regression where a non-serializable object leaks into the result dict.
 - **`_write_local()`**: Writes JSON payload to a local file atomically using a temp file + `os.replace()`; restricted to `/tmp/` and its subdirectories; auto-creates parent directories
 - **`_write_s3()`**: Uploads JSON payload via `boto3` `PutObject`; credentials come from the caller config; optional `endpoint` passed through for S3-compatible services. The boto3 client is constructed with `Config(connect_timeout=10, read_timeout=30)` to fail fast on unreachable S3 endpoints. The `addressing_style` from `OutputFileConfig` is passed to boto3 via `Config(s3={"addressing_style": ...})`; the default `"virtual"` works with AWS S3, while `"path"` is required for Garage/MinIO.
 - **`_validate_local_path()`**: Validates that the local path is within `/tmp/` and has a valid parent directory
 - **`_validate_s3_config()`**: Validates that bucket, key, and both credentials are present
 - **`build_output_file_summary()`**: Builds the compact `OutputFileResult` dict returned to the caller
 - **`_count_items()`**: Counts the number of items in a result payload for the `item_count` field
+
+#### Handler/Tool Serialization
+
+All MCP tool handlers (`handlers.py`) and tool implementations (`tool_definitions.py`, `server.py` wrappers) serialize their Pydantic response models via `model_dump(mode="json")` before returning the dict to the MCP framework or to `write_output_file()`. The `mode="json"` argument performs source-level type coercion:
+
+- `uuid.UUID` → canonical hex string (e.g. `"550e8400-e29b-41d4-a716-446655440000"`)
+- `datetime` → ISO 8601 string (e.g. `"2026-07-07T12:34:56Z"`)
+- `date` → ISO 8601 string (e.g. `"2026-07-07"`)
+
+This guarantees the returned dict is JSON-serializable through plain `json.dumps()` without a custom encoder, which is required for the `output_file` code path and for external tool wrappers (e.g. `mcp_s3_call`) that re-serialize the result. The `default=str` fallback in `write_output_file()` is defense-in-depth against future regressions where a non-serializable object leaks past the source fix.
+
+`OutputFileResult.model_dump()` (without `mode="json"`) in `output_file.py` is intentionally left as-is because that model contains only `str`, `int`, and `None` fields — no UUID/datetime possible.
 
 #### Authentication
 

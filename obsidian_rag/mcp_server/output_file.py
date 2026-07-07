@@ -32,11 +32,16 @@ def write_output_file(
     try:
         if config.type == "local":
             _validate_local_path(config.path or "")
-            result_json = json.dumps(result)
+            # default=str is defense-in-depth: handlers now pre-serialize
+            # UUID/datetime via model_dump(mode="json"), but this catches
+            # any future regression where a non-serializable object
+            # leaks into the result dict (REQ-002).
+            result_json = json.dumps(result, default=str)
             output_result = _write_local(result_json, config.path or "")
         else:
             _validate_s3_config(config)
-            result_json = json.dumps(result)
+            # default=str defense-in-depth (see local branch above, REQ-002).
+            result_json = json.dumps(result, default=str)
             output_result = _write_s3(
                 result_json,
                 config.endpoint or "",
