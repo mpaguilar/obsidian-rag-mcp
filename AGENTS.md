@@ -176,6 +176,39 @@ ruff check obsidian_rag/ tests/
 
 ## Checkpoint History
 
+### 049.fix-body-tag-extraction (Completed 2026-07-08)
+
+**Objective:** Fix `_strip_code_blocks()` in `obsidian_rag/parsing/body_tags.py` so inline-code stripping no longer misaligns backtick pairs when triple-backtick sequences (` ``` `) appear as literal text in prose, eliminating the concatenated garbage body tags (e.g. `tagparse_frontmatter`, `1984get_documents_by_tagget_all_tags_merge_tags`) previously produced for documents that discuss fenced-code-block syntax.
+
+**Changes Made:**
+- **Updated `obsidian_rag/parsing/body_tags.py`** (125 → 128 lines): Implemented Approach A (layered) from the requirements doc. Added module-level `PROSE_MENTION_PATTERN = re.compile(r"```[^`\n]*```")` for triple-backtick prose mentions (literal ` ``` ` text in prose that merely DESCRIBES fenced syntax rather than being one). Tightened `INLINE_CODE_PATTERN` from `r"`[^`]+`"` to `r"`[^`\n]+`"` so inline-code spans are single-line only (excludes newlines, REQ-002 — Obsidian inline code does not span lines). Wired the prose-mention layer into `_strip_code_blocks()` AFTER the fenced-block and unclosed-fenced steps but BEFORE the inline-code step, so the single-backtick pattern never sees stray triple-backtick boundaries to misalign on. Updated `_strip_code_blocks()` docstring to document the 4-layer stripping order.
+- **Created `tests/test_parsing_body_tags_prose_mentions.py`** (179 lines, 8 function-based tests per CONVENTIONS.md): `test_prose_mention_with_inline_hash_code_no_garbage` (minimal repro with all `#`-prefixed tokens inside backticks → asserts `None`), `test_fenced_code_blocks_prose_strips_cleanly`, `test_full_037_doc_repro_no_garbage` (asserts only `personal/expenses` survives, no garbage), `test_inline_code_does_not_cross_newlines` (REQ-002), `test_prose_mention_empty_triple_backticks`, `test_prose_mention_with_language_id_inline`, `test_unbalanced_stray_backtick_no_garbage`, `test_double_quoted_hash_prose_is_valid_tag` (REQ edge case — `#personal/expenses` in double-quoted prose IS a valid tag).
+- **Created `tests/test_parsing_body_tags_prose_integration.py`** (361 lines, 4 function-based tests): `test_extract_body_tags_on_affected_doc_no_garbage` (direct call), `test_ingest_then_get_all_tags_no_garbage` (mocked ingestion → `Document.tags` → `get_all_tags` query path), `test_ingest_then_get_documents_by_tag_no_garbage_match` (asserts `get_documents_by_tag` with garbage include tag returns 0 results), `test_task_tags_inherit_no_garbage` (`_merge_tags` produces no garbage in merged task tags). Uses real `extract_body_tags` / `_merge_tags` / `IngestionService._ingest_single_file`; mocks DB session per CONVENTIONS.md.
+- **Updated `ARCHITECTURE.md`**: Replaced the one-line "Tags inside fenced code blocks and inline code are NOT extracted (stripped first)" bullet with a detailed 4-layer stripping-order description documenting the prose-mention layer and single-line inline-code behavior, matching the implemented Approach A.
+
+**Key Design Decisions:**
+- **Approach A (layered) chosen**: The prose-mention case is isolated as its own regex layer inserted between the unclosed-fenced and inline-code steps, mirroring the existing step-by-step structure of `_strip_code_blocks()`. Researcher validated both Approach A and Approach B (CommonMark backreference); Approach A is the smaller, more readable diff.
+- **Newline exclusion is REQUIRED in both the prose-mention and inline-code patterns**: Without `\n` exclusion, the single-backtick pattern still matches across lines and concatenates content even after the prose-mention layer is added. `[^`\n]` enforces single-line spans, matching Obsidian's inline-code behavior.
+- **Prose-mention pattern `r"```[^`\n]*```"`**: Zero-or-more non-backtick, non-newline content between two triple-backtick runs. Handles empty ```` ``` ``` ````, language-id-inline ```` ```python ... ``` ````, and arbitrary single-line prose mentions. Excludes newlines so a prose mention cannot swallow a real fenced block's closing fence on another line (fenced blocks are already stripped in Step 1 anyway).
+- **No helper extraction needed**: `_strip_code_blocks()` remains straight-line (4 sequential `.sub()` calls, no conditionals). McCabe complexity = 1, well under max of 5.
+- **`#y1984` inside backticks is correctly stripped**: After the fix, inline-code spans are properly bounded, so `#y1984` inside `` `#y1984` `` is stripped as inline code and NOT extracted as a tag (the regression test `test_prose_mention_with_inline_hash_code_no_garbage` asserts `None`).
+- **`#personal/expenses` in double-quoted prose IS extracted**: Per Obsidian rules, a `#`-prefixed string in double-quoted prose (not inside backticks) is a valid tag. The fix preserves this correct behavior — `test_double_quoted_hash_prose_is_valid_tag` verifies it.
+
+**Cleanup Path (REQ-005):** Garbage tags already persisted in `Document.tags` from prior ingestion of affected documents are NOT automatically corrected by the code fix. Operators must re-ingest affected vaults with `force=True` (MCP `ingest` tool with `force=True`, or CLI `obsidian-rag ingest --vault <name> --force`) to replace garbage tags with correct ones. The `force` flag bypasses checksum comparison and re-runs the full parsing pipeline (including the fixed `extract_body_tags`), rewriting `Document.tags`. Task tags inherit the corrected `document.tags` via the existing `_merge_tags(document.tags, parsed_task.tags)` call in `_create_tasks`, so no separate task-tag cleanup is needed. **No Alembic migration is required** — the fix is purely in the parsing layer, and `Document.tags` is `TEXT[]` fully rewritten on each ingest (per the existing ingestion service contract documented in checkpoint 033).
+
+**No breaking changes:** Default behavior unchanged for documents without triple-backtick prose mentions (the prose-mention layer matches nothing; the newline exclusion only TIGHTENS inline-code to single-line, which is the correct Obsidian behavior and no existing test asserted cross-line inline-code stripping). No schema changes, no API/config changes, no migration. Re-ingestion with `force=True` rewrites `Document.tags` and is the only documented cleanup path for already-persisted garbage tags.
+
+**Verification:**
+- All 2335 tests pass (1 skipped pre-existing)
+- 100% code coverage (5522 statements, 1094 branches)
+- All ruff checks pass; ruff format clean (217 files)
+- mypy clean on source code (57 source files, no issues)
+- bandit clean (0 violations)
+- All source files under 1000 lines (max: ingestion.py at 999; body_tags.py at 128)
+- No `# noqa` in source code
+- No new Alembic migration created (cleanup path is re-ingestion with `force=True`)
+- Code review: APPROVED (1 easy CHANGES REQUESTED — docstring inaccuracy in `test_inline_code_does_not_cross_newlines` fixed and re-verified)
+
 ### 046.uuid-serialization-fix (Completed 2026-07-07)
 
 **Objective:** Fix `TypeError: Object of type UUID is not JSON serializable` raised by `write_output_file()` (and external tool wrappers like `mcp_s3_call` that re-serialize the result via `json.dumps()`) when MCP tool results contained `uuid.UUID`/`datetime`/`date` Python objects preserved by `model_dump()` (default mode).

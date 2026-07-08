@@ -18,37 +18,40 @@ INLINE_TAG_PATTERN: re.Pattern[str] = re.compile(
 # Regex pattern for fenced code blocks (``` ... ```)
 FENCED_CODE_PATTERN: re.Pattern[str] = re.compile(r"```[\w]*\n.*?```", re.DOTALL)
 
-# Regex pattern for inline code (` ... `)
-INLINE_CODE_PATTERN: re.Pattern[str] = re.compile(r"`[^`]+`")
+# Regex pattern for inline code (` ... `) — single-line only (excludes newlines)
+INLINE_CODE_PATTERN: re.Pattern[str] = re.compile(r"`[^`\n]+`")
+
+# Regex pattern for triple-backtick prose mentions (```...``` appearing as literal text)
+PROSE_MENTION_PATTERN: re.Pattern[str] = re.compile(r"```[^`\n]*```")
 
 
 def _strip_code_blocks(content: str) -> str:
-    """Remove fenced code blocks and inline code from content.
+    """Remove fenced code blocks, prose triple-backtick mentions, and inline code.
 
     Args:
         content: Raw markdown content.
 
     Returns:
-        Content with code blocks and inline code removed.
+        Content with code blocks, triple-backtick prose mentions, and inline
+        code removed. Inline code spans are single-line (newline-excluded)
+        per Obsidian's inline-code behavior.
 
     Notes:
-        Handles unclosed fenced code blocks defensively:
-        strips from opening ``` to end of content.
-        Preserves content outside code blocks.
+        Layered stripping order:
+        1. Properly closed fenced code blocks (multi-line, DOTALL).
+        2. Unclosed fenced blocks (opening ``` to EOF, defensive).
+        3. Triple-backtick prose mentions (```...``` appearing as literal text on a single line of prose that merely DESCRIBES fenced syntax rather than being one).
+        4. Single-backtick inline code (single-line only — excludes newlines).
 
     """
     _msg = "_strip_code_blocks starting"
     log.debug(_msg)
 
-    # Step 1: Remove properly closed fenced code blocks (including empty ones)
     result = FENCED_CODE_PATTERN.sub("", content)
-
-    # Step 2: Remove unclosed fenced blocks (opening ``` to EOF)
     unclosed_pattern = re.compile(r"```[\w]*\n.*$", re.DOTALL)
     result = unclosed_pattern.sub("", result)
-
-    # Step 3: Remove inline code
-    result = INLINE_CODE_PATTERN.sub("", result)
+    result = PROSE_MENTION_PATTERN.sub("", result)  # NEW prose-mention layer
+    result = INLINE_CODE_PATTERN.sub("", result)  # tightened: no newlines
 
     _msg = "_strip_code_blocks returning"
     log.debug(_msg)

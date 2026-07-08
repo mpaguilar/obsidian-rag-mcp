@@ -106,7 +106,17 @@ Database connection management using SQLAlchemy with:
   - `#` immediately followed by tag characters (no space) is a tag
   - `#` followed by a space is a heading (NOT extracted)
   - All-numeric tags like `#1984` are NOT valid (must contain non-numerical character)
-  - Tags inside fenced code blocks and inline code are NOT extracted (stripped first)
+  - `_strip_code_blocks()` removes code in a layered order: (1) properly closed
+    fenced code blocks (multi-line, DOTALL), (2) unclosed fenced blocks
+    (opening ``` to EOF, defensive), (3) triple-backtick prose mentions
+    (```...``` appearing as literal text on a single line of prose that
+    DESCRIBES fenced syntax rather than being one), and (4) single-backtick
+    inline code. Inline code spans are single-line only — the inline-code
+    content class excludes newlines, matching Obsidian's single-line inline-code
+    behavior. The prose-mention layer prevents the single-backtick pattern from
+    misaligning backtick pairs when a document's prose mentions ``` as literal
+    text (e.g. technical notes or requirements docs describing fenced syntax),
+    which previously produced concatenated garbage body tags.
   - Hierarchical tags (`personal/expenses`) and dotted tags (`v1.0/release`) ARE extracted
   - Tags in blockquotes and callouts ARE extracted
 - Tags are lowercased and deduplicated
