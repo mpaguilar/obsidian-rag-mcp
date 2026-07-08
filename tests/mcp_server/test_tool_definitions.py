@@ -69,6 +69,91 @@ class TestQueryDocumentsTool:
             f"Expected query_text '{test_query}', got '{call_kwargs.get('query_text')}'"
         )
 
+    @patch("obsidian_rag.mcp_server.tools.documents.query_documents")
+    def test_vault_name_passed_to_impl(
+        self,
+        mock_query_documents,
+    ):
+        """Test that vault_name is passed to query_documents."""
+        from obsidian_rag.mcp_server.tools.documents_params import (
+            PaginationParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_embedding_provider = MagicMock()
+        mock_embedding_provider.generate_embedding.return_value = [0.1] * 1536
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(return_value=None)
+
+        from obsidian_rag.mcp_server.models import DocumentListResponse
+
+        mock_query_documents.return_value = DocumentListResponse(
+            results=[],
+            total_count=0,
+            has_more=False,
+            next_offset=None,
+        )
+
+        query_documents_tool(
+            db_manager=mock_db_manager,
+            embedding_provider=mock_embedding_provider,
+            query="test query",
+            filters=QueryFilterParams(
+                include_properties=None,
+                exclude_properties=None,
+                include_tags=None,
+                exclude_tags=None,
+            ),
+            pagination=PaginationParams(limit=20, offset=0),
+            vault_name="MyVault",
+        )
+
+        call_kwargs = mock_query_documents.call_args.kwargs
+        assert call_kwargs.get("vault_name") == "MyVault", (
+            f"Expected vault_name 'MyVault', got '{call_kwargs.get('vault_name')}'"
+        )
+
+    @patch("obsidian_rag.mcp_server.tools.documents.query_documents")
+    def test_value_error_returns_error_dict(
+        self,
+        mock_query_documents,
+    ):
+        """Test that ValueError from query_documents returns error dict."""
+        from obsidian_rag.mcp_server.tools.documents_params import (
+            PaginationParams,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_embedding_provider = MagicMock()
+        mock_embedding_provider.generate_embedding.return_value = [0.1] * 1536
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(return_value=None)
+
+        mock_query_documents.side_effect = ValueError("Vault 'BadVault' not found")
+
+        result = query_documents_tool(
+            db_manager=mock_db_manager,
+            embedding_provider=mock_embedding_provider,
+            query="test query",
+            filters=QueryFilterParams(
+                include_properties=None,
+                exclude_properties=None,
+                include_tags=None,
+                exclude_tags=None,
+            ),
+            pagination=PaginationParams(limit=20, offset=0),
+            vault_name="BadVault",
+        )
+
+        assert result["success"] is False
+        assert "BadVault" in result["error"]
+
     def test_raises_error_without_embedding_provider(self):
         """Test that error is raised when embedding provider is None."""
         mock_db_manager = MagicMock()
@@ -99,12 +184,12 @@ class TestGetVaultTool:
 
         result = get_vault_tool(
             db_manager=mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
         )
 
         mock_handler.assert_called_once_with(
             mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             vault_id=None,
         )
         assert result["name"] == "TestVault"
@@ -127,7 +212,7 @@ class TestGetVaultTool:
 
         mock_handler.assert_called_once_with(
             mock_db_manager,
-            name=None,
+            vault_name=None,
             vault_id="abc-123",
         )
         assert result["id"] == "abc-123"
@@ -140,13 +225,13 @@ class TestGetVaultTool:
 
         result = get_vault_tool(
             db_manager=mock_db_manager,
-            name="ByName",
+            vault_name="ByName",
             vault_id="some-id",
         )
 
         mock_handler.assert_called_once_with(
             mock_db_manager,
-            name="ByName",
+            vault_name="ByName",
             vault_id="some-id",
         )
         assert result["name"] == "ByName"
@@ -166,7 +251,7 @@ class TestUpdateVaultTool:
         }
 
         params = VaultUpdateParams(
-            name="TestVault",
+            vault_name="TestVault",
             description="Updated desc",
         )
 
@@ -188,7 +273,7 @@ class TestUpdateVaultTool:
         }
 
         params = VaultUpdateParams(
-            name="TestVault",
+            vault_name="TestVault",
             container_path="/new/path",
         )
 
@@ -211,7 +296,7 @@ class TestUpdateVaultTool:
         }
 
         params = VaultUpdateParams(
-            name="TestVault",
+            vault_name="TestVault",
             container_path="/new/path",
             force=True,
         )
@@ -243,13 +328,13 @@ class TestDeleteVaultTool:
 
         result = delete_vault_tool(
             db_manager=mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             confirm=True,
         )
 
         mock_handler.assert_called_once_with(
             mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             confirm=True,
         )
         assert result["success"] is True
@@ -266,13 +351,13 @@ class TestDeleteVaultTool:
 
         result = delete_vault_tool(
             db_manager=mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             confirm=False,
         )
 
         mock_handler.assert_called_once_with(
             mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             confirm=False,
         )
         assert result["success"] is False
@@ -288,7 +373,7 @@ class TestDeleteVaultTool:
 
         result = delete_vault_tool(
             db_manager=mock_db_manager,
-            name="NonExistent",
+            vault_name="NonExistent",
             confirm=True,
         )
 

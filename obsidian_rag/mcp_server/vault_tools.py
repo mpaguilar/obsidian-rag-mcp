@@ -20,16 +20,16 @@ log = logging.getLogger(__name__)
 
 def get_vault(
     *,
-    name: str | None = None,
+    vault_name: str | None = None,
     vault_id: str | None = None,
 ) -> dict[str, object]:
     """Get a single vault by name or ID.
 
-    Retrieves vault details including document count. Either name or vault_id
-    must be provided, with name taking precedence if both are given.
+    Retrieves vault details including document count. Either vault_name or vault_id
+    must be provided, with vault_name taking precedence if both are given.
 
     Args:
-        name: Vault name to lookup (preferred if both provided).
+        vault_name: Vault name to look up (preferred if both provided).
         vault_id: Vault UUID string to lookup (use vault_id, not id,
             to avoid shadowing the built-in id function).
 
@@ -49,7 +49,7 @@ def get_vault(
     registry = _get_registry()
     result = get_vault_tool(
         registry.db_manager,
-        name=name,
+        vault_name=vault_name,
         vault_id=vault_id,
     )
 
@@ -59,7 +59,7 @@ def get_vault(
 
 
 def update_vault(
-    name: str,
+    vault_name: str,
     *,
     description: str | None = None,
     host_path: str | None = None,
@@ -73,7 +73,7 @@ def update_vault(
     tasks, and chunks for the vault.
 
     Args:
-        name: Vault name for lookup (required, not updatable).
+        vault_name: Vault name for lookup (required, not updatable).
         description: New description (optional).
         host_path: New host path (optional).
         container_path: New container path (optional, requires force).
@@ -95,7 +95,7 @@ def update_vault(
 
     registry = _get_registry()
     params = VaultUpdateParams(
-        name=name,
+        vault_name=vault_name,
         description=description,
         host_path=host_path,
         container_path=container_path,
@@ -109,7 +109,7 @@ def update_vault(
 
 
 def delete_vault(
-    name: str,
+    vault_name: str,
     *,
     confirm: bool = False,
 ) -> dict[str, object]:
@@ -119,7 +119,7 @@ def delete_vault(
     tasks, and chunks. Requires explicit confirmation via confirm=True parameter.
 
     Args:
-        name: Vault name to delete (required).
+        vault_name: Vault name to delete (required).
         confirm: Must be True to proceed with deletion. If False, returns
             an error dict explaining the requirement.
 
@@ -142,7 +142,7 @@ def delete_vault(
     registry = _get_registry()
     result = delete_vault_tool(
         registry.db_manager,
-        name=name,
+        vault_name=vault_name,
         confirm=confirm,
     )
 

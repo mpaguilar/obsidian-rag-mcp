@@ -599,3 +599,114 @@ class TestGetTasks:
 
         with pytest.raises(ValueError, match="Conflicting tags found"):
             get_tasks(mock_session, filters)
+
+    def test_vault_name_none_no_scoping(self):
+        """Test that vault_name=None does not add vault scoping."""
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Task without vault scoping"
+        task.tags = []
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
+
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+        ) as mock_create_response:
+            from obsidian_rag.mcp_server.models import TaskResponse
+
+            mock_response = TaskResponse(
+                id=uuid.uuid4(),
+                raw_text="- [ ] Task",
+                status="not_completed",
+                description="Task without vault scoping",
+                due=None,
+                priority="normal",
+                tags=[],
+                document_path="/test/doc.md",
+                document_name="doc.md",
+            )
+            mock_create_response.return_value = mock_response
+
+            filters = GetTasksFilterParams(vault_name=None)
+            result = get_tasks(mock_session, filters)
+
+        assert result.total_count == 1
+        # Vault scoping should NOT have been applied
+        mock_query = mock_session.query.return_value
+        vault_join_calls = [
+            call
+            for call in mock_query.join.call_args_list
+            if len(call.args) >= 1
+            and getattr(call.args[0], "__name__", None) == "Vault"
+        ]
+        assert len(vault_join_calls) == 0
+
+    def test_vault_name_scopes_to_vault(self):
+        """Test that vault_name filters tasks to a specific vault."""
+        task = MagicMock(spec=Task)
+        task.id = uuid.uuid4()
+        task.status = TaskStatus.NOT_COMPLETED.value
+        task.description = "Vault-scoped task"
+        task.tags = []
+        task.priority = "normal"
+        task.due = None
+        task.scheduled = None
+        task.completion = None
+
+        doc = MagicMock(spec=Document)
+        doc.id = uuid.uuid4()
+        doc.file_path = "/test/doc.md"
+        doc.file_name = "doc.md"
+        doc.tags = []
+
+        mock_session = self._create_mock_session_with_tasks([task], [doc])
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks._validate_vault_exists"
+        ) as mock_validate:
+            with patch(
+                "obsidian_rag.mcp_server.tools.tasks.create_task_response"
+            ) as mock_create_response:
+                from obsidian_rag.mcp_server.models import TaskResponse
+
+                mock_response = TaskResponse(
+                    id=uuid.uuid4(),
+                    raw_text="- [ ] Vault-scoped task",
+                    status="not_completed",
+                    description="Vault-scoped task",
+                    due=None,
+                    priority="normal",
+                    tags=[],
+                    document_path="/test/doc.md",
+                    document_name="doc.md",
+                )
+                mock_create_response.return_value = mock_response
+
+                filters = GetTasksFilterParams(vault_name="Work")
+                result = get_tasks(mock_session, filters)
+
+        assert result.total_count == 1
+        mock_validate.assert_called_once_with(mock_session, "Work")
+
+    def test_vault_name_not_found_raises(self):
+        """Test that non-existent vault_name raises ValueError."""
+        mock_session = MagicMock()
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.tasks._validate_vault_exists",
+            side_effect=ValueError("Vault 'Missing' not found. Available: none"),
+        ):
+            filters = GetTasksFilterParams(vault_name="Missing")
+            with pytest.raises(ValueError, match="Vault 'Missing' not found"):
+                get_tasks(mock_session, filters)

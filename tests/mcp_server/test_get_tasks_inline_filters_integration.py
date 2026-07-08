@@ -6,8 +6,6 @@ Tests the full chain: server.py -> handlers.py -> tasks_params.py -> tasks.py ->
 import uuid
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from obsidian_rag.database.models import Document, Task, TaskStatus
 from obsidian_rag.mcp_server.models import PropertyFilter
 from obsidian_rag.mcp_server.server import get_tasks
@@ -428,8 +426,9 @@ def test_get_tasks_inline_filters_max_count_validation():
             for i in range(11)
         ]
 
-        with pytest.raises(ValueError, match="Maximum 10 inline filters allowed"):
-            get_tasks(inline_filters=inline_filters)
+        result = get_tasks(inline_filters=inline_filters)
+        assert result["success"] is False
+        assert "Maximum 10 inline filters allowed" in result["error"]
 
 
 def test_get_tasks_inline_filters_invalid_operator():
@@ -445,8 +444,9 @@ def test_get_tasks_inline_filters_invalid_operator():
         mock_filter.value = "acme"
         inline_filters = [mock_filter]
 
-        with pytest.raises(ValueError, match="Invalid operator"):
-            get_tasks(inline_filters=inline_filters)
+        result = get_tasks(inline_filters=inline_filters)
+        assert result["success"] is False
+        assert "Invalid operator" in result["error"]
 
 
 def test_get_tasks_inline_filters_dot_path_rejected():
@@ -460,5 +460,6 @@ def test_get_tasks_inline_filters_dot_path_rejected():
             PropertyFilter(path="vendor.region", operator="equals", value="us-east")
         ]
 
-        with pytest.raises(ValueError, match="flat keys"):
-            get_tasks(inline_filters=inline_filters)
+        result = get_tasks(inline_filters=inline_filters)
+        assert result["success"] is False
+        assert "flat keys" in result["error"]

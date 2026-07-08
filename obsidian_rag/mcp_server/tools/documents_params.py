@@ -78,6 +78,7 @@ class DocumentQueryParams:
         query_embedding: Vector embedding for semantic search.
         filter_params: Combined filter parameters.
         pagination: Pagination parameters.
+        vault_name: Optional vault name to scope results. None means all vaults.
 
     """
 
@@ -85,6 +86,7 @@ class DocumentQueryParams:
     query_embedding: list[float]
     filter_params: QueryFilterParams
     pagination: PaginationParams
+    vault_name: str | None = None
 
 
 @dataclass

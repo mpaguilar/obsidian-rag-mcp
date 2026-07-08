@@ -24,6 +24,7 @@ from obsidian_rag.mcp_server.tools.documents_params import (
 from obsidian_rag.mcp_server.tools.documents_tags import (
     apply_postgresql_tag_filter,
 )
+from obsidian_rag.mcp_server.tools.vaults import _validate_vault_exists
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Query
@@ -137,6 +138,7 @@ def query_documents_postgresql(params: DocumentQueryParams) -> DocumentListRespo
     query_embedding = params.query_embedding
     filter_params = params.filter_params
     pagination = params.pagination
+    vault_name = params.vault_name or None
 
     # Query documents with vector similarity
     distance_expr = Document.content_vector.cosine_distance(query_embedding)
@@ -144,6 +146,11 @@ def query_documents_postgresql(params: DocumentQueryParams) -> DocumentListRespo
     query = session.query(Document, distance_expr.label("distance")).filter(
         Document.content_vector.isnot(None),
     )
+
+    if vault_name is not None:
+        _validate_vault_exists(session, vault_name)
+        query = query.join(Vault, Document.vault_id == Vault.id)
+        query = query.filter(Vault.name == vault_name)
 
     # Apply property and tag filters
     query = _apply_postgresql_filters(
@@ -211,11 +218,12 @@ def get_documents_by_property_postgresql(
     session = params.session
     property_filters = params.property_filters
     tag_params = params.tag_params
-    vault_name = params.vault_name
+    vault_name = params.vault_name or None
     pagination = params.pagination
 
     # Join with Vault if filtering by vault_name
     if vault_name is not None:
+        _validate_vault_exists(session, vault_name)
         query = session.query(Document).join(Vault)
         query = query.filter(Vault.name == vault_name)
     else:

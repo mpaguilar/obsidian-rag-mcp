@@ -88,6 +88,7 @@ class GetTasksFilterParams:
         offset: Number of results to skip (default: 0).
         inline_filters: Optional list of PropertyFilter objects for filtering by
             inline fields. Defaults to None.
+        vault_name: Optional vault name to scope task results. None means all vaults.
 
     """
 
@@ -107,6 +108,7 @@ class GetTasksFilterParams:
     limit: int = 20
     offset: int = 0
     inline_filters: list[PropertyFilter] | None = None
+    vault_name: str | None = None
 
 
 @dataclass
@@ -144,6 +146,7 @@ class GetTasksRequest:
         offset: Number of results to skip.
         inline_filters: Optional list of PropertyFilter objects for filtering by
             inline fields.
+        vault_name: Optional vault name to scope results. None means all vaults.
 
     """
 
@@ -155,3 +158,4 @@ class GetTasksRequest:
     limit: int = 20
     offset: int = 0
     inline_filters: list[PropertyFilter] | None = None
+    vault_name: str | None = None

@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -690,17 +690,24 @@ class TestGetDocumentsByTagAdditional:
         filtered_docs = [d for d in sample_documents if d.tags and "work" in d.tags]
         self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
 
-        tag_filter = TagFilter(include_tags=["work"], match_mode="any")
-        result = get_documents_by_tag(
-            db_session,
-            tag_filter=tag_filter,
-            vault_name="test_vault",
-            limit=20,
-            offset=0,
-        )
-        # All sample documents are in test_vault
-        # work.md and mixed.md have "work" tag
-        assert result.total_count == 2
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents._validate_vault_exists"
+        ) as mock_validate:
+            mock_vault = MagicMock()
+            mock_vault.id = sample_documents[0].vault_id
+            mock_validate.return_value = mock_vault
+
+            tag_filter = TagFilter(include_tags=["work"], match_mode="any")
+            result = get_documents_by_tag(
+                db_session,
+                tag_filter=tag_filter,
+                vault_name="test_vault",
+                limit=20,
+                offset=0,
+            )
+            # All sample documents are in test_vault
+            # work.md and mixed.md have "work" tag
+            assert result.total_count == 2
 
 
 class TestGetDocumentsByPropertyAdditional:
@@ -723,23 +730,30 @@ class TestGetDocumentsByPropertyAdditional:
         ]
         self._configure_mock_for_docs(db_session, filtered_docs, total_count=2)
 
-        # Note: This tests the vault_name parameter is passed correctly
-        # The actual filtering happens in the database-specific implementations
-        include_props = [
-            PropertyFilter(path="status", operator="equals", value="draft")
-        ]
-        property_filters = PropertyFilterParams(
-            include_filters=include_props, exclude_filters=None
-        )
-        pagination = PaginationParams(limit=20, offset=0)
-        result = get_documents_by_property(
-            db_session,
-            property_filters=property_filters,
-            vault_name="test_vault",
-            pagination=pagination,
-        )
-        # work.md and mixed.md both have status=draft and are in test_vault
-        assert result.total_count == 2
-        file_names = {r.file_name for r in result.results}
-        assert "work.md" in file_names
-        assert "mixed.md" in file_names
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents_postgres._validate_vault_exists"
+        ) as mock_validate:
+            mock_vault = MagicMock()
+            mock_vault.id = sample_documents[0].vault_id
+            mock_validate.return_value = mock_vault
+
+            # Note: This tests the vault_name parameter is passed correctly
+            # The actual filtering happens in the database-specific implementations
+            include_props = [
+                PropertyFilter(path="status", operator="equals", value="draft")
+            ]
+            property_filters = PropertyFilterParams(
+                include_filters=include_props, exclude_filters=None
+            )
+            pagination = PaginationParams(limit=20, offset=0)
+            result = get_documents_by_property(
+                db_session,
+                property_filters=property_filters,
+                vault_name="test_vault",
+                pagination=pagination,
+            )
+            # work.md and mixed.md both have status=draft and are in test_vault
+            assert result.total_count == 2
+            file_names = {r.file_name for r in result.results}
+            assert "work.md" in file_names
+            assert "mixed.md" in file_names

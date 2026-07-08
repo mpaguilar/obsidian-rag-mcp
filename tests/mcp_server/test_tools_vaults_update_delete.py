@@ -3,12 +3,13 @@
 import logging
 import uuid
 from datetime import datetime, UTC
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from obsidian_rag.database.models import Vault
 from obsidian_rag.mcp_server.tools.vaults import (
+    _apply_vault_updates,
     _handle_flush_with_integrity_check,
     delete_vault,
     update_vault,
@@ -70,7 +71,7 @@ class TestDeleteVault:
 
         mock_session.query.side_effect = query_side_effect
 
-        result = delete_vault(mock_session, name="TestVault", confirm=True)
+        result = delete_vault(mock_session, vault_name="TestVault", confirm=True)
 
         assert result["success"] is True
         assert result["name"] == "TestVault"
@@ -86,7 +87,7 @@ class TestDeleteVault:
 
         mock_session = MagicMock()
 
-        result = delete_vault(mock_session, name="TestVault", confirm=False)
+        result = delete_vault(mock_session, vault_name="TestVault", confirm=False)
 
         assert result["success"] is False
         assert "error" in result
@@ -126,7 +127,7 @@ class TestDeleteVault:
         mock_session.query.side_effect = query_side_effect
 
         with pytest.raises(ValueError) as exc_info:
-            delete_vault(mock_session, name="NonExistent", confirm=True)
+            delete_vault(mock_session, vault_name="NonExistent", confirm=True)
 
         error_msg = str(exc_info.value)
         assert "Vault 'NonExistent' not found" in error_msg
@@ -182,7 +183,7 @@ class TestDeleteVault:
 
         mock_session.query.side_effect = query_side_effect
 
-        result = delete_vault(mock_session, name="WorkVault", confirm=True)
+        result = delete_vault(mock_session, vault_name="WorkVault", confirm=True)
 
         assert result["documents_deleted"] == 3
         assert result["tasks_deleted"] == 7
@@ -238,7 +239,7 @@ class TestDeleteVault:
 
         mock_session.query.side_effect = query_side_effect
 
-        result = delete_vault(mock_session, name="EmptyVault", confirm=True)
+        result = delete_vault(mock_session, vault_name="EmptyVault", confirm=True)
 
         assert result["success"] is True
         assert result["documents_deleted"] == 0
@@ -296,7 +297,7 @@ class TestDeleteVault:
         mock_session.query.side_effect = query_side_effect
 
         with caplog.at_level(logging.WARNING):
-            result = delete_vault(mock_session, name="LogTestVault", confirm=True)
+            result = delete_vault(mock_session, vault_name="LogTestVault", confirm=True)
 
         assert result["success"] is True
         # Verify warning log message
@@ -354,7 +355,9 @@ class TestDeleteVault:
 
         mock_session.query.side_effect = query_side_effect
 
-        result = delete_vault(mock_session, name="ConfigWarningVault", confirm=True)
+        result = delete_vault(
+            mock_session, vault_name="ConfigWarningVault", confirm=True
+        )
 
         assert "warning" in result
         assert "config entry" in result["warning"].lower()
@@ -398,7 +401,7 @@ class TestUpdateVault:
         mock_session.query.side_effect = query_side_effect
 
         params = VaultUpdateParams(
-            name="Personal",
+            vault_name="Personal",
             description="New description",
         )
 
@@ -447,7 +450,7 @@ class TestUpdateVault:
         mock_session.query.side_effect = query_side_effect
 
         params = VaultUpdateParams(
-            name="Personal",
+            vault_name="Personal",
             host_path="/new/host/path",
         )
 
@@ -483,7 +486,7 @@ class TestUpdateVault:
         mock_session.query.return_value = mock_vault_query
 
         params = VaultUpdateParams(
-            name="Personal",
+            vault_name="Personal",
             container_path="/new/container/path",
         )
 
@@ -541,7 +544,7 @@ class TestUpdateVault:
         mock_session.query.side_effect = query_side_effect
 
         params = VaultUpdateParams(
-            name="Personal",
+            vault_name="Personal",
             container_path="/new/container/path",
             force=True,
         )
@@ -589,7 +592,7 @@ class TestUpdateVault:
 
         # Pass same values - no change
         params = VaultUpdateParams(
-            name="Personal",
+            vault_name="Personal",
             description="Personal knowledge base",  # Same as current
         )
 
@@ -638,7 +641,7 @@ class TestUpdateVault:
         )
 
         params = VaultUpdateParams(
-            name="Personal",
+            vault_name="Personal",
             container_path="/data/other",  # Different from current
             force=True,
         )
@@ -663,7 +666,7 @@ class TestUpdateVault:
         mock_session.query.return_value = mock_vault_query
 
         params = VaultUpdateParams(
-            name="NonExistent",
+            vault_name="NonExistent",
             description="New description",
         )
 
@@ -703,7 +706,7 @@ class TestUpdateVault:
         mock_session.query.side_effect = query_side_effect
 
         params = VaultUpdateParams(
-            name="Personal",
+            vault_name="Personal",
             description="New description",
             host_path="/new/host/path",
         )
@@ -762,7 +765,7 @@ class TestUpdateVault:
         mock_session.query.side_effect = query_side_effect
 
         params = VaultUpdateParams(
-            name="Personal",
+            vault_name="Personal",
             container_path="/new/container/path",
             force=True,
         )
@@ -792,3 +795,31 @@ class TestUpdateVault:
             _handle_flush_with_integrity_check(mock_session, "/data/path")
 
         assert "could not connect to server" in str(exc_info.value)
+
+    def test_apply_vault_updates_runtime_error_when_container_path_none(self):
+        """Guard raises RuntimeError when container_path is unexpectedly None."""
+
+        mock_session = MagicMock()
+        mock_vault = MagicMock()
+        mock_vault.id = "vault-uuid"
+
+        params = VaultUpdateParams(
+            vault_name="Test",
+            container_path=None,
+            force=True,
+        )
+
+        with (
+            patch(
+                "obsidian_rag.mcp_server.tools.vaults._is_container_path_changing",
+                return_value=True,
+            ),
+            patch("obsidian_rag.mcp_server.tools.vaults._delete_vault_documents"),
+            patch("obsidian_rag.mcp_server.tools.vaults.log") as mock_log,
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                _apply_vault_updates(mock_vault, params, mock_session)
+
+        expected_msg = "params.container_path is None despite validation guarantee"
+        assert str(exc_info.value) == expected_msg
+        mock_log.error.assert_called_once_with(expected_msg)

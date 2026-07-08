@@ -31,12 +31,12 @@ class TestGetVaultToolWrapper:
             ) as mock_tool:
                 mock_tool.return_value = mock_result
 
-                result = get_vault(name="TestVault")
+                result = get_vault(vault_name="TestVault")
 
         assert result == mock_result
         mock_tool.assert_called_once_with(
             mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             vault_id=None,
         )
 
@@ -69,7 +69,7 @@ class TestGetVaultToolWrapper:
         assert result == mock_result
         mock_tool.assert_called_once_with(
             mock_db_manager,
-            name=None,
+            vault_name=None,
             vault_id="test-uuid-123",
         )
 
@@ -93,13 +93,13 @@ class TestGetVaultToolWrapper:
             ) as mock_tool:
                 mock_tool.return_value = mock_result
 
-                result = get_vault(name="TestVault", vault_id="test-uuid-123")
+                result = get_vault(vault_name="TestVault", vault_id="test-uuid-123")
 
         assert result == mock_result
         # Should pass both parameters to the tool
         mock_tool.assert_called_once_with(
             mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             vault_id="test-uuid-123",
         )
 
@@ -132,7 +132,7 @@ class TestUpdateVaultToolWrapper:
                 mock_tool.return_value = mock_result
 
                 result = update_vault(
-                    name="TestVault",
+                    vault_name="TestVault",
                     description="Updated description",
                 )
 
@@ -141,7 +141,7 @@ class TestUpdateVaultToolWrapper:
         call_args = mock_tool.call_args
         assert call_args[0][0] == mock_db_manager
         params = call_args[0][1]
-        assert params.name == "TestVault"
+        assert params.vault_name == "TestVault"
         assert params.description == "Updated description"
 
     def test_update_vault_with_all_parameters(self):
@@ -165,7 +165,7 @@ class TestUpdateVaultToolWrapper:
                 mock_tool.return_value = mock_result
 
                 result = update_vault(
-                    name="TestVault",
+                    vault_name="TestVault",
                     description="New desc",
                     host_path="/new/host/path",
                     container_path="/new/container/path",
@@ -175,7 +175,7 @@ class TestUpdateVaultToolWrapper:
         assert result == mock_result
         call_args = mock_tool.call_args
         params = call_args[0][1]
-        assert params.name == "TestVault"
+        assert params.vault_name == "TestVault"
         assert params.description == "New desc"
         assert params.host_path == "/new/host/path"
         assert params.container_path == "/new/container/path"
@@ -201,7 +201,7 @@ class TestUpdateVaultToolWrapper:
             ) as mock_tool:
                 mock_tool.return_value = mock_result
 
-                result = update_vault(name="TestVault")
+                result = update_vault(vault_name="TestVault")
 
         assert result == mock_result
         call_args = mock_tool.call_args
@@ -238,12 +238,12 @@ class TestDeleteVaultToolWrapper:
             ) as mock_tool:
                 mock_tool.return_value = mock_result
 
-                result = delete_vault(name="TestVault", confirm=True)
+                result = delete_vault(vault_name="TestVault", confirm=True)
 
         assert result == mock_result
         mock_tool.assert_called_once_with(
             mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             confirm=True,
         )
 
@@ -270,12 +270,12 @@ class TestDeleteVaultToolWrapper:
             ) as mock_tool:
                 mock_tool.return_value = mock_result
 
-                result = delete_vault(name="TestVault", confirm=False)
+                result = delete_vault(vault_name="TestVault", confirm=False)
 
         assert result == mock_result
         mock_tool.assert_called_once_with(
             mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             confirm=False,
         )
 
@@ -296,8 +296,8 @@ class TestVaultToolsUseCorrectParamNames:
         assert "vault_id" in param_names
         assert "id" not in param_names
 
-    def test_update_vault_name_not_shadowing(self):
-        """Test update_vault uses 'name' which is acceptable (not a built-in)."""
+    def test_update_vault_uses_vault_name_param(self):
+        """Test update_vault uses 'vault_name' parameter."""
         import inspect
 
         from obsidian_rag.mcp_server.vault_tools import update_vault
@@ -305,13 +305,13 @@ class TestVaultToolsUseCorrectParamNames:
         sig = inspect.signature(update_vault)
         param_names = list(sig.parameters.keys())
 
-        # 'name' is fine (not a built-in like 'id', 'list', 'dict', etc.)
-        assert "name" in param_names
+        # Should use 'vault_name', not 'name'
+        assert "vault_name" in param_names
         # Should not have 'id' parameter
         assert "id" not in param_names
 
-    def test_delete_vault_name_not_shadowing(self):
-        """Test delete_vault uses 'name' which is acceptable."""
+    def test_delete_vault_uses_vault_name_param(self):
+        """Test delete_vault uses 'vault_name' parameter."""
         import inspect
 
         from obsidian_rag.mcp_server.vault_tools import delete_vault
@@ -319,8 +319,8 @@ class TestVaultToolsUseCorrectParamNames:
         sig = inspect.signature(delete_vault)
         param_names = list(sig.parameters.keys())
 
-        # 'name' is fine (not a built-in)
-        assert "name" in param_names
+        # Should use 'vault_name', not 'name'
+        assert "vault_name" in param_names
         # Should not have 'id' parameter
         assert "id" not in param_names
 
@@ -341,9 +341,9 @@ class TestVaultToolsUseCorrectParamNames:
         for tool in tools:
             sig = inspect.signature(tool)
             for param_name in sig.parameters:
-                # 'name' is specifically allowed even if it might be in builtins
+                # 'vault_name' is specifically allowed even if it might be in builtins
                 # because it's not a commonly shadowed dangerous built-in
-                if param_name != "name":
+                if param_name != "vault_name":
                     assert param_name not in built_in_names, (
                         f"Parameter '{param_name}' in {tool.__name__} shadows a built-in"
                     )

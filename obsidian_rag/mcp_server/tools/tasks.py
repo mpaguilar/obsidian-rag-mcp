@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from sqlalchemy import and_, func, or_
 from sqlalchemy.sql.elements import ColumnElement
 
-from obsidian_rag.database.models import Document, Task
+from obsidian_rag.database.models import Document, Task, Vault
 from obsidian_rag.mcp_server.models import (
     TaskListResponse,
     _validate_limit,
@@ -22,6 +22,7 @@ from obsidian_rag.mcp_server.tools.tasks_inline_filters import (
     validate_inline_filters,
 )
 from obsidian_rag.mcp_server.tools.tasks_params import GetTasksFilterParams
+from obsidian_rag.mcp_server.tools.vaults import _validate_vault_exists
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Query, Session
@@ -486,6 +487,8 @@ def get_tasks(
         session: Database session.
         filters: Filter parameters including status, date ranges, tags,
             priority, and pagination options. If None, returns all tasks.
+        vault_name: Optional vault name to scope task results. None means all vaults.
+            Non-existent vault names raise ValueError.
 
     Returns:
         TaskListResponse with results and pagination info.
@@ -497,6 +500,8 @@ def get_tasks(
         Date comparisons are inclusive (>= for after, <= for before).
         Tasks without dates are excluded from date filter comparisons.
         Tag validation prevents conflicting tags in include/exclude lists.
+        Vault scoping uses the Document.vault_id relationship (tasks are scoped
+        through their parent document).
 
     """
     _msg = "get_tasks starting"
@@ -504,6 +509,7 @@ def get_tasks(
 
     # Use default filters if none provided
     filters = filters or GetTasksFilterParams()
+    vault_name = filters.vault_name or None
 
     # Validate tag filters (checks for conflicting tags)
     _validate_tag_filters(filters.include_tags, filters.exclude_tags)
@@ -516,6 +522,12 @@ def get_tasks(
     query = session.query(Task, Document).join(
         Document, Task.document_id == Document.id
     )
+
+    # Apply vault scoping before other filters
+    if vault_name is not None:
+        _validate_vault_exists(session, vault_name)
+        query = query.join(Vault, Document.vault_id == Vault.id)
+        query = query.filter(Vault.name == vault_name)
 
     # Apply all filters
     query = _apply_status_filter(query, filters.status)  # type: ignore[assignment]

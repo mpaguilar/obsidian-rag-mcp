@@ -147,6 +147,40 @@ def _get_available_vault_names(session: "Session") -> list[str]:
     return names
 
 
+def _validate_vault_exists(session: "Session", vault_name: str) -> Vault:
+    """Validate that a vault exists by name; raise ValueError if not.
+
+    Standardizes the vault-existence check used by all vault-scoped tools.
+    Builds the "Available: ..." error message via _get_available_vault_names.
+
+    Args:
+        session: Database session.
+        vault_name: Vault name to validate (must be a non-empty string; callers
+            normalize empty string to None BEFORE calling this helper).
+
+    Returns:
+        The Vault instance if found.
+
+    Raises:
+        ValueError: If no vault with the given name exists. The error message
+            lists available vault names (or "none" if the vaults table is empty).
+    """
+    _msg = "_validate_vault_exists starting"
+    log.debug(_msg)
+
+    vault = session.query(Vault).filter(Vault.name == vault_name).first()
+    if vault is None:
+        available = _get_available_vault_names(session)
+        available_str = ", ".join(available) if available else "none"
+        _error_msg = f"Vault '{vault_name}' not found. Available: {available_str}"
+        log.error(_error_msg)
+        raise ValueError(_error_msg)
+
+    _msg = "_validate_vault_exists returning"
+    log.debug(_msg)
+    return vault
+
+
 def _count_vault_documents(session: "Session", vault_id: uuid.UUID) -> int:
     """Count documents in a vault.
 
@@ -172,19 +206,19 @@ def _count_vault_documents(session: "Session", vault_id: uuid.UUID) -> int:
     return count or 0
 
 
-def _validate_get_vault_params(name: str | None, vault_id: str | None) -> None:
+def _validate_get_vault_params(vault_name: str | None, vault_id: str | None) -> None:
     """Validate that at least one lookup criteria is provided.
 
     Args:
-        name: Vault name to lookup.
+        vault_name: Vault name to lookup.
         vault_id: Vault UUID string to lookup.
 
     Raises:
-        ValueError: If neither name nor vault_id is provided.
+        ValueError: If neither vault_name nor vault_id is provided.
 
     """
-    if name is None and vault_id is None:
-        _error_msg = "Must provide name or vault_id"
+    if vault_name is None and vault_id is None:
+        _error_msg = "Must provide vault_name or vault_id"
         log.error(_error_msg)
         raise ValueError(_error_msg)
 
@@ -192,21 +226,21 @@ def _validate_get_vault_params(name: str | None, vault_id: str | None) -> None:
 def get_vault(
     session: "Session",
     *,
-    name: str | None = None,
+    vault_name: str | None = None,
     vault_id: str | None = None,
 ) -> VaultResponse:
     """Get a single vault by name or ID.
 
     Args:
         session: Database session.
-        name: Vault name to lookup (preferred if both provided).
+        vault_name: Vault name to look up (preferred if both provided).
         vault_id: Vault UUID string to lookup.
 
     Returns:
         VaultResponse with vault details and document count.
 
     Raises:
-        ValueError: If neither name nor vault_id is provided, or if vault not found,
+        ValueError: If neither vault_name nor vault_id is provided, or if vault not found,
             or if vault_id is not a valid UUID.
 
     """
@@ -214,14 +248,14 @@ def get_vault(
     log.debug(_msg)
 
     # Validate that at least one lookup criteria is provided
-    _validate_get_vault_params(name, vault_id)
+    _validate_get_vault_params(vault_name, vault_id)
 
     vault: Vault | None = None
 
     # Prefer name lookup if provided
-    if name is not None:
-        vault = _lookup_vault_by_name(session, name=name)
-        lookup_key = name
+    if vault_name is not None:
+        vault = _lookup_vault_by_name(session, name=vault_name)
+        lookup_key = vault_name
     else:
         # vault_id is not None here (checked above)
         if vault_id is None:
@@ -419,7 +453,7 @@ def _apply_vault_updates(
 
     # Handle container_path change with force
     if _is_container_path_changing(params, vault) and params.force:
-        _warning_msg = f"Deleting all documents for vault '{params.name}' due to container_path change"
+        _warning_msg = f"Deleting all documents for vault '{params.vault_name}' due to container_path change"
         log.warning(_warning_msg)
         _delete_vault_documents(session, vault_id=vault.id)
         # params.container_path is not None when _is_container_path_changing is True
@@ -486,12 +520,12 @@ def update_vault(
 ) -> VaultResponse | dict[str, object]:
     """Update a vault's properties.
 
-    The name field in params is used for lookup only and cannot be changed.
+    The vault_name field in params is used for lookup only and cannot be changed.
     Changing container_path requires force=True as it deletes all documents.
 
     Args:
         session: Database session.
-        params: Update parameters including name for lookup.
+        params: Update parameters including vault_name for lookup.
 
     Returns:
         VaultResponse on success, or error dict on validation failure.
@@ -510,9 +544,9 @@ def update_vault(
     log.debug(_msg)
 
     # 1. Look up vault by name
-    vault = _lookup_vault_by_name(session, name=params.name)
+    vault = _lookup_vault_by_name(session, name=params.vault_name)
     if vault is None:
-        _error_msg = f"Vault '{params.name}' not found"
+        _error_msg = f"Vault '{params.vault_name}' not found"
         log.error(_error_msg)
         raise ValueError(_error_msg)
 
@@ -606,7 +640,7 @@ def _count_vault_cascade_targets(
 def delete_vault(
     session: "Session",
     *,
-    name: str,
+    vault_name: str,
     confirm: bool,
 ) -> dict[str, object]:
     """Delete a vault and all associated documents, tasks, and chunks.
@@ -616,7 +650,7 @@ def delete_vault(
 
     Args:
         session: Database session.
-        name: Vault name to delete.
+        vault_name: Vault name to delete.
         confirm: Must be True to proceed with deletion. If False, returns
             an error dict explaining the requirement.
 
@@ -661,11 +695,11 @@ def delete_vault(
         }
 
     # 2. Look up vault by name
-    vault = _lookup_vault_by_name(session, name=name)
+    vault = _lookup_vault_by_name(session, name=vault_name)
     if vault is None:
         available = _get_available_vault_names(session)
         available_str = ", ".join(available) if available else "none"
-        _error_msg = f"Vault '{name}' not found. Available: {available_str}"
+        _error_msg = f"Vault '{vault_name}' not found. Available: {available_str}"
         log.error(_error_msg)
         raise ValueError(_error_msg)
 
@@ -676,7 +710,7 @@ def delete_vault(
     )
 
     # 4. Log warning before deletion
-    _warning_msg = f"Deleting vault '{name}' with {doc_count} documents, {task_count} tasks, {chunk_count} chunks"
+    _warning_msg = f"Deleting vault '{vault_name}' with {doc_count} documents, {task_count} tasks, {chunk_count} chunks"
     log.warning(_warning_msg)
 
     # 5. Delete the vault (SQLAlchemy cascade handles the rest)

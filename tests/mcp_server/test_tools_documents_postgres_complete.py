@@ -6,6 +6,8 @@ Tests for all PostgreSQL-specific functions that were marked with pragma: no cov
 import uuid
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from obsidian_rag.mcp_server.tools.documents_params import (
     DocumentQueryParams,
     PaginationParams,
@@ -273,6 +275,81 @@ class TestQueryDocumentsPostgresqlComplete:
         assert len(result.results) == 5
         assert result.has_more is True
         assert result.next_offset == 5
+
+    def test_query_documents_postgresql_with_vault_name(self):
+        """Test query_documents_postgresql with vault_name filter."""
+        from obsidian_rag.mcp_server.tools.documents_postgres import (
+            query_documents_postgresql,
+        )
+
+        mock_session = create_mock_session()
+        mock_doc = create_mock_document()
+
+        mock_query = create_mock_query_chain(results=[(mock_doc, 0.5)], count=1)
+        mock_session.query.return_value = mock_query
+
+        property_filters = PropertyFilterParams(
+            include_filters=None,
+            exclude_filters=None,
+        )
+        tag_params = TagFilterParams(tag_filter=None)
+        query_filter_params = QueryFilterParams(
+            property_filters=property_filters,
+            tag_params=tag_params,
+        )
+        pagination = PaginationParams(limit=20, offset=0)
+        params = DocumentQueryParams(
+            session=mock_session,
+            query_embedding=[0.1] * 1536,
+            filter_params=query_filter_params,
+            pagination=pagination,
+            vault_name="test_vault",
+        )
+
+        result = query_documents_postgresql(params)
+
+        assert result.total_count == 1
+        assert len(result.results) == 1
+        # Verify join was called (vault_name path)
+        assert mock_query.join.call_count >= 1
+
+    def test_query_documents_postgresql_vault_name_not_found(self):
+        """Test query_documents_postgresql raises when vault not found."""
+        from obsidian_rag.mcp_server.tools.documents_postgres import (
+            query_documents_postgresql,
+        )
+
+        mock_session = create_mock_session()
+
+        # Setup the mock so _validate_vault_exists raises ValueError.
+        # _validate_vault_exists does: session.query(Vault).filter(Vault.name == vault_name).first()
+        # We need .first() to return None so the helper raises.
+        mock_filter_result = MagicMock()
+        mock_filter_result.first.return_value = None
+        mock_vault_query = MagicMock()
+        mock_vault_query.filter.return_value = mock_filter_result
+        mock_session.query.return_value = mock_vault_query
+
+        property_filters = PropertyFilterParams(
+            include_filters=None,
+            exclude_filters=None,
+        )
+        tag_params = TagFilterParams(tag_filter=None)
+        query_filter_params = QueryFilterParams(
+            property_filters=property_filters,
+            tag_params=tag_params,
+        )
+        pagination = PaginationParams(limit=20, offset=0)
+        params = DocumentQueryParams(
+            session=mock_session,
+            query_embedding=[0.1] * 1536,
+            filter_params=query_filter_params,
+            pagination=pagination,
+            vault_name="missing_vault",
+        )
+
+        with pytest.raises(ValueError, match="missing_vault"):
+            query_documents_postgresql(params)
 
 
 def _create_vault_name_mock_query(session, mock_doc, count=1):
@@ -914,6 +991,6 @@ class TestGetAllTagsPostgresPath:
                 offset=0,
             )
 
-            mock_extract.assert_called_once_with(mock_session, None)
+            mock_extract.assert_called_once_with(mock_session, None, None)
             assert result.total_count == 3
             assert result.tags == ["work", "personal", "ideas"]

@@ -10,6 +10,7 @@ from obsidian_rag.mcp_server.handlers import (
     AnnotatedQueryFilter,
     QueryFilterParams,
     _delete_vault_handler,
+    _get_all_tags_handler,
     _get_vault_handler,
     _update_vault_handler,
     parse_json_str,
@@ -293,12 +294,12 @@ class TestGetVaultHandler:
 
         result = _get_vault_handler(
             db_manager=mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
         )
 
         mock_get_vault.assert_called_once_with(
             session=mock_session,
-            name="TestVault",
+            vault_name="TestVault",
             vault_id=None,
         )
         assert result == {"id": "vault-123", "name": "TestVault", "document_count": 5}
@@ -326,7 +327,7 @@ class TestGetVaultHandler:
 
         mock_get_vault.assert_called_once_with(
             session=mock_session,
-            name=None,
+            vault_name=None,
             vault_id="vault-456",
         )
         assert result == {
@@ -347,7 +348,7 @@ class TestGetVaultHandler:
 
         result = _get_vault_handler(
             db_manager=mock_db_manager,
-            name="NonExistent",
+            vault_name="NonExistent",
         )
 
         assert result == {"success": False, "error": "Vault 'NonExistent' not found"}
@@ -373,7 +374,7 @@ class TestUpdateVaultHandler:
         mock_update_vault.return_value = mock_vault_response
 
         params = VaultUpdateParams(
-            name="TestVault",
+            vault_name="TestVault",
             description="Updated description",
         )
 
@@ -407,7 +408,7 @@ class TestUpdateVaultHandler:
         mock_update_vault.return_value = error_dict
 
         params = VaultUpdateParams(
-            name="TestVault",
+            vault_name="TestVault",
             container_path="/new/path",
             force=False,
         )
@@ -429,7 +430,7 @@ class TestUpdateVaultHandler:
 
         mock_update_vault.side_effect = ValueError("Vault 'NonExistent' not found")
 
-        params = VaultUpdateParams(name="NonExistent")
+        params = VaultUpdateParams(vault_name="NonExistent")
 
         result = _update_vault_handler(
             db_manager=mock_db_manager,
@@ -463,13 +464,13 @@ class TestDeleteVaultHandler:
 
         result = _delete_vault_handler(
             db_manager=mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             confirm=True,
         )
 
         mock_delete_vault.assert_called_once_with(
             session=mock_session,
-            name="TestVault",
+            vault_name="TestVault",
             confirm=True,
         )
         assert result == success_dict
@@ -490,7 +491,7 @@ class TestDeleteVaultHandler:
 
         result = _delete_vault_handler(
             db_manager=mock_db_manager,
-            name="TestVault",
+            vault_name="TestVault",
             confirm=False,
         )
 
@@ -508,8 +509,92 @@ class TestDeleteVaultHandler:
 
         result = _delete_vault_handler(
             db_manager=mock_db_manager,
-            name="NonExistent",
+            vault_name="NonExistent",
             confirm=True,
         )
 
         assert result == {"success": False, "error": "Vault 'NonExistent' not found"}
+
+
+class TestGetAllTagsHandler:
+    """Tests for _get_all_tags_handler function."""
+
+    @patch("obsidian_rag.mcp_server.handlers.get_all_tags_tool")
+    def test_get_all_tags_handler_passes_vault_name(self, mock_tool):
+        """Handler passes vault_name to get_all_tags_tool."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "tags": ["work"],
+            "total_count": 1,
+            "has_more": False,
+        }
+        mock_tool.return_value = mock_result
+
+        result = _get_all_tags_handler(
+            mock_db_manager,
+            "work*",
+            20,
+            0,
+            vault_name="Personal",
+        )
+
+        assert result == {"tags": ["work"], "total_count": 1, "has_more": False}
+        mock_tool.assert_called_once_with(
+            session=mock_session,
+            pattern="work*",
+            limit=20,
+            offset=0,
+            vault_name="Personal",
+        )
+
+    @patch("obsidian_rag.mcp_server.handlers.get_all_tags_tool")
+    def test_get_all_tags_handler_catches_value_error(self, mock_tool):
+        """Handler catches ValueError and returns error dict."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_tool.side_effect = ValueError("Vault 'Missing' not found")
+
+        result = _get_all_tags_handler(
+            mock_db_manager,
+            None,
+            20,
+            0,
+            vault_name="Missing",
+        )
+
+        assert result == {"success": False, "error": "Vault 'Missing' not found"}
+
+    @patch("obsidian_rag.mcp_server.handlers.get_all_tags_tool")
+    def test_get_all_tags_handler_default_vault_name_none(self, mock_tool):
+        """Handler defaults vault_name to None when not provided."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "tags": [],
+            "total_count": 0,
+            "has_more": False,
+        }
+        mock_tool.return_value = mock_result
+
+        result = _get_all_tags_handler(mock_db_manager, None, 20, 0)
+
+        assert result == {"tags": [], "total_count": 0, "has_more": False}
+        mock_tool.assert_called_once_with(
+            session=mock_session,
+            pattern=None,
+            limit=20,
+            offset=0,
+            vault_name=None,
+        )

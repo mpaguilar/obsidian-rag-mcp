@@ -147,6 +147,23 @@ class TestToolFunctionsWithRegistry:
             assert call_kwargs["embedding_provider"] is mock_registry.embedding_provider
             assert call_kwargs["query"] == "test query"
 
+    def test_query_documents_with_vault_name(self, setup_registry):
+        """Test query_documents passes vault_name to tool."""
+        from obsidian_rag.mcp_server.server import query_documents
+
+        mock_registry = setup_registry
+
+        with patch("obsidian_rag.mcp_server.server.query_documents_tool") as mock_tool:
+            mock_tool.return_value = {"results": []}
+
+            result = query_documents(query="test query", vault_name="test-vault")
+
+            assert result == {"results": []}
+            mock_tool.assert_called_once()
+            call_kwargs = mock_tool.call_args.kwargs
+            assert call_kwargs["db_manager"] is mock_registry.db_manager
+            assert call_kwargs["vault_name"] == "test-vault"
+
     def test_get_documents_by_tag(self, setup_registry):
         """Test get_documents_by_tag uses registry."""
         from obsidian_rag.mcp_server.server import get_documents_by_tag
@@ -192,6 +209,21 @@ class TestToolFunctionsWithRegistry:
             assert result["results"] == []
             mock_tool.assert_called_once()
 
+    def test_get_documents_by_property_value_error(self, setup_registry):
+        """Test get_documents_by_property catches ValueError and returns error dict."""
+        from obsidian_rag.mcp_server.server import get_documents_by_property
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property"
+        ) as mock_tool:
+            mock_tool.side_effect = ValueError("Vault 'MissingVault' not found")
+
+            result = get_documents_by_property(vault_name="MissingVault")
+
+            assert result["success"] is False
+            assert "MissingVault" in result["error"]
+            mock_tool.assert_called_once()
+
     def test_get_all_tags(self, setup_registry):
         """Test get_all_tags uses registry."""
         from obsidian_rag.mcp_server.server import get_all_tags
@@ -209,6 +241,27 @@ class TestToolFunctionsWithRegistry:
                 "work*",
                 20,
                 0,
+                vault_name=None,
+            )
+
+    def test_get_all_tags_with_vault_name(self, setup_registry):
+        """Test get_all_tags passes vault_name to tool."""
+        from obsidian_rag.mcp_server.server import get_all_tags
+
+        mock_registry = setup_registry
+
+        with patch("obsidian_rag.mcp_server.server.get_all_tags_tool") as mock_tool:
+            mock_tool.return_value = {"tags": []}
+
+            result = get_all_tags(pattern="work*", vault_name="test-vault")
+
+            assert result == {"tags": []}
+            mock_tool.assert_called_once_with(
+                mock_registry.db_manager,
+                "work*",
+                20,
+                0,
+                vault_name="test-vault",
             )
 
     def test_list_vaults(self, setup_registry):
@@ -582,7 +635,9 @@ class TestToolImplementations:
             )
 
             assert result == {"tags": []}
-            mock_handler.assert_called_once_with(mock_db_manager, "work*", 20, 0)
+            mock_handler.assert_called_once_with(
+                mock_db_manager, "work*", 20, 0, vault_name=None
+            )
 
     def test_list_vaults_tool(self):
         """Test list_vaults_tool directly."""

@@ -582,7 +582,7 @@ class TestGetAllTagsPostgresPath:
 
             assert result.total_count == 3
             assert result.tags == ["work", "personal", "ideas"]
-            mock_extract.assert_called_once_with(mock_session, None)
+            mock_extract.assert_called_once_with(mock_session, None, None)
 
 
 class TestExtractDocumentFromRow:

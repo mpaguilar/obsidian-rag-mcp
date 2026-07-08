@@ -586,3 +586,42 @@ class TestListDocumentsToolRegistration:
 
                 assert result["total_count"] == 0
                 assert result["results"] == []
+
+
+class TestGetDocumentsByPropertyValueError:
+    """Tests for get_documents_by_property ValueError handling."""
+
+    @pytest.fixture
+    def setup_registry(self):
+        """Set up mock registry for testing."""
+        from obsidian_rag.mcp_server.tool_definitions import (
+            MCPToolRegistry,
+            _set_registry,
+        )
+
+        mock_db_manager = MagicMock()
+        mock_embedding_provider = MagicMock()
+        mock_settings = MagicMock()
+
+        registry = MCPToolRegistry(
+            db_manager=mock_db_manager,
+            embedding_provider=mock_embedding_provider,
+            settings=mock_settings,
+        )
+        _set_registry(registry)
+        yield registry
+        _set_registry(None)
+
+    def test_get_documents_by_property_value_error_returns_dict(self, setup_registry):
+        """Test get_documents_by_property catches ValueError and returns error dict."""
+        from obsidian_rag.mcp_server.server import get_documents_by_property
+
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property"
+        ) as mock_tool:
+            mock_tool.side_effect = ValueError("Vault 'MissingVault' not found")
+
+            result = get_documents_by_property(vault_name="MissingVault")
+
+            assert result["success"] is False
+            assert "MissingVault" in result["error"]

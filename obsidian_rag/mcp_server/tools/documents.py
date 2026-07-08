@@ -41,7 +41,10 @@ from obsidian_rag.mcp_server.tools.documents_postgres import (
     query_documents_postgresql,
 )
 from obsidian_rag.mcp_server.tools.documents_tags import validate_tag_filter
-from obsidian_rag.mcp_server.tools.vaults import _get_available_vault_names
+from obsidian_rag.mcp_server.tools.vaults import (
+    _get_available_vault_names,
+    _validate_vault_exists,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -129,6 +132,7 @@ def query_documents(
     rerank_model: str = "ms-marco-MiniLM-L-12-v2",
     query_text: str = "",
     include_content: bool = True,
+    vault_name: str | None = None,
 ) -> DocumentListResponse:
     """Semantic search over document content with optional property and tag filters.
 
@@ -145,6 +149,7 @@ def query_documents(
             Required when rerank=True for effective cross-encoding.
             Defaults to empty string for backward compatibility.
         include_content: Whether to include document content in responses.
+        vault_name: Optional vault name to scope results. None means all vaults.
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -160,6 +165,8 @@ def query_documents(
     _msg = "query_documents starting"
     log.debug(_msg)
 
+    vault_name = vault_name or None
+
     # Use default pagination if not provided
     pagination = pagination or PaginationParams(limit=20, offset=0)
     limit = _validate_limit(pagination.limit)
@@ -171,6 +178,7 @@ def query_documents(
             session,
             query_embedding,
             limit=limit,
+            vault_name=vault_name,
         )
 
         if rerank and chunk_results:
@@ -256,6 +264,7 @@ def query_documents(
         query_embedding=query_embedding,
         filter_params=query_filter_params,
         pagination=pagination,
+        vault_name=vault_name,
     )
 
     result = query_documents_postgresql(query_params)
@@ -297,6 +306,8 @@ def get_documents_by_tag(
     _msg = "get_documents_by_tag starting"
     log.debug(_msg)
 
+    vault_name = vault_name or None
+
     limit = _validate_limit(limit)
     offset = _validate_offset(offset)
 
@@ -305,6 +316,7 @@ def get_documents_by_tag(
 
     # Build query with vault join if filtering by vault_name
     if vault_name is not None:
+        _validate_vault_exists(session, vault_name)
         query = session.query(Document).join(Vault)
         query = query.filter(Vault.name == vault_name)
     else:
@@ -421,12 +433,17 @@ def get_documents_by_property(
     )
 
 
-def _extract_tags_postgresql(session: "Session", pattern: str | None) -> list[str]:
+def _extract_tags_postgresql(
+    session: "Session",
+    pattern: str | None,
+    vault_name: str | None = None,
+) -> list[str]:
     """Extract tags using PostgreSQL UNNEST function.
 
     Args:
         session: Database session.
         pattern: Optional glob pattern to filter tags.
+        vault_name: Optional vault name to scope tag extraction. None means all vaults.
 
     Returns:
         Sorted list of unique tags.
@@ -435,13 +452,19 @@ def _extract_tags_postgresql(session: "Session", pattern: str | None) -> list[st
     from sqlalchemy import func
     from sqlalchemy import select as sa_select
 
-    tag_subq = (
-        sa_select(
-            func.unnest(Document.tags).label("tag"),
+    vault_name = vault_name or None
+
+    if vault_name is not None:
+        _validate_vault_exists(session, vault_name)
+        inner = (
+            sa_select(func.unnest(Document.tags).label("tag"))
+            .select_from(Document)
+            .join(Vault, Document.vault_id == Vault.id)
+            .where(Vault.name == vault_name)
         )
-        .select_from(Document)
-        .subquery("tag_subq")
-    )
+    else:
+        inner = sa_select(func.unnest(Document.tags).label("tag")).select_from(Document)
+    tag_subq = inner.subquery("tag_subq")
 
     tags_query = session.query(
         func.distinct(tag_subq.c.tag).label("tag"),
@@ -462,6 +485,8 @@ def get_all_tags(
     pattern: str | None,
     limit: int,
     offset: int,
+    *,
+    vault_name: str | None = None,
 ) -> TagListResponse:
     """Query all unique document tags with optional pattern filtering.
 
@@ -471,6 +496,7 @@ def get_all_tags(
             Supports * (any chars), ? (single char), [abc] (char class).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
+        vault_name: Optional vault name to scope tag extraction. None means all vaults.
 
     Returns:
         TagListResponse with tags and pagination info.
@@ -484,10 +510,12 @@ def get_all_tags(
     _msg = "get_all_tags starting"
     log.debug(_msg)
 
+    vault_name = vault_name or None
+
     limit = _validate_limit(limit)
     offset = _validate_offset(offset)
 
-    all_tags = _extract_tags_postgresql(session, pattern)
+    all_tags = _extract_tags_postgresql(session, pattern, vault_name)
 
     total_count = len(all_tags)
     paginated_tags = all_tags[offset : offset + limit]

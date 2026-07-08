@@ -482,3 +482,79 @@ class TestGetTasksHandlerInlineFilters:
             call_args = mock_get_tasks.call_args
             filter_params = call_args.kwargs["filters"]
             assert filter_params.inline_filters is None
+
+
+class TestGetTasksHandlerVaultName:
+    """Tests for _get_tasks_handler vault_name propagation."""
+
+    @patch("obsidian_rag.mcp_server.handlers.get_tasks_tool")
+    def test_handler_passes_vault_name(self, mock_get_tasks):
+        """Test that handler passes vault_name to GetTasksFilterParams."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_get_tasks.return_value = MagicMock(
+            model_dump=lambda **kwargs: {"results": []}
+        )
+
+        request = GetTasksRequest(
+            status=["not_completed"],
+            vault_name="Personal",
+        )
+
+        _get_tasks_handler(
+            db_manager=mock_db_manager,
+            request=request,
+        )
+
+        mock_get_tasks.assert_called_once()
+        call_args = mock_get_tasks.call_args
+        assert call_args.kwargs["filters"].vault_name == "Personal"
+
+    @patch("obsidian_rag.mcp_server.handlers.get_tasks_tool")
+    def test_handler_passes_none_vault_name_by_default(self, mock_get_tasks):
+        """Test that handler passes None vault_name when not set."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_get_tasks.return_value = MagicMock(
+            model_dump=lambda **kwargs: {"results": []}
+        )
+
+        request = GetTasksRequest(status=["not_completed"])
+
+        _get_tasks_handler(
+            db_manager=mock_db_manager,
+            request=request,
+        )
+
+        mock_get_tasks.assert_called_once()
+        call_args = mock_get_tasks.call_args
+        assert call_args.kwargs["filters"].vault_name is None
+
+
+class TestGetTasksHandlerValueError:
+    """Tests for _get_tasks_handler ValueError handling."""
+
+    @patch("obsidian_rag.mcp_server.handlers.get_tasks_tool")
+    def test_handler_catches_value_error(self, mock_get_tasks):
+        """Test that handler catches ValueError and returns error dict."""
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
+        mock_db_manager.get_session.return_value.__exit__.return_value = False
+
+        mock_get_tasks.side_effect = ValueError("Vault 'Missing' not found")
+
+        request = GetTasksRequest(status=["not_completed"])
+
+        result = _get_tasks_handler(
+            db_manager=mock_db_manager,
+            request=request,
+        )
+
+        assert result == {"success": False, "error": "Vault 'Missing' not found"}

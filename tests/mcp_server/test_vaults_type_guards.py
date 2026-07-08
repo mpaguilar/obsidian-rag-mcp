@@ -27,7 +27,7 @@ def test_get_vault_raises_runtime_error_when_vault_id_is_none() -> None:
         patch("obsidian_rag.mcp_server.tools.vaults.log") as mock_log,
     ):
         with pytest.raises(RuntimeError) as exc_info:
-            get_vault(mock_session, name=None, vault_id=None)
+            get_vault(mock_session, vault_name=None, vault_id=None)
 
     expected_msg = "vault_id is None despite validation guarantee"
     assert str(exc_info.value) == expected_msg
@@ -41,7 +41,7 @@ def test_apply_vault_updates_raises_runtime_error_when_container_path_is_none() 
     mock_vault.id = "vault-uuid"
 
     params = VaultUpdateParams(
-        name="Test",
+        vault_name="Test",
         container_path=None,
         force=True,
     )

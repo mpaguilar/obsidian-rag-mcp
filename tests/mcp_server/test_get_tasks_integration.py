@@ -621,18 +621,20 @@ class TestGetTasksTagFiltering:
         )
         db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
 
-        with pytest.raises(ValueError, match="Conflicting tags found"):
-            request = GetTasksRequest(
-                tag_filters=TagFilterStrings(
-                    include_tags=["work"],
-                    exclude_tags=["work"],  # Same tag in both lists
-                ),
-            )
+        request = GetTasksRequest(
+            tag_filters=TagFilterStrings(
+                include_tags=["work"],
+                exclude_tags=["work"],  # Same tag in both lists
+            ),
+        )
 
-            _get_tasks_handler(
-                db_manager=db_manager,
-                request=request,
-            )
+        result = _get_tasks_handler(
+            db_manager=db_manager,
+            request=request,
+        )
+
+        assert result["success"] is False
+        assert "Conflicting tags found" in result["error"]
 
     def test_get_tasks_integration_case_insensitive_conflict(
         self, db_session, sample_data
@@ -648,15 +650,17 @@ class TestGetTasksTagFiltering:
         )
         db_manager.get_session.return_value.__exit__ = MagicMock(return_value=False)
 
-        with pytest.raises(ValueError, match="Conflicting tags found"):
-            request = GetTasksRequest(
-                tag_filters=TagFilterStrings(
-                    include_tags=["Work"],  # Capitalized
-                    exclude_tags=["work"],  # Lowercase - should still conflict
-                ),
-            )
+        request = GetTasksRequest(
+            tag_filters=TagFilterStrings(
+                include_tags=["Work"],  # Capitalized
+                exclude_tags=["work"],  # Lowercase - should still conflict
+            ),
+        )
 
-            _get_tasks_handler(
-                db_manager=db_manager,
-                request=request,
-            )
+        result = _get_tasks_handler(
+            db_manager=db_manager,
+            request=request,
+        )
+
+        assert result["success"] is False
+        assert "Conflicting tags found" in result["error"]

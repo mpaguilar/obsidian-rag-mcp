@@ -404,7 +404,7 @@ def vault_update_command(
 
         # Create update params
         params = VaultUpdateParams(
-            name=name,
+            vault_name=name,
             description=description,
             host_path=host_path,
             container_path=container_path,

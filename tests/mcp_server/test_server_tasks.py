@@ -369,3 +369,14 @@ def test_get_tasks_default_inline_filters_is_none(patched_handler):
     assert result["total_count"] == 0
     request = mock_handler.call_args.kwargs["request"]
     assert request.inline_filters is None
+
+
+def test_get_tasks_passes_vault_name(patched_handler):
+    """get_tasks passes vault_name to the handler request."""
+    mock_handler = patched_handler
+
+    result = get_tasks(vault_name="test-vault")
+
+    assert result["total_count"] == 0
+    request = mock_handler.call_args.kwargs["request"]
+    assert request.vault_name == "test-vault"

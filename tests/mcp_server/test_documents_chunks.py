@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock, patch
 
+import pytest
+
 from obsidian_rag.mcp_server.tools.documents_chunks import (
     ChunkQueryResult,
     query_chunks,
@@ -91,7 +93,8 @@ class TestQueryChunks:
         assert result[0].document_name == "doc.md"
         assert result[0].vault_name == "Test Vault"
 
-    def test_query_chunks_with_vault_filter(self):
+    @patch("obsidian_rag.mcp_server.tools.documents_chunks._validate_vault_exists")
+    def test_query_chunks_with_vault_filter(self, mock_validate):
         """Test chunk query with vault name filter."""
         mock_session = Mock()
 
@@ -142,8 +145,54 @@ class TestQueryChunks:
 
         assert len(result) == 1
         assert result[0].chunk_id == "chunk-1"
+        # Verify _validate_vault_exists was called
+        mock_validate.assert_called_once_with(mock_session, "Test Vault")
         # Verify filter was called on main query (vault filter applied)
         assert mock_query.filter.call_count >= 1
+
+    @patch("obsidian_rag.mcp_server.tools.documents_chunks._validate_vault_exists")
+    def test_query_chunks_empty_string_vault_normalized(self, mock_validate):
+        """Test that empty string vault_name is normalized to None."""
+        mock_session = Mock()
+
+        # Setup mock chain for the main query
+        mock_query = Mock()
+        mock_query.join.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.all.return_value = []
+
+        mock_session.query.return_value = mock_query
+
+        result = query_chunks(
+            mock_session,
+            [0.1] * 1536,
+            vault_name="",
+            limit=10,
+        )
+
+        assert len(result) == 0
+        # _validate_vault_exists should NOT be called for empty string
+        mock_validate.assert_not_called()
+
+    @patch("obsidian_rag.mcp_server.tools.documents_chunks._validate_vault_exists")
+    def test_query_chunks_vault_validation_failure(self, mock_validate):
+        """Test that ValueError from _validate_vault_exists propagates."""
+        mock_session = Mock()
+        mock_validate.side_effect = ValueError(
+            "Vault 'Missing' not found. Available: none"
+        )
+
+        with pytest.raises(ValueError, match="Vault 'Missing' not found"):
+            query_chunks(
+                mock_session,
+                [0.1] * 1536,
+                vault_name="Missing",
+                limit=10,
+            )
+
+        mock_validate.assert_called_once_with(mock_session, "Missing")
 
     def test_query_chunks_empty_results(self):
         """Test chunk query with no results."""

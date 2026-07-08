@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from obsidian_rag.database.models import Document, DocumentChunk, Vault
+from obsidian_rag.mcp_server.tools.vaults import _validate_vault_exists
 from obsidian_rag.reranking import create_reranker, rerank_chunks
 
 if TYPE_CHECKING:
@@ -60,15 +61,22 @@ def query_chunks(
     Args:
         session: Database session.
         query_embedding: Vector embedding of the query text.
-        vault_name: Optional vault name filter.
+        vault_name: Optional vault name filter. Empty strings are normalized
+            to None (no filter applied).
         limit: Maximum number of results.
 
     Returns:
         List of ChunkQueryResult ordered by similarity.
 
+    Raises:
+        ValueError: If vault_name is provided but the vault does not exist.
+            The error message lists available vault names.
+
     """
     _msg = "query_chunks starting"
     log.debug(_msg)
+
+    vault_name = vault_name or None
 
     from sqlalchemy import func
 
@@ -85,7 +93,8 @@ def query_chunks(
     )
 
     # Apply vault filter if specified
-    if vault_name:
+    if vault_name is not None:
+        _validate_vault_exists(session, vault_name)
         query = query.filter(Vault.name == vault_name)
 
     # Order by similarity and limit

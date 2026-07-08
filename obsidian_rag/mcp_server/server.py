@@ -28,6 +28,7 @@ from obsidian_rag.mcp_server.handlers import (
     TaskDateFilterStrings,
     _convert_property_filters,
     _create_tag_filter,
+    _get_documents_by_property_handler,
     _get_documents_by_tag_handler,
     _ingest_handler,
     parse_json_str,
@@ -51,6 +52,7 @@ from obsidian_rag.mcp_server.tool_definitions import (
     list_vaults_tool,
     query_documents_tool,
 )
+from obsidian_rag.mcp_server.tools.documents_params import PropertyFilterParams
 from obsidian_rag.mcp_server.vault_tools import (
     delete_vault,
     get_vault,
@@ -106,6 +108,7 @@ def query_documents(
     rerank: bool = False,
     include_content: bool = True,
     output_file: str | dict | OutputFileConfig | None = None,
+    vault_name: str | None = None,
 ) -> dict[str, object]:
     """Semantic search over document content with optional filters.
 
@@ -131,6 +134,7 @@ def query_documents(
             full result is written to the specified target (local or S3) and
             a compact summary is returned instead. Can be passed as a dict,
             JSON string, or OutputFileConfig object.
+        vault_name: Optional vault name to scope search results. None means all vaults. Non-existent vault names raise ValueError, caught and returned as error dict.
 
     Returns:
         Document list response with pagination and similarity scores.
@@ -153,6 +157,7 @@ def query_documents(
         use_chunks=use_chunks,
         rerank=rerank,
         include_content=include_content,
+        vault_name=vault_name,
     )
     parsed_output_file = _parse_output_file(output_file)
     if parsed_output_file is not None:
@@ -270,7 +275,7 @@ def get_documents_by_property(
         Document list response with pagination and relative paths.
 
     Raises:
-        ValueError: If property filter validation fails or JSON parsing fails.
+        ValueError: If property filter validation fails or JSON parsing fails. Non-existent vault names raise ValueError, caught and returned as error dict.
 
     Examples:
         Dict input:
@@ -281,14 +286,6 @@ def get_documents_by_property(
             filters=None
 
     """
-    from obsidian_rag.mcp_server.tools.documents import (
-        get_documents_by_property as get_documents_by_property_tool,
-    )
-    from obsidian_rag.mcp_server.tools.documents_params import (
-        PaginationParams,
-        PropertyFilterParams,
-    )
-
     _msg = "Tool get_documents_by_property called"
     log.info(_msg)
 
@@ -319,20 +316,16 @@ def get_documents_by_property(
         include_filters=prop_filters_include,
         exclude_filters=prop_filters_exclude,
     )
-    pagination = PaginationParams(
-        limit=limit, offset=offset, include_content=include_content
-    )
 
-    with registry.db_manager.get_session() as session:
-        raw_result = get_documents_by_property_tool(
-            session=session,
-            property_filters=property_filter_params,
-            tag_filter=tag_filter,
-            vault_name=vault_name,
-            pagination=pagination,
-            include_content=include_content,
-        )
-        result = raw_result.model_dump(mode="json")
+    result = _get_documents_by_property_handler(
+        db_manager=registry.db_manager,
+        property_filters=property_filter_params,
+        tag_filter=tag_filter,
+        vault_name=vault_name,
+        include_content=include_content,
+        limit=limit,
+        offset=offset,
+    )
 
     parsed_output_file = _parse_output_file(output_file)
     if parsed_output_file is not None:
@@ -346,6 +339,7 @@ def get_all_tags(
     offset: int = 0,
     *,
     output_file: str | dict | OutputFileConfig | None = None,
+    vault_name: str | None = None,
 ) -> dict[str, object]:
     """Query all unique document tags with optional pattern filtering.
 
@@ -358,13 +352,16 @@ def get_all_tags(
             full result is written to the specified target (local or S3) and
             a compact summary is returned instead. Can be passed as a dict,
             JSON string, or OutputFileConfig object.
+        vault_name: Optional vault name to scope tag extraction. None means all vaults. Non-existent vault names raise ValueError, caught and returned as error dict.
 
     Returns:
         Dictionary with tag list response and pagination info.
 
     """
     registry = _get_registry()
-    result = get_all_tags_tool(registry.db_manager, pattern, limit, offset)
+    result = get_all_tags_tool(
+        registry.db_manager, pattern, limit, offset, vault_name=vault_name
+    )
     parsed_output_file = _parse_output_file(output_file)
     if parsed_output_file is not None:
         return write_output_file(result, parsed_output_file)
@@ -616,6 +613,7 @@ def get_tasks(
     limit: int = 20,
     offset: int = 0,
     output_file: str | dict | OutputFileConfig | None = None,
+    vault_name: str | None = None,
 ) -> dict[str, object]:
     """Query tasks with flexible filtering by status, dates, priority, and tags.
 
@@ -650,6 +648,7 @@ def get_tasks(
             full result is written to the specified target (local or S3) and
             a compact summary is returned instead. Can be passed as a dict,
             JSON string, or OutputFileConfig object.
+        vault_name: Optional vault name to scope task results. None means all vaults. Non-existent vault names raise ValueError, caught and returned as error dict.
 
     Returns:
         Dictionary with paginated task list response.
@@ -678,6 +677,7 @@ def get_tasks(
         include_content=include_content,
         limit=limit,
         offset=offset,
+        vault_name=vault_name,
     )
 
     result = _get_tasks_handler(
@@ -993,5 +993,4 @@ def create_http_app_factory() -> Starlette:
 
     _msg = "create_http_app_factory returning"
     log.info(_msg)
-
     return create_http_app(settings)

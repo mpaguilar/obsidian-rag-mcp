@@ -122,6 +122,7 @@ def query_documents_tool(
     use_chunks: bool = False,
     rerank: bool = False,
     include_content: bool = True,
+    vault_name: str | None = None,
 ) -> dict[str, object]:
     """Tool implementation for semantic search over document content using chunk-based search.
 
@@ -143,6 +144,8 @@ def query_documents_tool(
             Only applies when use_chunks is True.
         include_content: If True, include document content in responses.
             Set to False to return metadata-only results (smaller payload).
+        vault_name: Optional vault name to scope search results. None means all vaults.
+            Non-existent vault names raise ValueError.
 
     Returns:
         Document list response with pagination and similarity scores.
@@ -151,7 +154,7 @@ def query_documents_tool(
 
     Raises:
         RuntimeError: If embedding provider is not available.
-        ValueError: If filter validation fails.
+        ValueError: If filter validation fails or vault_name does not exist.
 
     Notes:
         This is a module-level function for testability.
@@ -200,19 +203,25 @@ def query_documents_tool(
     )
     pagination_params = pagination or PaginationParams(limit=20, offset=0)
 
-    with db_manager.get_session() as session:
-        result = query_documents_impl(
-            session=session,
-            query_embedding=query_embedding,
-            filter_params=property_filter_params,
-            tag_filter=tag_filter,
-            pagination=pagination_params,
-            use_chunks=use_chunks,
-            rerank=rerank,
-            query_text=query,
-            include_content=include_content,
-        )
-        return result.model_dump(mode="json")
+    try:
+        with db_manager.get_session() as session:
+            result = query_documents_impl(
+                session=session,
+                query_embedding=query_embedding,
+                filter_params=property_filter_params,
+                tag_filter=tag_filter,
+                pagination=pagination_params,
+                use_chunks=use_chunks,
+                rerank=rerank,
+                query_text=query,
+                include_content=include_content,
+                vault_name=vault_name,
+            )
+            return result.model_dump(mode="json")
+    except ValueError as err:
+        _msg = f"query_documents_tool error: {err}"
+        log.error(_msg)
+        return {"success": False, "error": str(err)}
 
 
 def _create_openai_provider(config: EndpointConfig) -> EmbeddingProvider:
@@ -345,6 +354,8 @@ def get_all_tags_tool(
     pattern: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    *,
+    vault_name: str | None = None,
 ) -> dict[str, object]:
     """Tool implementation for querying all unique document tags.
 
@@ -354,6 +365,7 @@ def get_all_tags_tool(
             Supports * (any chars), ? (single char), [abc] (char class).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
+        vault_name: Optional vault name to scope tag extraction. None means all vaults.
 
     Returns:
         Dictionary with tag list response and pagination info.
@@ -365,7 +377,9 @@ def get_all_tags_tool(
     """
     _msg = "Tool get_all_tags called"
     log.info(_msg)
-    return _get_all_tags_handler(db_manager, pattern, limit, offset)
+    return _get_all_tags_handler(
+        db_manager, pattern, limit, offset, vault_name=vault_name
+    )
 
 
 def list_vaults_tool(
@@ -497,17 +511,17 @@ def get_tasks_tool(
 def get_vault_tool(
     db_manager: DatabaseManager,
     *,
-    name: str | None = None,
+    vault_name: str | None = None,
     vault_id: str | None = None,
 ) -> dict[str, object]:
     """Tool implementation for getting a single vault by name or ID.
 
-    Retrieves vault details including document count. Either name or vault_id
-    must be provided, with name taking precedence if both are given.
+    Retrieves vault details including document count. Either vault_name or vault_id
+    must be provided, with vault_name taking precedence if both are given.
 
     Args:
         db_manager: Database manager for session management.
-        name: Vault name to lookup (preferred if both provided).
+        vault_name: Vault name to lookup (preferred if both provided).
         vault_id: Vault UUID string to lookup.
 
     Returns:
@@ -522,7 +536,7 @@ def get_vault_tool(
     """
     _msg = "Tool get_vault called"
     log.info(_msg)
-    return _get_vault_handler(db_manager, name=name, vault_id=vault_id)
+    return _get_vault_handler(db_manager, vault_name=vault_name, vault_id=vault_id)
 
 
 def update_vault_tool(
@@ -536,7 +550,7 @@ def update_vault_tool(
 
     Args:
         db_manager: Database manager for session management.
-        params: Vault update parameters including name for lookup.
+        params: Vault update parameters including vault_name for lookup.
 
     Returns:
         Vault response as dictionary on success, or error dict on failure:
@@ -558,7 +572,7 @@ def update_vault_tool(
 def delete_vault_tool(
     db_manager: DatabaseManager,
     *,
-    name: str,
+    vault_name: str,
     confirm: bool,
 ) -> dict[str, object]:
     """Tool implementation for deleting a vault and all associated data.
@@ -568,7 +582,7 @@ def delete_vault_tool(
 
     Args:
         db_manager: Database manager for session management.
-        name: Vault name to delete.
+        vault_name: Vault name to delete.
         confirm: Must be True to proceed with deletion.
 
     Returns:
@@ -585,7 +599,7 @@ def delete_vault_tool(
     """
     _msg = "Tool delete_vault called"
     log.info(_msg)
-    return _delete_vault_handler(db_manager, name=name, confirm=confirm)
+    return _delete_vault_handler(db_manager, vault_name=vault_name, confirm=confirm)
 
 
 def get_document_tool(

@@ -2,12 +2,16 @@
 
 import uuid
 from datetime import datetime, UTC
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from obsidian_rag.database.models import Document as DocumentModel, Vault
-from obsidian_rag.mcp_server.tools.vaults import get_vault, list_vaults
+from obsidian_rag.mcp_server.tools.vaults import (
+    _validate_vault_exists,
+    get_vault,
+    list_vaults,
+)
 
 
 class TestListVaults:
@@ -537,7 +541,7 @@ class TestGetVault:
 
         mock_session.query.side_effect = query_side_effect
 
-        result = get_vault(mock_session, name="Personal")
+        result = get_vault(mock_session, vault_name="Personal")
 
         assert result.name == "Personal"
         assert result.description == "Personal knowledge base"
@@ -624,7 +628,7 @@ class TestGetVault:
         mock_session.query.side_effect = query_side_effect
 
         with pytest.raises(ValueError) as exc_info:
-            get_vault(mock_session, name="NonExistent")
+            get_vault(mock_session, vault_name="NonExistent")
 
         error_msg = str(exc_info.value)
         assert "Vault 'NonExistent' not found" in error_msg
@@ -677,7 +681,7 @@ class TestGetVault:
         with pytest.raises(ValueError) as exc_info:
             get_vault(mock_session)
 
-        assert "Must provide name or vault_id" in str(exc_info.value)
+        assert "Must provide vault_name or vault_id" in str(exc_info.value)
 
     def test_get_vault_invalid_uuid(self):
         """Test ValueError for malformed UUID string."""
@@ -728,7 +732,126 @@ class TestGetVault:
         mock_session.query.side_effect = query_side_effect
 
         # Both provided - should use name
-        result = get_vault(mock_session, name="ByName", vault_id=str(uuid.uuid4()))
+        result = get_vault(
+            mock_session, vault_name="ByName", vault_id=str(uuid.uuid4())
+        )
 
         assert result.name == "ByName"
         assert result.description == "Found by name"
+
+
+class TestValidateVaultExists:
+    """Test suite for _validate_vault_exists helper."""
+
+    def test_validate_vault_exists_found(self):
+        """Returns vault when it exists."""
+
+        vault = MagicMock(spec=Vault)
+        vault.name = "Personal"
+
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.first.return_value = vault
+        mock_session.query.return_value = mock_query
+
+        result = _validate_vault_exists(mock_session, "Personal")
+
+        assert result == vault
+        mock_session.query.assert_called_once_with(Vault)
+        mock_query.filter.assert_called_once()
+
+    def test_validate_vault_exists_not_found_with_available(self):
+        """Raises ValueError listing available vaults."""
+
+        available_vault = MagicMock(spec=Vault)
+        available_vault.name = "Work"
+
+        mock_session = MagicMock()
+
+        # First query: vault lookup (not found)
+        mock_lookup_query = MagicMock()
+        mock_lookup_query.filter.return_value = mock_lookup_query
+        mock_lookup_query.first.return_value = None
+
+        # Second query: available vaults
+        mock_list_query = MagicMock()
+        mock_list_query.all.return_value = [available_vault]
+
+        call_count = 0
+
+        def query_side_effect(model):
+            nonlocal call_count
+            call_count += 1
+            if model is Vault:
+                if call_count == 1:
+                    return mock_lookup_query
+                return mock_list_query
+            return MagicMock()
+
+        mock_session.query.side_effect = query_side_effect
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_vault_exists(mock_session, "Missing")
+
+        error_msg = str(exc_info.value)
+        assert "Vault 'Missing' not found" in error_msg
+        assert "Available: Work" in error_msg
+
+    def test_validate_vault_exists_not_found_empty_database(self):
+        """Raises ValueError with 'none' when no vaults exist."""
+
+        mock_session = MagicMock()
+
+        # First query: vault lookup (not found)
+        mock_lookup_query = MagicMock()
+        mock_lookup_query.filter.return_value = mock_lookup_query
+        mock_lookup_query.first.return_value = None
+
+        # Second query: available vaults (empty)
+        mock_list_query = MagicMock()
+        mock_list_query.all.return_value = []
+
+        call_count = 0
+
+        def query_side_effect(model):
+            nonlocal call_count
+            call_count += 1
+            if model is Vault:
+                if call_count == 1:
+                    return mock_lookup_query
+                return mock_list_query
+            return MagicMock()
+
+        mock_session.query.side_effect = query_side_effect
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_vault_exists(mock_session, "Missing")
+
+        error_msg = str(exc_info.value)
+        assert "Vault 'Missing' not found" in error_msg
+        assert "Available: none" in error_msg
+
+
+class TestGetVaultDefensiveGuards:
+    """Test defensive RuntimeError guards in get_vault."""
+
+    def test_get_vault_runtime_error_when_vault_id_none_after_validation(
+        self,
+    ):
+        """Guard raises RuntimeError when vault_id is unexpectedly None."""
+        mock_session = MagicMock()
+
+        with (
+            patch(
+                "obsidian_rag.mcp_server.tools.vaults._validate_get_vault_params",
+                return_value=None,
+            ),
+            patch("obsidian_rag.mcp_server.tools.vaults.log") as mock_log,
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                get_vault(mock_session, vault_name=None, vault_id=None)
+
+        expected_msg = "vault_id is None despite validation guarantee"
+        assert str(exc_info.value) == expected_msg
+        mock_log.error.assert_called_once_with(expected_msg)

@@ -150,6 +150,7 @@ class TestQueryDocumentsChunkOption:
         mock_query_chunks.assert_called_once_with(
             mock_session,
             [0.1] * 1536,
+            vault_name=None,
             limit=3,
         )
 

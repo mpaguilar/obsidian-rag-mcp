@@ -18,6 +18,7 @@ from obsidian_rag.mcp_server.tools.documents import (
 from obsidian_rag.mcp_server.tools.documents import (
     get_documents_by_tag as get_documents_by_tag_tool,
 )
+from obsidian_rag.mcp_server.tools.documents_params import PropertyFilterParams
 from obsidian_rag.mcp_server.tools.tasks import get_tasks as get_tasks_tool
 from obsidian_rag.mcp_server.tools.tasks_dates import parse_iso_date
 from obsidian_rag.mcp_server.tools.tasks_params import (
@@ -155,18 +156,23 @@ def _get_documents_by_tag_handler(
         match_mode=match_mode_casted,
     )
 
-    with db_manager.get_session() as session:
-        result = get_documents_by_tag_tool(
-            session=session,
-            tag_filter=tag_filter,
-            vault_name=params.get("vault_name"),
-            limit=params.get("limit", 20),
-            offset=params.get("offset", 0),
-            include_content=params.get("include_content", True),
-        )
-        _msg = "_get_documents_by_tag_handler returning"
-        log.debug(_msg)
-        return result.model_dump(mode="json")
+    try:
+        with db_manager.get_session() as session:
+            result = get_documents_by_tag_tool(
+                session=session,
+                tag_filter=tag_filter,
+                vault_name=params.get("vault_name"),
+                limit=params.get("limit", 20),
+                offset=params.get("offset", 0),
+                include_content=params.get("include_content", True),
+            )
+            _msg = "_get_documents_by_tag_handler returning"
+            log.debug(_msg)
+            return result.model_dump(mode="json")
+    except ValueError as err:
+        _msg = f"_get_documents_by_tag_handler error: {err}"
+        log.error(_msg)
+        return {"success": False, "error": str(err)}
 
 
 def _get_all_tags_handler(
@@ -174,20 +180,45 @@ def _get_all_tags_handler(
     pattern: str | None,
     limit: int,
     offset: int,
+    *,
+    vault_name: str | None = None,
 ) -> dict[str, object]:
-    """Handle get_all_tags tool call."""
+    """Handle get_all_tags tool call.
+
+    Args:
+        db_manager: Database manager for session creation.
+        pattern: Optional glob pattern for tag filtering.
+        vault_name: Optional vault name to scope tag extraction. None means all vaults.
+        limit: Maximum results (default 20, max 10000).
+        offset: Result offset for pagination.
+
+    Returns:
+        Dict with the tags list response, or {"success": False, "error": ...} on
+        ValueError (e.g., non-existent vault).
+
+    Notes:
+        Database calls via SQLAlchemy session. Non-existent vault_name raises
+        ValueError in the tool impl, caught here and returned as an error dict.
+
+    """
     _msg = "_get_all_tags_handler starting"
     log.debug(_msg)
-    with db_manager.get_session() as session:
-        result = get_all_tags_tool(
-            session=session,
-            pattern=pattern,
-            limit=limit,
-            offset=offset,
-        )
-        _msg = "_get_all_tags_handler returning"
-        log.debug(_msg)
-        return result.model_dump(mode="json")
+    try:
+        with db_manager.get_session() as session:
+            result = get_all_tags_tool(
+                session=session,
+                pattern=pattern,
+                limit=limit,
+                offset=offset,
+                vault_name=vault_name,
+            )
+            _msg = "_get_all_tags_handler returning"
+            log.debug(_msg)
+            return result.model_dump(mode="json")
+    except ValueError as err:
+        _msg = f"_get_all_tags_handler error: {err}"
+        log.error(_msg)
+        return {"success": False, "error": str(err)}
 
 
 def _list_vaults_handler(
@@ -495,12 +526,14 @@ def _get_tasks_handler(
         Dictionary with task list response.
 
     Raises:
-        ValueError: If tag filter validation fails (conflicting tags).
+        ValueError: If tag filter validation fails (conflicting tags), or vault not found.
 
     Notes:
         Parses ISO date strings and builds GetTasksFilterParams.
         Invalid date strings are logged and treated as None.
         Tag validation prevents conflicting tags in include/exclude lists.
+        ValueError from the tool layer (e.g., non-existent vault) is caught and
+        returned as an error dict.
 
     """
     _msg = "_get_tasks_handler starting"
@@ -536,26 +569,32 @@ def _get_tasks_handler(
         limit=request.limit,
         offset=request.offset,
         inline_filters=request.inline_filters,
+        vault_name=request.vault_name,
     )
 
-    with db_manager.get_session() as session:
-        result = get_tasks_tool(session=session, filters=filters)
-        _msg = "_get_tasks_handler returning"
-        log.debug(_msg)
-        return result.model_dump(mode="json")
+    try:
+        with db_manager.get_session() as session:
+            result = get_tasks_tool(session=session, filters=filters)
+            _msg = "_get_tasks_handler returning"
+            log.debug(_msg)
+            return result.model_dump(mode="json")
+    except ValueError as err:
+        _msg = f"_get_tasks_handler error: {err}"
+        log.error(_msg)
+        return {"success": False, "error": str(err)}
 
 
 def _get_vault_handler(
     db_manager: DatabaseManager,
     *,
-    name: str | None = None,
+    vault_name: str | None = None,
     vault_id: str | None = None,
 ) -> dict[str, object]:
     """Handle get_vault tool call.
 
     Args:
         db_manager: Database manager for sessions.
-        name: Vault name to lookup (preferred if both provided).
+        vault_name: Vault name to look up (preferred if both provided).
         vault_id: Vault UUID string to lookup.
 
     Returns:
@@ -572,7 +611,7 @@ def _get_vault_handler(
         with db_manager.get_session() as session:
             result = get_vault(
                 session=session,
-                name=name,
+                vault_name=vault_name,
                 vault_id=vault_id,
             )
             _msg = "_get_vault_handler returning"
@@ -629,14 +668,14 @@ def _update_vault_handler(
 def _delete_vault_handler(
     db_manager: DatabaseManager,
     *,
-    name: str,
+    vault_name: str,
     confirm: bool,
 ) -> dict[str, object]:
     """Handle delete_vault tool call.
 
     Args:
         db_manager: Database manager for sessions.
-        name: Vault name to delete.
+        vault_name: Vault name to delete.
         confirm: Must be True to proceed with deletion.
 
     Returns:
@@ -654,7 +693,7 @@ def _delete_vault_handler(
         with db_manager.get_session() as session:
             result = delete_vault(
                 session=session,
-                name=name,
+                vault_name=vault_name,
                 confirm=confirm,
             )
             # Result is always a dict (success or error)
@@ -780,6 +819,64 @@ def _list_documents_handler(params: ListDocumentsHandlerParams) -> dict[str, obj
             return result.model_dump(mode="json")
     except ValueError as err:
         _msg = f"_list_documents_handler error: {err}"
+        log.error(_msg)
+        return {"success": False, "error": str(err)}
+
+
+def _get_documents_by_property_handler(
+    db_manager: DatabaseManager,
+    property_filters: PropertyFilterParams | None,
+    tag_filter: TagFilter | None,
+    vault_name: str | None,
+    *,
+    include_content: bool,
+    limit: int,
+    offset: int,
+) -> dict[str, object]:
+    """Handle get_documents_by_property tool call.
+
+    Args:
+        db_manager: Database manager for sessions.
+        property_filters: Property filter parameters with include/exclude lists.
+        tag_filter: Optional tag filter to also apply.
+        vault_name: Filter by specific vault name (optional).
+        include_content: Whether to include document content in responses.
+        limit: Maximum number of results.
+        offset: Number of results to skip.
+
+    Returns:
+        Document list response as dictionary on success, or error dict on failure.
+
+    Notes:
+        Catches ValueError from get_documents_by_property tool and returns error dict.
+
+    """
+    _msg = "_get_documents_by_property_handler starting"
+    log.debug(_msg)
+
+    try:
+        with db_manager.get_session() as session:
+            from obsidian_rag.mcp_server.tools.documents import (
+                get_documents_by_property as get_documents_by_property_tool,
+            )
+            from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
+
+            pagination = PaginationParams(
+                limit=limit, offset=offset, include_content=include_content
+            )
+            raw_result = get_documents_by_property_tool(
+                session=session,
+                property_filters=property_filters,
+                tag_filter=tag_filter,
+                vault_name=vault_name,
+                pagination=pagination,
+                include_content=include_content,
+            )
+            _msg = "_get_documents_by_property_handler returning"
+            log.debug(_msg)
+            return raw_result.model_dump(mode="json")
+    except ValueError as err:
+        _msg = f"_get_documents_by_property_handler error: {err}"
         log.error(_msg)
         return {"success": False, "error": str(err)}
 

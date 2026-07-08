@@ -336,7 +336,7 @@ def test_get_all_tags_handler_returns_str_tags() -> None:
         "obsidian_rag.mcp_server.handlers.get_all_tags_tool",
         return_value=tag_list,
     ):
-        result = _get_all_tags_handler(db_manager, None, 20, 0)
+        result = _get_all_tags_handler(db_manager, None, 20, 0, vault_name=None)
     assert isinstance(result, dict)
     assert isinstance(result["tags"], list)
     assert all(isinstance(tag, str) for tag in result["tags"])
@@ -393,7 +393,7 @@ def test_get_vault_handler_returns_str_id() -> None:
         "obsidian_rag.mcp_server.handlers.get_vault",
         return_value=vault_response,
     ):
-        result = _get_vault_handler(db_manager, name="Personal")
+        result = _get_vault_handler(db_manager, vault_name="Personal")
     assert isinstance(result, dict)
     assert isinstance(result["id"], str)
     assert not isinstance(result["id"], uuid.UUID)
@@ -444,7 +444,7 @@ def test_update_vault_handler_returns_str_id() -> None:
         "obsidian_rag.mcp_server.handlers.update_vault",
         return_value=vault_response,
     ):
-        params = VaultUpdateParams(name="Personal", description="Updated")
+        params = VaultUpdateParams(vault_name="Personal", description="Updated")
         result = _update_vault_handler(db_manager, params)
     assert isinstance(result, dict)
     assert isinstance(result["id"], str)
@@ -468,7 +468,7 @@ def test_delete_vault_handler_returns_str_id() -> None:
             "warning": "Vault config entry still exists.",
         },
     ):
-        result = _delete_vault_handler(db_manager, name="Personal", confirm=True)
+        result = _delete_vault_handler(db_manager, vault_name="Personal", confirm=True)
     assert isinstance(result, dict)
     assert isinstance(result["id"], str)
     assert result["id"] == str(original_uuid)

@@ -44,6 +44,37 @@ class TestDocumentHandlers:
             assert result == {"results": [], "total_count": 0, "has_more": False}
             mock_tool.assert_called_once()
 
+    def test_get_documents_by_tag_handler_catches_value_error(self):
+        """Test _get_documents_by_tag_handler catches ValueError and returns error dict."""
+        from obsidian_rag.mcp_server.handlers import _get_documents_by_tag_handler
+
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value.__enter__ = MagicMock(
+            return_value=mock_session
+        )
+        mock_db_manager.get_session.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+
+        with patch(
+            "obsidian_rag.mcp_server.handlers.get_documents_by_tag_tool"
+        ) as mock_tool:
+            mock_tool.side_effect = ValueError("Vault 'Missing' not found")
+
+            params = {
+                "include_tags": ["work"],
+                "exclude_tags": [],
+                "match_mode": "all",
+                "vault_name": "Missing",
+                "limit": 20,
+                "offset": 0,
+                "include_content": True,
+            }
+            result = _get_documents_by_tag_handler(mock_db_manager, params)  # type: ignore[arg-type]
+
+            assert result == {"success": False, "error": "Vault 'Missing' not found"}
+
     def test_get_all_tags_handler_full_flow(self):
         """Test _get_all_tags_handler full flow."""
         from obsidian_rag.mcp_server.handlers import _get_all_tags_handler
@@ -66,11 +97,17 @@ class TestDocumentHandlers:
             }
             mock_tool.return_value = mock_result
 
-            result = _get_all_tags_handler(mock_db_manager, "work*", 20, 0)
+            result = _get_all_tags_handler(
+                mock_db_manager, "work*", 20, 0, vault_name=None
+            )
 
             assert result == {"tags": [], "total_count": 0, "has_more": False}
             mock_tool.assert_called_once_with(
-                session=mock_session, pattern="work*", limit=20, offset=0
+                session=mock_session,
+                pattern="work*",
+                limit=20,
+                offset=0,
+                vault_name=None,
             )
 
     def test_convert_property_filters_with_valid_filters(self):

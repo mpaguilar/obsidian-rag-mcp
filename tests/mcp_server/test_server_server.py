@@ -670,3 +670,32 @@ class TestGetTasksJsonString:
         assert request.date_filters is date_filters
         assert request.limit == 15
         assert request.offset == 10
+
+    @patch("obsidian_rag.mcp_server.server._get_registry")
+    @patch("obsidian_rag.mcp_server.handlers._get_tasks_handler")
+    def test_get_tasks_with_vault_name(self, mock_handler, mock_registry):
+        """Test that get_tasks passes vault_name to handler request."""
+        mock_registry_instance = MagicMock()
+        mock_registry.return_value = mock_registry_instance
+
+        mock_handler.return_value = {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+
+        from obsidian_rag.mcp_server.server import get_tasks
+
+        result = get_tasks(vault_name="test-vault")
+
+        assert result == {
+            "results": [],
+            "total_count": 0,
+            "has_more": False,
+            "next_offset": None,
+        }
+        mock_handler.assert_called_once()
+        call_args = mock_handler.call_args
+        request = call_args.kwargs["request"]
+        assert request.vault_name == "test-vault"
