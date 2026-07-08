@@ -5,7 +5,7 @@ matches across newlines and misaligns backtick pairs when prose mentions ```,
 producing concatenated garbage tags.
 """
 
-from obsidian_rag.parsing.body_tags import _strip_code_blocks, extract_body_tags
+from obsidian_rag.parsing.body_tags import extract_body_tags
 
 # ---------------------------------------------------------------------------
 # Minimal repro fixture (expanded in individual tests as needed)
@@ -90,53 +90,38 @@ def test_full_037_doc_repro_no_garbage() -> None:
 
 
 def test_inline_code_does_not_cross_newlines() -> None:
-    """REQ-002: inline code with a newline inside must not cross lines.
+    """Inline code span with a newline inside does not produce cross-line garbage tags.
 
-    The current buggy regex `` `[^`]+` `` matches across newlines, incorrectly
-    removing '#faketag'. After the fix the pattern cannot cross \\n, so the span
-    is broken and '#faketag' remains as bare prose text. The critical invariant
-    is that no single giant concatenated tag is formed across the newline.
+    mistune parses inline code as a single codespan token (regardless of
+    newlines in source); #faketag inside it is excluded. #realtag in prose
+    is extracted. No single giant concatenated tag is formed.
     """
     text = "`start of span\n#faketag end of span`\n#realtag\n"
-    stripped = _strip_code_blocks(text)
-    assert "#faketag" in stripped, (
-        "Inline-code regex crossed newline and incorrectly removed #faketag. "
-        f"Stripped: {stripped!r}"
-    )
     result = extract_body_tags(text)
-    assert result is not None, "Expected at least realtag"
+    assert result is not None
+    assert "realtag" in result, f"Missing realtag in {result}"
+    assert "faketag" not in result, f"#faketag inside codespan leaked: {result}"
     for tag in result:
         assert "\n" not in tag, f"Tag {tag!r} contains a newline"
         assert len(tag) < 50, f"Tag {tag!r} looks like giant garbage"
 
 
 def test_prose_mention_empty_triple_backticks() -> None:
-    """Empty prose mention ``` ``` ``` followed by a real #tag.
+    """Empty prose mention ``` ``` ``` followed by a real #tag yields ["tag"].
 
-    The third ``` is followed by a newline, which the unclosed-fenced-block
-    layer correctly treats as an opening fence (defensive behavior). That
-    consumes the entire remainder of the text, including #tag, so no tags
-    survive stripping. This is the correct behavior for ambiguous input.
+    mistune parses the backticks as codespan/text tokens within a paragraph;
+    the #tag on the next line is a text child of that paragraph → extracted.
+    This is arguably more correct than the old None (the #tag is genuinely
+    in prose).
     """
     text = "``` ``` ```\n#tag\n"
     result = extract_body_tags(text)
-    assert result is None, (
-        f"Expected None (unclosed fence consumes tag line), got {result}"
-    )
+    assert result == ["tag"], f"Expected ['tag'], got {result}"
 
 
 def test_prose_mention_with_language_id_inline() -> None:
-    """```python ... ``` inline in prose + #tag.
-
-    The current code misaligns on the triple backticks, leaving stray backticks
-    and potentially leaking the language word. After the fix no stray backticks
-    must remain and only #tag must be extracted.
-    """
+    """```python ... ``` inline in prose + #tag: only #tag extracted, no language leak."""
     text = "Use ```python ... ``` inline in prose. #tag\n"
-    stripped = _strip_code_blocks(text)
-    assert "````" not in stripped, (
-        f"Misaligned backtick stripping left stray backticks. Stripped: {stripped!r}"
-    )
     result = extract_body_tags(text)
     assert result is not None
     assert "python" not in result, f"Language word leaked as tag: {result}"
@@ -163,16 +148,12 @@ def test_unbalanced_stray_backtick_no_garbage() -> None:
 def test_double_quoted_hash_prose_is_valid_tag() -> None:
     """Inline tag '#personal/expenses' inside double quotes IS a valid Obsidian tag.
 
-    Also verifies that surrounding prose with triple-backtick mentions does not
-    corrupt extraction of the quoted tag.
+    Verifies surrounding prose with triple-backtick mentions does not corrupt
+    extraction of the quoted tag.
     """
     text = (
         'Inline tag "#personal/expenses" IS a valid Obsidian tag.\n'
         "`_strip_code_blocks()` removes fenced code blocks (``` ... ```).\n"
-    )
-    stripped = _strip_code_blocks(text)
-    assert "````" not in stripped, (
-        f"Triple-backtick mention left stray backticks. Stripped: {stripped!r}"
     )
     result = extract_body_tags(text)
     assert result is not None

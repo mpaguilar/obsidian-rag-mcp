@@ -3,66 +3,101 @@
 import logging
 import re
 
+import mistune
+
 log = logging.getLogger(__name__)
 
-# Regex pattern for Obsidian tags (NOT headings, NOT all-numeric)
-# Key rules: # must not be followed by whitespace (heading),
-# tag must contain at least one non-numerical character,
-# valid chars: letters, digits, underscore, hyphen, forward slash, dot;
-# dots are only kept when followed by more tag characters (so #tag. yields "tag")
+# Retained: Obsidian tag regex (scans parser-filtered prose text)
 INLINE_TAG_PATTERN: re.Pattern[str] = re.compile(
     r"#([a-zA-Z0-9_/-]+(?:\.[a-zA-Z0-9_/-]+)*)",
     re.MULTILINE,
 )
 
-# Regex pattern for fenced code blocks (``` ... ```)
-FENCED_CODE_PATTERN: re.Pattern[str] = re.compile(r"```[\w]*\n.*?```", re.DOTALL)
+# Module-level singleton (Detail Q5): amortizes parser construction across
+# bulk ingestion. renderer='ast' returns list[dict] of plain block tokens.
+_MD_AST: mistune.Markdown = mistune.create_markdown(renderer="ast")
 
-# Regex pattern for inline code (` ... `) — single-line only (excludes newlines)
-INLINE_CODE_PATTERN: re.Pattern[str] = re.compile(r"`[^`\n]+`")
+# Block-token types whose text children are eligible for tag extraction
+# (prose containers). Headings, code blocks, blank lines, thematic breaks,
+# and inline_html are NOT in this set.
+_PROSE_BLOCK_TYPES: frozenset[str] = frozenset(
+    {"paragraph", "block_quote", "list", "list_item", "block_text"}
+)
 
-# Regex pattern for triple-backtick prose mentions (```...``` appearing as literal text)
-PROSE_MENTION_PATTERN: re.Pattern[str] = re.compile(r"```[^`\n]*```")
+_SKIP_BLOCK_TYPES: frozenset[str] = frozenset(
+    {"block_code", "heading", "blank_line", "thematic_break", "inline_html"}
+)
 
 
-def _strip_code_blocks(content: str) -> str:
-    """Remove fenced code blocks, prose triple-backtick mentions, and inline code.
+def _walk_block(token: dict, texts: list[str]) -> None:
+    """Recursively walk a block token, delegating to inline walk for prose containers.
 
     Args:
-        content: Raw markdown content.
-
-    Returns:
-        Content with code blocks, triple-backtick prose mentions, and inline
-        code removed. Inline code spans are single-line (newline-excluded)
-        per Obsidian's inline-code behavior.
-
-    Notes:
-        Layered stripping order:
-        1. Properly closed fenced code blocks (multi-line, DOTALL).
-        2. Unclosed fenced blocks (opening ``` to EOF, defensive).
-        3. Triple-backtick prose mentions (```...``` appearing as literal text on a single line of prose that merely DESCRIBES fenced syntax rather than being one).
-        4. Single-backtick inline code (single-line only — excludes newlines).
+        token: A mistune AST block-token dict.
+        texts: Mutable list to collect `raw` strings from eligible `text` tokens.
 
     """
-    _msg = "_strip_code_blocks starting"
-    log.debug(_msg)
-
-    result = FENCED_CODE_PATTERN.sub("", content)
-    unclosed_pattern = re.compile(r"```[\w]*\n.*$", re.DOTALL)
-    result = unclosed_pattern.sub("", result)
-    result = PROSE_MENTION_PATTERN.sub("", result)  # NEW prose-mention layer
-    result = INLINE_CODE_PATTERN.sub("", result)  # tightened: no newlines
-
-    _msg = "_strip_code_blocks returning"
-    log.debug(_msg)
-    return result
+    t_type = token.get("type", "")
+    if t_type in _SKIP_BLOCK_TYPES:
+        return
+    children = token.get("children")
+    if not children:
+        return
+    walk_fn = _walk_inline if t_type in _PROSE_BLOCK_TYPES else _walk_block
+    for child in children:
+        walk_fn(child, texts)
 
 
-def _collect_unique_tags(stripped: str) -> list[str]:
-    """Collect unique, lowercased tags from stripped markdown content.
+def _walk_inline(token: dict, texts: list[str]) -> None:
+    """Recursively walk an inline token, collecting `raw` text and skipping codespan.
 
     Args:
-        stripped: Markdown content with code blocks removed.
+        token: A mistune AST inline-token dict.
+        texts: Mutable list to collect `raw` strings from eligible `text` tokens.
+
+    """
+    t_type = token.get("type", "")
+    if t_type == "codespan":
+        return
+    raw = token.get("raw", "")
+    if t_type == "text" and raw:
+        texts.append(raw)
+        return
+    children = token.get("children")
+    if children:
+        for child in children:
+            _walk_inline(child, texts)
+
+
+def _extract_prose_text(tokens: list[dict]) -> list[str]:
+    """Recursively collect raw text from prose inline children, skipping code/headings.
+
+    Args:
+        tokens: List of mistune AST block-token dicts (or nested children).
+
+    Returns:
+        List of `raw` strings from `text` inline tokens found inside
+        eligible prose block types. Code blocks, codespans, and headings
+        contribute no text.
+
+    """
+    _msg = "_extract_prose_text starting"
+    log.debug(_msg)
+
+    texts: list[str] = []
+    for token in tokens:
+        _walk_block(token, texts)
+
+    _msg = f"_extract_prose_text returning {len(texts)} text tokens"
+    log.debug(_msg)
+    return texts
+
+
+def _collect_unique_tags(prose_text: str) -> list[str]:
+    """Collect unique, lowercased tags from parser-filtered prose text.
+
+    Args:
+        prose_text: Concatenated raw text from eligible mistune `text` tokens.
 
     Returns:
         List of unique tags in the order they first appear.
@@ -71,7 +106,7 @@ def _collect_unique_tags(stripped: str) -> list[str]:
     tags: list[str] = []
     seen: set[str] = set()
 
-    for match in INLINE_TAG_PATTERN.finditer(stripped):
+    for match in INLINE_TAG_PATTERN.finditer(prose_text):
         tag_text = match.group(1)
 
         # REQ-008: Exclude all-numeric tags (#1984 is NOT a tag)
@@ -99,12 +134,12 @@ def extract_body_tags(content: str | None) -> list[str] | None:
         if no tags found. Tags are lowercased.
 
     Notes:
-        Follows Obsidian tag recognition rules:
-        - # followed by space is a heading (NOT a tag)
-        - All-numeric #1984 is NOT a tag
-        - Tags inside code blocks/inline code are NOT extracted
-        - Tags in blockquotes/callouts ARE extracted
-        - Hierarchical tags (personal/expenses) ARE extracted
+        Uses a mistune AST walk (renderer='ast') to extract tags only
+        from prose (paragraphs, blockquotes, list items). Headings,
+        fenced code blocks (any backtick length), indented code blocks,
+        and inline code spans are excluded. Escaped \\#tag and decimal
+        &#35;tag are cleanly excluded; hex &#x23;tag leaks x23 (known
+        limitation).
 
     """
     _msg = "extract_body_tags starting"
@@ -115,8 +150,14 @@ def extract_body_tags(content: str | None) -> list[str] | None:
         log.debug(_msg)
         return None
 
-    stripped = _strip_code_blocks(content)
-    tags = _collect_unique_tags(stripped)
+    ast = _MD_AST(content)
+    if isinstance(ast, str):
+        _msg = "extract_body_tags returning None (unexpected string output from parser)"
+        log.debug(_msg)
+        return None
+    prose_texts = _extract_prose_text(ast)
+    joined = "\n".join(prose_texts)
+    tags = _collect_unique_tags(joined)
 
     if tags:
         _msg = f"extract_body_tags returning {len(tags)} tags"

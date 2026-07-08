@@ -106,17 +106,32 @@ Database connection management using SQLAlchemy with:
   - `#` immediately followed by tag characters (no space) is a tag
   - `#` followed by a space is a heading (NOT extracted)
   - All-numeric tags like `#1984` are NOT valid (must contain non-numerical character)
-  - `_strip_code_blocks()` removes code in a layered order: (1) properly closed
-    fenced code blocks (multi-line, DOTALL), (2) unclosed fenced blocks
-    (opening ``` to EOF, defensive), (3) triple-backtick prose mentions
-    (```...``` appearing as literal text on a single line of prose that
-    DESCRIBES fenced syntax rather than being one), and (4) single-backtick
-    inline code. Inline code spans are single-line only — the inline-code
-    content class excludes newlines, matching Obsidian's single-line inline-code
-    behavior. The prose-mention layer prevents the single-backtick pattern from
-    misaligning backtick pairs when a document's prose mentions ``` as literal
-    text (e.g. technical notes or requirements docs describing fenced syntax),
-    which previously produced concatenated garbage body tags.
+  - Code constructs are excluded via a mistune-based AST walk (not regex):
+    `mistune.create_markdown(renderer='ast')` parses the body into a list of
+    block-token dicts; a recursive walk extracts tags ONLY from `text` inline
+    children (scanning each token's `raw` field with `INLINE_TAG_PATTERN`)
+    inside `paragraph`, `block_quote`, `list`/`list_item`, and `block_text`
+    blocks. `block_code` tokens (both `style="fenced"` with any backtick
+    length and `style="indent"` for 4-space indented blocks) and `codespan`
+    inline tokens are skipped entirely. This structurally eliminates the
+    triple-backtick-prose-mention garbage-tags bug from checkpoint 049
+    (mistune emits clean `codespan`/`text` children; no backtick-pair
+    misalignment is possible).
+  - Headings are excluded entirely (both ATX and setext styles): the walk
+    skips `heading` block tokens, so `# Heading text #tag` yields no tag.
+  - Escaped `\#tag` is cleanly excluded: mistune splits the escaped `#` into
+    a separate `text` token `{"raw": "#"}` with no tag characters following
+    it, so the tag regex finds no match in that token.
+  - Decimal HTML entity `&#35;tag` is excluded: mistune preserves it
+    literally; the regex matches `#35` (all-numeric → excluded by
+    `isdigit()`).
+  - Hex HTML entity `&#x23;tag` leaks `x23` as a false-positive tag
+    (documented limitation — `#x23` is not all-numeric; extremely rare in
+    real Obsidian notes).
+  - The degenerate `` ``` ``` ``` `` case returns the following `#tag` as a
+    tag (the `#tag` is in a `text` child of a `paragraph` after mistune
+    parses the backticks as `codespan`/`text` tokens) — arguably more
+    correct than the old `None`.
   - Hierarchical tags (`personal/expenses`) and dotted tags (`v1.0/release`) ARE extracted
   - Tags in blockquotes and callouts ARE extracted
 - Tags are lowercased and deduplicated
