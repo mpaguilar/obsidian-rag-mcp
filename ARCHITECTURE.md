@@ -594,6 +594,14 @@ Bearer token authentication using `BearerTokenAuth`:
 - All endpoints require valid Bearer token (401 for invalid/missing)
 - No per-tool permission granularity (all-or-nothing access)
 
+#### Host Origin Protection (Disabled)
+
+FastMCP 3.4+ installs `HostOriginGuardMiddleware` by default (`host_origin_protection=True`) with a localhost-only allowlist (`127.0.0.1`, `localhost`, `::1`). This rejects external clients with HTTP 421 "Misdirected Request" when the server is bound to `0.0.0.0` or deployed behind a reverse proxy.
+
+The Obsidian RAG MCP server explicitly disables this guard via `host_origin_protection=False` in the `mcp.http_app()` call (`server.py`). Rationale:
+- The server is already protected by Bearer token auth (`StaticTokenVerifier`), so the DNS-rebinding threat model (unauthenticated localhost browser exploitation, CVE-2025-66416) does not apply
+- The guard prevents legitimate external access when deployed in Docker or behind a reverse proxy
+
 #### Session Management (`session_manager.py`)
 
 Session lifecycle tracking and connection protection:

@@ -937,10 +937,19 @@ def create_http_app(settings: Settings) -> Starlette:
         _msg = "Session logging middleware enabled"
         log.info(_msg)
 
+    # host_origin_protection is disabled because:
+    # 1. The server is already protected by Bearer token auth (StaticTokenVerifier),
+    #    so the DNS-rebinding threat model (unauthenticated localhost browser
+    #    exploitation) does not apply.
+    # 2. FastMCP's HostOriginGuardMiddleware defaults to on with a localhost-only
+    #    allowlist (127.0.0.1, localhost, ::1), which rejects external clients
+    #    with HTTP 421 "Misdirected Request" when the server is bound to 0.0.0.0
+    #    or deployed behind a reverse proxy.
     app = mcp.http_app(
         path="/",
         middleware=middleware,
         stateless_http=settings.mcp.stateless_http,
+        host_origin_protection=False,
     )
 
     _msg = "HTTP app created successfully"

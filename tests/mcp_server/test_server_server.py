@@ -151,6 +151,34 @@ class TestCreateHTTPApp:
 
         assert middleware_list[0].cls is CORSMiddleware
 
+    @patch("obsidian_rag.mcp_server.server.create_mcp_server")
+    def test_host_origin_protection_disabled(self, mock_create_server):
+        """Test that host_origin_protection=False is passed to http_app().
+
+        FastMCP 3.4+ installs HostOriginGuardMiddleware by default with a
+        localhost-only allowlist (127.0.0.1, localhost, ::1), which rejects
+        external clients with HTTP 421 "Misdirected Request". This server is
+        already protected by Bearer token auth, so the DNS-rebinding guard is
+        redundant and must be explicitly disabled.
+        """
+        from obsidian_rag.mcp_server.server import create_http_app
+
+        settings = MagicMock()
+        settings.mcp = MagicMock()
+        settings.mcp.cors_origins = ["*"]
+        settings.mcp.token = "test-token"
+        settings.mcp.enable_request_logging = False
+        settings.mcp.stateless_http = False
+
+        mock_mcp = MagicMock()
+        mock_mcp.http_app.return_value = MagicMock()
+        mock_create_server.return_value = mock_mcp
+
+        create_http_app(settings)
+
+        call_args = mock_mcp.http_app.call_args
+        assert call_args.kwargs.get("host_origin_protection") is False
+
 
 class TestHealthCheckHandler:
     """Tests for health_check_handler function."""
