@@ -82,8 +82,8 @@ class GetTasksFilterParams:
             Multiple values use OR logic (task matches any).
         date_match_mode: How to combine date filters - "all" for AND logic (default),
             "any" for OR logic across all date conditions.
-        include_content: Whether to include the parent document's content in each
-            task response (default: True).
+        include_content: Whether to include the raw task line text (`raw_text`)
+            in each task response (default: True).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
         inline_filters: Optional list of PropertyFilter objects for filtering by
@@ -140,8 +140,8 @@ class GetTasksRequest:
         tag_filters: Tag filter parameters with include/exclude lists and match mode.
         date_filters: Date filter parameters with ISO date strings.
         priority: List of priorities to filter by.
-        include_content: Whether to include the parent document's content in each
-            task response.
+        include_content: Whether to include the raw task line text (`raw_text`)
+            in each task response.
         limit: Maximum number of results.
         offset: Number of results to skip.
         inline_filters: Optional list of PropertyFilter objects for filtering by

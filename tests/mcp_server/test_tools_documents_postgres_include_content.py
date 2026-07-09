@@ -1,8 +1,14 @@
 """Tests for include_content threading in documents_postgres."""
 
+import re
 import uuid
 from unittest.mock import MagicMock, patch
 
+from sqlalchemy import create_engine
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import defer, sessionmaker
+
+from obsidian_rag.database.models import Document, Vault
 from obsidian_rag.mcp_server.models import PropertyFilter
 from obsidian_rag.mcp_server.tools.documents_params import (
     DocumentQueryParams,
@@ -29,6 +35,7 @@ def _create_mock_session_with_results(results, total_count=1):
     mock_query.filter.return_value = mock_query
     mock_query.join.return_value = mock_query
     mock_query.order_by.return_value = mock_query
+    mock_query.options.return_value = mock_query
     mock_query.count.return_value = total_count
     mock_query.offset.return_value.limit.return_value.all.return_value = results
     mock_session.query.return_value = mock_query
@@ -162,9 +169,14 @@ def test_query_documents_postgresql_with_exclude_filters():
 
 
 def test_get_documents_by_property_postgresql_no_include_content_change():
-    """Test get_documents_by_property_postgresql returns raw documents unchanged."""
+    """Test get_documents_by_property_postgresql returns metadata-only raw documents.
+
+    Document.content is deferred; callers must not access .content on raw rows.
+    """
     mock_doc = _create_mock_document()
-    mock_session, _ = _create_mock_session_with_results([mock_doc], total_count=1)
+    mock_session, mock_query = _create_mock_session_with_results(
+        [mock_doc], total_count=1
+    )
 
     params = PropertyQueryParams(
         session=mock_session,
@@ -177,11 +189,15 @@ def test_get_documents_by_property_postgresql_no_include_content_change():
         pagination=PaginationParams(limit=20, offset=0, include_content=False),
     )
 
-    results, total_count = get_documents_by_property_postgresql(params)
+    with patch("obsidian_rag.mcp_server.tools.documents_postgres.defer") as mock_defer:
+        mock_defer.return_value = "SENTINEL_DEFER"
+        results, total_count = get_documents_by_property_postgresql(params)
 
     assert total_count == 1
     assert len(results) == 1
     assert results[0] is mock_doc
+    mock_defer.assert_called_once_with(Document.content)
+    mock_query.options.assert_called_once_with("SENTINEL_DEFER")
 
 
 def test_get_documents_by_property_postgresql_with_vault_name():
@@ -394,3 +410,121 @@ def test_extract_distance_from_row_default():
         pass
 
     assert _extract_distance_from_row(PlainRow()) == 0.0
+
+
+def test_get_documents_by_property_postgresql_defers_content():
+    """Verify get_documents_by_property_postgresql defers Document.content from SELECT."""
+    engine = create_engine("postgresql+psycopg://dummy@localhost/dummy")
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    # Branch B: no vault filter
+    query = session.query(Document).options(defer(Document.content))
+    compiled = query.statement.compile(
+        dialect=postgresql.dialect(),
+        compile_kwargs={"render_postcompile": True},
+    )
+    sql_str = str(compiled).lower()
+    assert not re.search(r"\bdocuments\.content\b", sql_str)
+
+    # Branch A: with vault filter
+    query_with_vault = (
+        session.query(Document).join(Vault).options(defer(Document.content))
+    )
+    compiled_with_vault = query_with_vault.statement.compile(
+        dialect=postgresql.dialect(),
+        compile_kwargs={"render_postcompile": True},
+    )
+    sql_str_with_vault = str(compiled_with_vault).lower()
+    assert not re.search(r"\bdocuments\.content\b", sql_str_with_vault)
+
+
+def test_query_documents_postgresql_defers_content_when_include_content_false():
+    """Verify query_documents_postgresql defers content when include_content=False."""
+    mock_doc = _create_mock_document(content="Should be hidden")
+    mock_session, mock_query = _create_mock_session_with_results(
+        [(mock_doc, 0.5)], total_count=1
+    )
+
+    params = DocumentQueryParams(
+        session=mock_session,
+        query_embedding=[0.1] * 1536,
+        filter_params=QueryFilterParams(
+            property_filters=PropertyFilterParams(
+                include_filters=None,
+                exclude_filters=None,
+            ),
+            tag_params=TagFilterParams(tag_filter=None),
+        ),
+        pagination=PaginationParams(limit=20, offset=0, include_content=False),
+    )
+
+    with patch("obsidian_rag.mcp_server.tools.documents_postgres.defer") as mock_defer:
+        mock_defer.return_value = "SENTINEL_DEFER"
+        result = query_documents_postgresql(params)
+
+    assert result.total_count == 1
+    assert len(result.results) == 1
+    assert result.results[0].content == ""
+    mock_defer.assert_called_once_with(Document.content)
+    mock_query.options.assert_called_once_with("SENTINEL_DEFER")
+
+
+def test_query_documents_postgresql_no_defer_when_include_content_true():
+    """Verify query_documents_postgresql does NOT defer content when include_content=True."""
+    mock_doc = _create_mock_document(content="Included content")
+    mock_session, mock_query = _create_mock_session_with_results(
+        [(mock_doc, 0.5)], total_count=1
+    )
+
+    params = DocumentQueryParams(
+        session=mock_session,
+        query_embedding=[0.1] * 1536,
+        filter_params=QueryFilterParams(
+            property_filters=PropertyFilterParams(
+                include_filters=None,
+                exclude_filters=None,
+            ),
+            tag_params=TagFilterParams(tag_filter=None),
+        ),
+        pagination=PaginationParams(limit=20, offset=0, include_content=True),
+    )
+
+    result = query_documents_postgresql(params)
+
+    assert result.total_count == 1
+    assert len(result.results) == 1
+    assert result.results[0].content == "Included content"
+    mock_query.options.assert_not_called()
+
+
+def test_query_documents_postgresql_vault_with_include_content_false():
+    """Verify query_documents_postgresql defers content with vault filter."""
+    mock_doc = _create_mock_document(content="Vault content")
+    mock_session, mock_query = _create_mock_session_with_results(
+        [(mock_doc, 0.5)], total_count=1
+    )
+
+    params = DocumentQueryParams(
+        session=mock_session,
+        query_embedding=[0.1] * 1536,
+        filter_params=QueryFilterParams(
+            property_filters=PropertyFilterParams(
+                include_filters=None,
+                exclude_filters=None,
+            ),
+            tag_params=TagFilterParams(tag_filter=None),
+        ),
+        pagination=PaginationParams(limit=20, offset=0, include_content=False),
+        vault_name="test_vault",
+    )
+
+    with patch("obsidian_rag.mcp_server.tools.documents_postgres.defer") as mock_defer:
+        mock_defer.return_value = "SENTINEL_DEFER"
+        result = query_documents_postgresql(params)
+
+    assert result.total_count == 1
+    assert len(result.results) == 1
+    assert result.results[0].content == ""
+    mock_defer.assert_called_once_with(Document.content)
+    mock_query.options.assert_called_once_with("SENTINEL_DEFER")

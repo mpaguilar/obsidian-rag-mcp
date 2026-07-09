@@ -109,7 +109,6 @@ class TestListDocumentsMCPTool:
             vault_name=None,
             limit=20,
             offset=0,
-            include_content=True,
         )
         assert result["total_count"] == 1
 
@@ -126,7 +125,6 @@ class TestListDocumentsMCPTool:
             vault_name="Personal",
             limit=20,
             offset=0,
-            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.document_tools._get_registry")

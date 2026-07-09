@@ -135,11 +135,9 @@ class ListDocumentsParams:
         vault_name: Optional vault name to scope results.
         limit: Maximum number of results.
         offset: Number of results to skip.
-        include_content: Whether to include document content in responses.
     """
 
     file_name: str | None = None
     vault_name: str | None = None
     limit: int = 20
     offset: int = 0
-    include_content: bool = True

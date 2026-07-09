@@ -564,7 +564,6 @@ class TestListDocumentsToolRegistration:
                     vault_name="test",
                     limit=20,
                     offset=0,
-                    include_content=True,
                 )
 
     def test_list_documents_empty_results(self):

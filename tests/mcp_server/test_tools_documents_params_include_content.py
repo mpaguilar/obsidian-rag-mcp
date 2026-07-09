@@ -1,5 +1,7 @@
 """Tests for include_content parameter in document params dataclasses."""
 
+import pytest
+
 from obsidian_rag.mcp_server.tools.documents_params import (
     GetDocumentParams,
     ListDocumentsParams,
@@ -31,13 +33,13 @@ def test_get_document_params_include_content_false() -> None:
     assert params.include_content is False
 
 
-def test_list_documents_params_default_include_content_true() -> None:
-    """ListDocumentsParams defaults include_content to True."""
-    params = ListDocumentsParams()
-    assert params.include_content is True
+def test_list_documents_params_no_include_content_field() -> None:
+    """ListDocumentsParams no longer has an include_content field."""
+    params = ListDocumentsParams(file_name="x")
+    assert not hasattr(params, "include_content")
 
 
-def test_list_documents_params_include_content_false() -> None:
-    """ListDocumentsParams accepts include_content=False."""
-    params = ListDocumentsParams(include_content=False)
-    assert params.include_content is False
+def test_list_documents_params_rejects_include_content() -> None:
+    """ListDocumentsParams rejects include_content construction."""
+    with pytest.raises(TypeError):
+        ListDocumentsParams(file_name="x", include_content=True)

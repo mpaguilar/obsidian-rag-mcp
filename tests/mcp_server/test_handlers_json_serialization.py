@@ -257,7 +257,6 @@ def test_get_documents_by_tag_handler_returns_str_ids() -> None:
                 "vault_name": None,
                 "limit": 20,
                 "offset": 0,
-                "include_content": True,
             },
         )
     assert isinstance(result, dict)

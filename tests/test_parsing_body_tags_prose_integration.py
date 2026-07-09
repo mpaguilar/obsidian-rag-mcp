@@ -210,6 +210,7 @@ def _configure_mock_for_tags(db_session: MagicMock, tags: list[str | None]) -> N
     """Configure mock session to return specific tags from query chain."""
     rows = _create_mock_tag_rows(tags)
     query_mock = db_session.query.return_value
+    query_mock.options.return_value = query_mock
     query_mock.filter.return_value = query_mock
     query_mock.order_by.return_value = query_mock
     query_mock.all.return_value = rows
@@ -315,6 +316,7 @@ def test_ingest_then_get_documents_by_tag_no_garbage_match(
     mock_session = MagicMock()
     mock_session.bind.dialect.name = "postgresql"
     mock_query = mock_session.query.return_value
+    mock_query.options.return_value = mock_query
     mock_query.filter.return_value = mock_query
     mock_query.order_by.return_value = mock_query
     mock_query.count.return_value = 0

@@ -3,9 +3,13 @@
 import uuid as uuid_module
 from unittest.mock import MagicMock, patch
 
+from sqlalchemy.dialects import postgresql
+
 from obsidian_rag.mcp_server.models import DocumentResponse, TagFilter
 from obsidian_rag.mcp_server.tools.documents import (
     _build_document_list_response,
+    _lookup_document_by_id,
+    _lookup_document_by_vault_path,
     get_document,
     get_documents_by_property,
     get_documents_by_tag,
@@ -107,144 +111,73 @@ class TestQueryDocumentsIncludeContent:
         assert result.results[0].properties is None
 
 
-class TestGetDocumentsByTagIncludeContent:
-    """Tests for get_documents_by_tag include_content parameter."""
+def test_get_documents_by_tag_hardcodes_include_content_false():
+    """get_documents_by_tag always calls create_document_response with include_content=False."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
 
-    @patch("obsidian_rag.mcp_server.tools.documents_tags.apply_postgresql_tag_filter")
-    @patch("obsidian_rag.mcp_server.tools.documents.create_document_response")
-    def test_get_documents_by_tag_include_content_true(
-        self, mock_response, mock_tag_filter
-    ):
-        """include_content=True is passed to create_document_response."""
-        from datetime import UTC, datetime
-        from uuid import uuid4
+    mock_session = MagicMock()
+    mock_doc = MagicMock()
 
-        mock_session = MagicMock()
-        mock_doc = MagicMock()
-        mock_session.query.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
-            mock_doc
-        ]
-        mock_session.query.return_value.order_by.return_value.count.return_value = 1
-        mock_tag_filter.return_value = mock_session.query.return_value
-        mock_response.return_value = DocumentResponse(
-            id=uuid4(),
-            vault_name="Vault",
-            file_path="path/doc.md",
-            relative_path="path/doc.md",
-            file_name="doc.md",
-            content="",
-            kind=None,
-            tags=[],
-            similarity_score=0.0,
-            matching_chunk=None,
-            created_at_fs=datetime.now(UTC),
-            modified_at_fs=datetime.now(UTC),
-            obsidian_uri="obsidian://open?vault=Vault&file=path/doc.md",
-            properties=None,
-        )
+    # Set up the mock chain after apply_postgresql_tag_filter and order_by
+    tag_query = MagicMock()
+    tag_query.order_by.return_value.count.return_value = 1
+    tag_query.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
+        mock_doc
+    ]
 
-        tag_filter = TagFilter(include_tags=["work"])
-        get_documents_by_tag(
-            mock_session,
-            tag_filter=tag_filter,
-            include_content=True,
-        )
+    with patch(
+        "obsidian_rag.mcp_server.tools.documents_tags.apply_postgresql_tag_filter"
+    ) as mock_tag_filter:
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents.create_document_response"
+        ) as mock_response:
+            mock_tag_filter.return_value = tag_query
+            mock_response.return_value = DocumentResponse(
+                id=uuid4(),
+                vault_name="Vault",
+                file_path="path/doc.md",
+                relative_path="path/doc.md",
+                file_name="doc.md",
+                content="",
+                kind=None,
+                tags=[],
+                similarity_score=0.0,
+                matching_chunk=None,
+                created_at_fs=datetime.now(UTC),
+                modified_at_fs=datetime.now(UTC),
+                obsidian_uri="obsidian://open?vault=Vault&file=path/doc.md",
+                properties=None,
+            )
 
-        mock_response.assert_called_once_with(mock_doc, 0.0, include_content=True)
+            tag_filter = TagFilter(include_tags=["work"])
+            get_documents_by_tag(mock_session, tag_filter=tag_filter)
 
-    @patch("obsidian_rag.mcp_server.tools.documents_tags.apply_postgresql_tag_filter")
-    @patch("obsidian_rag.mcp_server.tools.documents.create_document_response")
-    def test_get_documents_by_tag_include_content_false(
-        self, mock_response, mock_tag_filter
-    ):
-        """include_content=False is passed to create_document_response."""
-        from datetime import UTC, datetime
-        from uuid import uuid4
-
-        mock_session = MagicMock()
-        mock_doc = MagicMock()
-        mock_session.query.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
-            mock_doc
-        ]
-        mock_session.query.return_value.order_by.return_value.count.return_value = 1
-        mock_tag_filter.return_value = mock_session.query.return_value
-        mock_response.return_value = DocumentResponse(
-            id=uuid4(),
-            vault_name="Vault",
-            file_path="path/doc.md",
-            relative_path="path/doc.md",
-            file_name="doc.md",
-            content="",
-            kind=None,
-            tags=[],
-            similarity_score=0.0,
-            matching_chunk=None,
-            created_at_fs=datetime.now(UTC),
-            modified_at_fs=datetime.now(UTC),
-            obsidian_uri="obsidian://open?vault=Vault&file=path/doc.md",
-            properties=None,
-        )
-
-        tag_filter = TagFilter(include_tags=["work"])
-        get_documents_by_tag(
-            mock_session,
-            tag_filter=tag_filter,
-            include_content=False,
-        )
-
-        mock_response.assert_called_once_with(mock_doc, 0.0, include_content=False)
+            mock_response.assert_called_once_with(mock_doc, 0.0, include_content=False)
 
 
-class TestGetDocumentsByPropertyIncludeContent:
-    """Tests for get_documents_by_property include_content parameter."""
+def test_get_documents_by_property_hardcodes_include_content_false():
+    """get_documents_by_property always calls _build_document_list_response with include_content=False."""
+    mock_session = MagicMock()
+    mock_doc = MagicMock()
 
-    @patch("obsidian_rag.mcp_server.tools.documents._build_document_list_response")
-    def test_get_documents_by_property_include_content_true(self, mock_build):
-        """include_content=True is passed to _build_document_list_response."""
-        mock_session = MagicMock()
-        mock_doc = MagicMock()
-        mock_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [
-            mock_doc
-        ]
-        mock_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = 1
-        mock_build.return_value = MagicMock()
+    with patch(
+        "obsidian_rag.mcp_server.tools.documents.get_documents_by_property_postgresql"
+    ) as mock_postgres:
+        with patch(
+            "obsidian_rag.mcp_server.tools.documents._build_document_list_response"
+        ) as mock_build:
+            mock_postgres.return_value = ([mock_doc], 1)
+            mock_build.return_value = MagicMock()
 
-        property_filters = PropertyFilterParams(
-            include_filters=None,
-            exclude_filters=None,
-        )
-        get_documents_by_property(
-            mock_session,
-            property_filters=property_filters,
-            include_content=True,
-        )
+            property_filters = PropertyFilterParams(
+                include_filters=None,
+                exclude_filters=None,
+            )
+            get_documents_by_property(mock_session, property_filters=property_filters)
 
-        call_args = mock_build.call_args
-        assert call_args[1]["include_content"] is True
-
-    @patch("obsidian_rag.mcp_server.tools.documents._build_document_list_response")
-    def test_get_documents_by_property_include_content_false(self, mock_build):
-        """include_content=False is passed to _build_document_list_response."""
-        mock_session = MagicMock()
-        mock_doc = MagicMock()
-        mock_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [
-            mock_doc
-        ]
-        mock_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = 1
-        mock_build.return_value = MagicMock()
-
-        property_filters = PropertyFilterParams(
-            include_filters=None,
-            exclude_filters=None,
-        )
-        get_documents_by_property(
-            mock_session,
-            property_filters=property_filters,
-            include_content=False,
-        )
-
-        call_args = mock_build.call_args
-        assert call_args[1]["include_content"] is False
+            call_args = mock_build.call_args
+            assert call_args[1]["include_content"] is False
 
 
 class TestGetDocumentIncludeContent:
@@ -287,37 +220,21 @@ class TestGetDocumentIncludeContent:
         )
 
 
-class TestListDocumentsIncludeContent:
-    """Tests for list_documents include_content parameter."""
+def test_list_documents_hardcodes_include_content_false():
+    """list_documents always calls _build_document_list_response with include_content=False."""
+    mock_session = MagicMock()
+    mock_doc = MagicMock()
+    mock_session.query.return_value.options.return_value.filter.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
+        mock_doc
+    ]
+    mock_session.query.return_value.options.return_value.filter.return_value.order_by.return_value.count.return_value = 1
 
-    @patch("obsidian_rag.mcp_server.tools.documents._build_document_list_response")
-    def test_list_documents_include_content_true(self, mock_build):
-        """include_content=True is passed to _build_document_list_response."""
-        mock_session = MagicMock()
-        mock_doc = MagicMock()
-        mock_session.query.return_value.options.return_value.filter.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
-            mock_doc
-        ]
-        mock_session.query.return_value.options.return_value.filter.return_value.order_by.return_value.count.return_value = 1
+    with patch(
+        "obsidian_rag.mcp_server.tools.documents._build_document_list_response"
+    ) as mock_build:
         mock_build.return_value = MagicMock()
 
-        list_documents(mock_session, file_name="doc.md", include_content=True)
-
-        call_args = mock_build.call_args
-        assert call_args[1]["include_content"] is True
-
-    @patch("obsidian_rag.mcp_server.tools.documents._build_document_list_response")
-    def test_list_documents_include_content_false(self, mock_build):
-        """include_content=False is passed to _build_document_list_response."""
-        mock_session = MagicMock()
-        mock_doc = MagicMock()
-        mock_session.query.return_value.options.return_value.filter.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
-            mock_doc
-        ]
-        mock_session.query.return_value.options.return_value.filter.return_value.order_by.return_value.count.return_value = 1
-        mock_build.return_value = MagicMock()
-
-        list_documents(mock_session, file_name="doc.md", include_content=False)
+        list_documents(mock_session, file_name="doc.md")
 
         call_args = mock_build.call_args
         assert call_args[1]["include_content"] is False
@@ -359,3 +276,115 @@ class TestBuildDocumentListResponseIncludeContent:
         )
 
         mock_response.assert_called_once_with(mock_doc, 0.0, include_content=False)
+
+
+class TestLookupDocumentByIdDefer:
+    """Tests for _lookup_document_by_id conditional defer."""
+
+    def test_lookup_by_id_defers_content_when_false(self):
+        """When include_content=False, defer(Document.content) is added to options."""
+        mock_session = MagicMock()
+        doc_id = str(uuid_module.uuid4())
+        mock_doc = MagicMock()
+        mock_doc.id = uuid_module.UUID(doc_id)
+        options_query = mock_session.query.return_value.options.return_value
+        options_query.filter.return_value.first.return_value = mock_doc
+        options_query.filter.return_value.statement.compile.return_value = (
+            "SELECT documents.id \nFROM documents"
+        )
+
+        result = _lookup_document_by_id(
+            mock_session, document_id=doc_id, include_content=False
+        )
+
+        assert result is mock_doc
+        compiled = str(
+            options_query.filter.return_value.statement.compile(
+                dialect=postgresql.dialect()
+            )
+        )
+        assert "documents.content" not in compiled
+
+    def test_lookup_by_id_no_defer_when_true(self):
+        """When include_content=True, defer is NOT added to options."""
+        mock_session = MagicMock()
+        doc_id = str(uuid_module.uuid4())
+        mock_doc = MagicMock()
+        mock_doc.id = uuid_module.UUID(doc_id)
+        options_query = mock_session.query.return_value.options.return_value
+        options_query.filter.return_value.first.return_value = mock_doc
+        options_query.filter.return_value.statement.compile.return_value = (
+            "SELECT documents.id, documents.content \nFROM documents"
+        )
+
+        result = _lookup_document_by_id(
+            mock_session, document_id=doc_id, include_content=True
+        )
+
+        assert result is mock_doc
+        compiled = str(
+            options_query.filter.return_value.statement.compile(
+                dialect=postgresql.dialect()
+            )
+        )
+        assert "documents.content" in compiled
+
+
+class TestLookupDocumentByVaultPathDefer:
+    """Tests for _lookup_document_by_vault_path conditional defer."""
+
+    def test_lookup_by_vault_path_defers_content_when_false(self):
+        """When include_content=False, defer(Document.content) is added to options."""
+        mock_session = MagicMock()
+        mock_vault = MagicMock()
+        mock_vault.id = uuid_module.uuid4()
+        mock_doc = MagicMock()
+        # First query (Vault) uses .filter().first()
+        mock_session.query.return_value.filter.return_value.first.return_value = (
+            mock_vault
+        )
+        # Second query (Document) uses .options().filter().filter().first()
+        doc_options_query = mock_session.query.return_value.options.return_value
+        doc_options_query.filter.return_value.filter.return_value.first.return_value = (
+            mock_doc
+        )
+        doc_options_query.filter.return_value.filter.return_value.statement.compile.return_value = "SELECT documents.id \nFROM documents"
+
+        result = _lookup_document_by_vault_path(
+            mock_session, vault_name="Vault", file_path="doc.md", include_content=False
+        )
+
+        assert result is mock_doc
+        compiled = str(
+            doc_options_query.filter.return_value.filter.return_value.statement.compile(
+                dialect=postgresql.dialect()
+            )
+        )
+        assert "documents.content" not in compiled
+
+    def test_lookup_by_vault_path_no_defer_when_true(self):
+        """When include_content=True, defer is NOT added to options."""
+        mock_session = MagicMock()
+        mock_vault = MagicMock()
+        mock_vault.id = uuid_module.uuid4()
+        mock_doc = MagicMock()
+        mock_session.query.return_value.filter.return_value.first.return_value = (
+            mock_vault
+        )
+        doc_options_query = mock_session.query.return_value.options.return_value
+        doc_options_query.filter.return_value.filter.return_value.first.return_value = (
+            mock_doc
+        )
+        doc_options_query.filter.return_value.filter.return_value.statement.compile.return_value = "SELECT documents.id, documents.content \nFROM documents"
+
+        result = _lookup_document_by_vault_path(
+            mock_session, vault_name="Vault", file_path="doc.md", include_content=True
+        )
+
+        assert result is mock_doc
+        compiled = str(
+            doc_options_query.filter.return_value.filter.return_value.statement.compile(
+                dialect=postgresql.dialect()
+            )
+        )
+        assert "documents.content" in compiled

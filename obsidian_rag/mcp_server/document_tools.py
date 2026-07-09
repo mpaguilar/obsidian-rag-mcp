@@ -76,7 +76,6 @@ def list_documents(
     limit: int = 20,
     offset: int = 0,
     *,
-    include_content: bool = True,
     output_file: str | dict | OutputFileConfig | None = None,
 ) -> dict[str, object]:
     """List documents by file_name with optional vault scope.
@@ -89,7 +88,6 @@ def list_documents(
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
-        include_content: Whether to include document content in responses.
         output_file: Optional output file configuration. When provided, the
             full result is written to the specified file and a compact summary
             is returned instead.
@@ -114,7 +112,6 @@ def list_documents(
         vault_name=vault_name,
         limit=limit,
         offset=offset,
-        include_content=include_content,
     )
 
     parsed_output_file = _parse_output_file_from_wrapper(output_file)

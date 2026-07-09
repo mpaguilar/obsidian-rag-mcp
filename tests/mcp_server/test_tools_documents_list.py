@@ -91,7 +91,7 @@ class TestListDocumentsByFileName:
             1,
             0,
             20,
-            include_content=True,
+            include_content=False,
         )
         # Verify file_name filter was applied
         assert mock_query.filter.call_count >= 1
@@ -127,8 +127,32 @@ class TestListDocumentsByFileName:
             2,
             0,
             20,
-            include_content=True,
+            include_content=False,
         )
+
+
+class TestListDocumentsIncludeContentRejected:
+    """include_content parameter is rejected (metadata-only tool)."""
+
+    def test_list_documents_include_content_true_raises_type_error(self):
+        mock_session = MagicMock()
+
+        with pytest.raises(TypeError):
+            list_documents(
+                mock_session,
+                file_name="work.md",
+                include_content=True,
+            )
+
+    def test_list_documents_include_content_false_raises_type_error(self):
+        mock_session = MagicMock()
+
+        with pytest.raises(TypeError):
+            list_documents(
+                mock_session,
+                file_name="work.md",
+                include_content=False,
+            )
 
 
 class TestListDocumentsWithVaultScope:
@@ -169,7 +193,7 @@ class TestListDocumentsWithVaultScope:
             1,
             0,
             20,
-            include_content=True,
+            include_content=False,
         )
         # Verify vault filter was applied (file_name + vault_id)
         _expected_filter_calls = 2
@@ -237,7 +261,7 @@ class TestListDocumentsNotFound:
         result = list_documents(mock_session, file_name="nonexistent.md")
 
         assert result == mock_build.return_value
-        mock_build.assert_called_once_with([], 0, 0, 20, include_content=True)
+        mock_build.assert_called_once_with([], 0, 0, 20, include_content=False)
 
 
 class TestListDocumentsPagination:
@@ -265,7 +289,7 @@ class TestListDocumentsPagination:
         )
 
         assert result == mock_build.return_value
-        mock_build.assert_called_once_with([mock_doc], 5, 2, 10, include_content=True)
+        mock_build.assert_called_once_with([mock_doc], 5, 2, 10, include_content=False)
         # Verify offset and limit were called
         mock_query.offset.assert_called_once_with(2)
         mock_query.limit.assert_called_once_with(10)
@@ -290,11 +314,11 @@ class TestListDocumentsSimilarityScore:
 
         list_documents(mock_session, file_name="work.md")
 
-        mock_build.assert_called_once_with([mock_doc], 1, 0, 20, include_content=True)
+        mock_build.assert_called_once_with([mock_doc], 1, 0, 20, include_content=False)
 
 
 class TestListDocumentsEagerLoad:
-    """Verify vault relationship is eager loaded."""
+    """Verify vault relationship is eager loaded and content deferred."""
 
     def test_list_documents_eager_loads_vault(self):
         mock_session = MagicMock()
@@ -308,9 +332,8 @@ class TestListDocumentsEagerLoad:
 
         list_documents(mock_session, file_name="work.md")
 
-        # Verify options(joinedload) was called
+        # Verify options was called once with both joinedload and defer
         mock_query.options.assert_called_once()
-        # The argument should be a joinedload for Document.vault
         call_args = mock_query.options.call_args
         assert call_args is not None
 
@@ -368,4 +391,4 @@ class TestListDocumentsLimitValidation:
 
         mock_validate.assert_called_once_with(150)
         # Note: _build_document_list_response uses the validated limit
-        mock_build.assert_called_once_with([mock_doc], 1, 0, 50, include_content=True)
+        mock_build.assert_called_once_with([mock_doc], 1, 0, 50, include_content=False)

@@ -269,6 +269,7 @@ class TestGetDocumentsByPropertyPostgresql:
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value = mock_query
+        mock_query.options.return_value = mock_query
         mock_query.count.return_value = 2
         mock_query.offset.return_value.limit.return_value.all.return_value = [
             mock_doc1,
@@ -327,6 +328,7 @@ class TestGetDocumentsByPropertyPostgresql:
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value = mock_query
+        mock_query.options.return_value = mock_query
         mock_query.count.return_value = 1
         mock_query.offset.return_value.limit.return_value.all.return_value = [
             MagicMock()
@@ -385,6 +387,7 @@ class TestGetDocumentsByPropertyPostgresql:
         mock_query = MagicMock()
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value = mock_query
+        mock_query.options.return_value = mock_query
         mock_query.count.return_value = 2
         mock_query.offset.return_value.limit.return_value.all.return_value = [
             mock_doc1,

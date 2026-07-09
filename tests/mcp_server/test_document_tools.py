@@ -100,7 +100,6 @@ class TestListDocumentsWrapper:
             vault_name=None,
             limit=20,
             offset=0,
-            include_content=True,
         )
         assert result == {"documents": [], "total_count": 0}
 
@@ -123,7 +122,6 @@ class TestListDocumentsWrapper:
             vault_name=None,
             limit=20,
             offset=0,
-            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.document_tools._get_registry")
@@ -145,7 +143,6 @@ class TestListDocumentsWrapper:
             vault_name="Personal",
             limit=20,
             offset=0,
-            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.document_tools._get_registry")
@@ -167,5 +164,4 @@ class TestListDocumentsWrapper:
             vault_name=None,
             limit=10,
             offset=5,
-            include_content=True,
         )

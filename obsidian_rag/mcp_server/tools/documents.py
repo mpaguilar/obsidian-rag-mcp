@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import defer, joinedload
 
 from obsidian_rag.database.models import Document, Vault
 from obsidian_rag.mcp_server.models import (
@@ -279,8 +279,6 @@ def get_documents_by_tag(
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
-    *,
-    include_content: bool = True,
 ) -> DocumentListResponse:
     """Query documents filtered by tags with include/exclude semantics.
 
@@ -290,7 +288,6 @@ def get_documents_by_tag(
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
-        include_content: Whether to include document content in responses.
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -317,10 +314,10 @@ def get_documents_by_tag(
     # Build query with vault join if filtering by vault_name
     if vault_name is not None:
         _validate_vault_exists(session, vault_name)
-        query = session.query(Document).join(Vault)
+        query = session.query(Document).join(Vault).options(defer(Document.content))
         query = query.filter(Vault.name == vault_name)
     else:
-        query = session.query(Document)
+        query = session.query(Document).options(defer(Document.content))
 
     from obsidian_rag.mcp_server.tools.documents_tags import (
         apply_postgresql_tag_filter,
@@ -336,7 +333,7 @@ def get_documents_by_tag(
         doc_response = create_document_response(
             doc,
             0.0,
-            include_content=include_content,
+            include_content=False,
         )
         document_responses.append(doc_response)
 
@@ -360,8 +357,6 @@ def get_documents_by_property(
     tag_filter: TagFilter | None = None,
     vault_name: str | None = None,
     pagination: PaginationParams | None = None,
-    *,
-    include_content: bool = True,
 ) -> DocumentListResponse:
     """Query documents filtered by frontmatter properties.
 
@@ -371,7 +366,6 @@ def get_documents_by_property(
         tag_filter: Optional tag filter to also apply.
         vault_name: Filter by specific vault name (optional).
         pagination: Pagination parameters (limit/offset).
-        include_content: Whether to include document content in responses.
 
     Returns:
         DocumentListResponse with results and pagination info.
@@ -409,7 +403,7 @@ def get_documents_by_property(
     pagination = PaginationParams(
         limit=limit,
         offset=offset,
-        include_content=include_content,
+        include_content=False,
     )
     query_params = PropertyQueryParams(
         session=session,
@@ -429,7 +423,7 @@ def get_documents_by_property(
         total_count,
         offset,
         limit,
-        include_content=include_content,
+        include_content=False,
     )
 
 
@@ -563,12 +557,15 @@ def _validate_get_document_params(
 def _lookup_document_by_id(
     session: "Session",
     document_id: str,
+    *,
+    include_content: bool = True,
 ) -> Document:
     """Lookup document by UUID.
 
     Args:
         session: Database session.
         document_id: Document UUID string.
+        include_content: Whether to include document content in the query.
 
     Returns:
         Document instance.
@@ -583,9 +580,12 @@ def _lookup_document_by_id(
         log.error(_error_msg)
         raise ValueError(_error_msg) from err
 
+    options = [joinedload(Document.vault)]
+    if not include_content:
+        options.append(defer(Document.content))
     document = (
         session.query(Document)
-        .options(joinedload(Document.vault))
+        .options(*options)
         .filter(Document.id == doc_uuid)
         .first()
     )
@@ -601,6 +601,8 @@ def _lookup_document_by_vault_path(
     session: "Session",
     vault_name: str,
     file_path: str,
+    *,
+    include_content: bool = True,
 ) -> Document:
     """Lookup document by vault name and file path.
 
@@ -608,6 +610,7 @@ def _lookup_document_by_vault_path(
         session: Database session.
         vault_name: Vault name.
         file_path: Relative file path.
+        include_content: Whether to include document content in the query.
 
     Returns:
         Document instance.
@@ -623,9 +626,12 @@ def _lookup_document_by_vault_path(
         log.error(_error_msg)
         raise ValueError(_error_msg)
 
+    options = [joinedload(Document.vault)]
+    if not include_content:
+        options.append(defer(Document.content))
     document = (
         session.query(Document)
-        .options(joinedload(Document.vault))
+        .options(*options)
         .filter(Document.vault_id == vault.id)
         .filter(Document.file_path == file_path)
         .first()
@@ -669,7 +675,9 @@ def get_document(
     _validate_get_document_params(document_id, vault_name, file_path)
 
     if document_id is not None:
-        document = _lookup_document_by_id(session, document_id)
+        document = _lookup_document_by_id(
+            session, document_id, include_content=include_content
+        )
     else:
         if vault_name is None:
             _msg = "vault_name is None despite validation guarantee"
@@ -679,7 +687,9 @@ def get_document(
             _msg = "file_path is None despite validation guarantee"
             log.error(_msg)
             raise RuntimeError(_msg)
-        document = _lookup_document_by_vault_path(session, vault_name, file_path)
+        document = _lookup_document_by_vault_path(
+            session, vault_name, file_path, include_content=include_content
+        )
 
     _msg = "get_document returning"
     log.debug(_msg)
@@ -697,7 +707,6 @@ def list_documents(
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
-    include_content: bool = True,
 ) -> DocumentListResponse:
     """List documents by file_name with optional vault scope.
 
@@ -707,7 +716,6 @@ def list_documents(
         vault_name: Optional vault name to scope results.
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
-        include_content: Whether to include document content in responses.
 
     Returns:
         DocumentListResponse with paginated results. similarity_score=0.0 for all.
@@ -729,7 +737,9 @@ def list_documents(
     offset = _validate_offset(offset)
 
     # Build query
-    query = session.query(Document).options(joinedload(Document.vault))
+    query = session.query(Document).options(
+        joinedload(Document.vault), defer(Document.content)
+    )
     query = query.filter(Document.file_name == file_name)
 
     # Vault scope
@@ -755,5 +765,5 @@ def list_documents(
         total_count,
         offset,
         limit,
-        include_content=include_content,
+        include_content=False,
     )

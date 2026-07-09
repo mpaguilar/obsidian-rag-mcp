@@ -642,7 +642,6 @@ def list_documents_tool(
     vault_name: str | None = None,
     limit: int = 20,
     offset: int = 0,
-    include_content: bool = True,
 ) -> dict[str, object]:
     """Tool implementation for listing documents by file_name.
 
@@ -652,8 +651,6 @@ def list_documents_tool(
         vault_name: Optional vault name to scope results.
         limit: Maximum number of results.
         offset: Number of results to skip.
-        include_content: If True, include document content in each result.
-            Set to False to return metadata-only results (smaller payload).
 
     Returns:
         Document list response as dictionary, or error dict if no file_name.
@@ -666,6 +663,5 @@ def list_documents_tool(
         vault_name=vault_name,
         limit=limit,
         offset=offset,
-        include_content=include_content,
     )
     return _list_documents_handler(params)

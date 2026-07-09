@@ -107,6 +107,7 @@ def sample_documents(db_session):
     ]
 
     # Configure mock to return documents for Document queries
+    db_session.query.return_value.options.return_value = db_session.query.return_value
     db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
     db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = len(
         docs
@@ -360,6 +361,9 @@ class TestGetDocumentsByTag:
         """Configure mock to return specific documents."""
         if total_count is None:
             total_count = len(docs)
+        db_session.query.return_value.options.return_value = (
+            db_session.query.return_value
+        )
         db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
         db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = total_count
 
@@ -504,6 +508,9 @@ class TestGetDocumentsByProperty:
         """Configure mock to return specific documents."""
         if total_count is None:
             total_count = len(docs)
+        db_session.query.return_value.options.return_value = (
+            db_session.query.return_value
+        )
         db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
         db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = total_count
 
@@ -679,6 +686,9 @@ class TestGetDocumentsByTagAdditional:
         """Configure mock to return specific documents."""
         if total_count is None:
             total_count = len(docs)
+        db_session.query.return_value.options.return_value = (
+            db_session.query.return_value
+        )
         db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
         db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = total_count
 
@@ -717,6 +727,9 @@ class TestGetDocumentsByPropertyAdditional:
         """Configure mock to return specific documents."""
         if total_count is None:
             total_count = len(docs)
+        db_session.query.return_value.options.return_value = (
+            db_session.query.return_value
+        )
         db_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = docs
         db_session.query.return_value.filter.return_value.order_by.return_value.count.return_value = total_count
 

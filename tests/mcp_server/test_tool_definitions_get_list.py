@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock, patch
 
+import pytest
+
 from obsidian_rag.mcp_server.tool_definitions import (
     get_document_tool,
     list_documents_tool,
@@ -105,7 +107,6 @@ class TestListDocumentsTool:
             vault_name=None,
             limit=20,
             offset=0,
-            include_content=True,
         )
         mock_handler.assert_called_once_with(mock_params)
         assert result == {"documents": []}
@@ -130,7 +131,6 @@ class TestListDocumentsTool:
             vault_name=None,
             limit=20,
             offset=0,
-            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.tool_definitions._list_documents_handler")
@@ -153,7 +153,6 @@ class TestListDocumentsTool:
             vault_name="Personal",
             limit=20,
             offset=0,
-            include_content=True,
         )
 
     @patch("obsidian_rag.mcp_server.tool_definitions._list_documents_handler")
@@ -176,5 +175,11 @@ class TestListDocumentsTool:
             vault_name=None,
             limit=10,
             offset=5,
-            include_content=True,
         )
+
+    def test_list_documents_tool_rejects_include_content(self) -> None:
+        """Passing include_content to list_documents_tool raises TypeError."""
+        mock_db = Mock()
+
+        with pytest.raises(TypeError):
+            list_documents_tool(mock_db, file_name="notes.md", include_content=True)

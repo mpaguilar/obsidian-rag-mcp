@@ -69,7 +69,6 @@ class TestDocumentHandlers:
                 "vault_name": "Missing",
                 "limit": 20,
                 "offset": 0,
-                "include_content": True,
             }
             result = _get_documents_by_tag_handler(mock_db_manager, params)  # type: ignore[arg-type]
 
@@ -581,7 +580,6 @@ class TestListDocumentsHandler:
             vault_name="Personal",
             limit=10,
             offset=5,
-            include_content=True,
         )
 
     @patch(
@@ -654,7 +652,6 @@ class TestListDocumentsHandler:
             vault_name=None,
             limit=10,
             offset=0,
-            include_content=True,
         )
 
     @patch(

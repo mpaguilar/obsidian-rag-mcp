@@ -93,7 +93,6 @@ class DocumentTagParams(TypedDict, total=False):
     vault_name: str | None
     limit: int
     offset: int
-    include_content: bool
 
 
 @dataclass
@@ -164,7 +163,6 @@ def _get_documents_by_tag_handler(
                 vault_name=params.get("vault_name"),
                 limit=params.get("limit", 20),
                 offset=params.get("offset", 0),
-                include_content=params.get("include_content", True),
             )
             _msg = "_get_documents_by_tag_handler returning"
             log.debug(_msg)
@@ -735,7 +733,6 @@ class ListDocumentsHandlerParams:
         vault_name: Optional vault name to scope results.
         limit: Maximum number of results.
         offset: Number of results to skip.
-        include_content: Whether to include document content in each result.
     """
 
     db_manager: DatabaseManager
@@ -743,7 +740,6 @@ class ListDocumentsHandlerParams:
     vault_name: str | None = None
     limit: int = 20
     offset: int = 0
-    include_content: bool = True
 
 
 def _get_document_handler(params: GetDocumentHandlerParams) -> dict[str, object]:
@@ -812,7 +808,6 @@ def _list_documents_handler(params: ListDocumentsHandlerParams) -> dict[str, obj
                 vault_name=params.vault_name,
                 limit=params.limit,
                 offset=params.offset,
-                include_content=params.include_content,
             )
             _msg = "_list_documents_handler returning"
             log.debug(_msg)
@@ -829,7 +824,6 @@ def _get_documents_by_property_handler(
     tag_filter: TagFilter | None,
     vault_name: str | None,
     *,
-    include_content: bool,
     limit: int,
     offset: int,
 ) -> dict[str, object]:
@@ -840,7 +834,6 @@ def _get_documents_by_property_handler(
         property_filters: Property filter parameters with include/exclude lists.
         tag_filter: Optional tag filter to also apply.
         vault_name: Filter by specific vault name (optional).
-        include_content: Whether to include document content in responses.
         limit: Maximum number of results.
         offset: Number of results to skip.
 
@@ -862,7 +855,7 @@ def _get_documents_by_property_handler(
             from obsidian_rag.mcp_server.tools.documents_params import PaginationParams
 
             pagination = PaginationParams(
-                limit=limit, offset=offset, include_content=include_content
+                limit=limit, offset=offset, include_content=False
             )
             raw_result = get_documents_by_property_tool(
                 session=session,
@@ -870,7 +863,6 @@ def _get_documents_by_property_handler(
                 tag_filter=tag_filter,
                 vault_name=vault_name,
                 pagination=pagination,
-                include_content=include_content,
             )
             _msg = "_get_documents_by_property_handler returning"
             log.debug(_msg)

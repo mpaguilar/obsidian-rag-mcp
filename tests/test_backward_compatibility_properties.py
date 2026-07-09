@@ -147,8 +147,9 @@ def test_include_content_true_is_default_all_tools() -> None:
     get_doc_params = GetDocumentParams()
     assert get_doc_params.include_content is True
 
+    # ListDocumentsParams no longer has include_content (metadata-only tool)
     list_doc_params = ListDocumentsParams()
-    assert list_doc_params.include_content is True
+    assert not hasattr(list_doc_params, "include_content")
 
     tasks_filter = GetTasksFilterParams()
     assert tasks_filter.include_content is True

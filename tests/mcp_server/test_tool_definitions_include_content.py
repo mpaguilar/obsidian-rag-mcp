@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from obsidian_rag.mcp_server.handlers import QueryFilterParams
 from obsidian_rag.mcp_server.tool_definitions import (
     get_document_tool,
@@ -152,61 +154,34 @@ class TestGetDocumentToolIncludeContent:
         assert result == {"id": "doc-1"}
 
 
-class TestListDocumentsToolIncludeContent:
-    """Tests for list_documents_tool include_content parameter."""
+@patch("obsidian_rag.mcp_server.tool_definitions._list_documents_handler")
+@patch("obsidian_rag.mcp_server.tool_definitions.ListDocumentsHandlerParams")
+def test_list_documents_tool_hardcodes_include_content_false(
+    mock_params_cls: MagicMock,
+    mock_handler: MagicMock,
+) -> None:
+    """Assert ListDocumentsHandlerParams is constructed without include_content."""
+    mock_db = MagicMock()
+    mock_params = MagicMock()
+    mock_params_cls.return_value = mock_params
+    mock_handler.return_value = {"documents": []}
 
-    @patch("obsidian_rag.mcp_server.tool_definitions._list_documents_handler")
-    @patch("obsidian_rag.mcp_server.tool_definitions.ListDocumentsHandlerParams")
-    def test_list_documents_tool_include_content_true(
-        self,
-        mock_params_cls: MagicMock,
-        mock_handler: MagicMock,
-    ) -> None:
-        """Test that include_content=True is passed to ListDocumentsHandlerParams."""
-        mock_db = MagicMock()
-        mock_params = MagicMock()
-        mock_params_cls.return_value = mock_params
-        mock_handler.return_value = {"documents": []}
+    result = list_documents_tool(mock_db, file_name="notes.md")
 
-        result = list_documents_tool(
-            mock_db, file_name="notes.md", include_content=True
-        )
+    mock_params_cls.assert_called_once_with(
+        db_manager=mock_db,
+        file_name="notes.md",
+        vault_name=None,
+        limit=20,
+        offset=0,
+    )
+    mock_handler.assert_called_once_with(mock_params)
+    assert result == {"documents": []}
 
-        mock_params_cls.assert_called_once_with(
-            db_manager=mock_db,
-            file_name="notes.md",
-            vault_name=None,
-            limit=20,
-            offset=0,
-            include_content=True,
-        )
-        mock_handler.assert_called_once_with(mock_params)
-        assert result == {"documents": []}
 
-    @patch("obsidian_rag.mcp_server.tool_definitions._list_documents_handler")
-    @patch("obsidian_rag.mcp_server.tool_definitions.ListDocumentsHandlerParams")
-    def test_list_documents_tool_include_content_false(
-        self,
-        mock_params_cls: MagicMock,
-        mock_handler: MagicMock,
-    ) -> None:
-        """Test that include_content=False is passed to ListDocumentsHandlerParams."""
-        mock_db = MagicMock()
-        mock_params = MagicMock()
-        mock_params_cls.return_value = mock_params
-        mock_handler.return_value = {"documents": []}
+def test_list_documents_tool_rejects_include_content_kwarg() -> None:
+    """Calling list_documents_tool with include_content raises TypeError."""
+    mock_db = MagicMock()
 
-        result = list_documents_tool(
-            mock_db, file_name="notes.md", include_content=False
-        )
-
-        mock_params_cls.assert_called_once_with(
-            db_manager=mock_db,
-            file_name="notes.md",
-            vault_name=None,
-            limit=20,
-            offset=0,
-            include_content=False,
-        )
-        mock_handler.assert_called_once_with(mock_params)
-        assert result == {"documents": []}
+    with pytest.raises(TypeError):
+        list_documents_tool(mock_db, file_name="notes.md", include_content=True)

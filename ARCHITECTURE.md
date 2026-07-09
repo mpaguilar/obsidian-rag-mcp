@@ -476,7 +476,7 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
   - `operator`: Filter operator (same as property filters)
   - `value`: Value to compare against (not required for `exists` operator)
   - Multiple inline filters are combined with AND logic
-- `include_content`: Whether to include task content in response (default: True)
+- `include_content`: Whether to include the raw task line text (`raw_text`) in response (default: True)
 - `limit`: Maximum results (default: 20, max: 10000)
 - `offset`: Result offset for pagination (default: 0)
 
@@ -516,7 +516,17 @@ All tools are read-only and use SQLAlchemy `select()` operations only:
 
 **Document Retrieval Tools:**
 - `get_document`: Get a single document by vault_name+file_path or document_id (UUID). Returns `DocumentResponse` with `similarity_score=0.0` (no vector search). Raises `ValueError` if not found or invalid params. Supports `include_content=False` to omit the document body.
-- `list_documents`: List documents by file_name with optional vault_name scope. Returns `DocumentListResponse` with paginated results. Returns empty list (not error) when no matches. Supports `include_content=False` to omit document bodies.
+- `list_documents`: List documents by file_name with optional vault_name scope. Returns `DocumentListResponse` with paginated results. Returns empty list (not error) when no matches.
+
+**Two-Stage Discovery-Retrieval Pattern:**
+
+- `get_documents_by_tag`, `get_documents_by_property`, and `list_documents` are metadata-only discovery tools: they always return `content=""`. They no longer accept an `include_content` parameter (passing it raises a `TypeError` from FastMCP — intentional API break, REQ-012).
+- To retrieve a document's full content, clients call `get_document` (by `vault_name`+`file_path` or `document_id`), which keeps `include_content` (default `True`).
+
+**SQL defer(Document.content) Optimization:**
+
+- The three discovery tools compose `.options(defer(Document.content))` (with `joinedload(Document.vault)` where the joinedload already exists) so PostgreSQL does not transfer the body column for metadata-only queries.
+- `get_document` and `query_documents` apply `defer(Document.content)` conditionally when `include_content=False`.
 
 **Vault Tools:**
 - `list_vaults`: List all vaults with document counts and metadata

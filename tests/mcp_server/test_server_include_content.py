@@ -74,36 +74,42 @@ class TestQueryDocumentsWrapperIncludeContent:
             assert call_kwargs["include_content"] is False
 
 
-class TestGetDocumentsByTagWrapperIncludeContent:
-    """Tests that get_documents_by_tag wrapper correctly passes include_content."""
+def test_get_documents_by_tag_wrapper_rejects_include_content() -> None:
+    """Calling get_documents_by_tag with include_content raises TypeError."""
+    from obsidian_rag.mcp_server.server import get_documents_by_tag
 
-    @pytest.fixture
-    def setup_registry(self):
-        """Set up mock registry for testing."""
-        from obsidian_rag.mcp_server.tool_definitions import (
-            MCPToolRegistry,
-            _set_registry,
-        )
+    with pytest.raises(TypeError):
+        get_documents_by_tag(include_content=False)
 
-        mock_db_manager = MagicMock()
-        mock_embedding_provider = MagicMock()
-        mock_settings = MagicMock()
 
-        registry = MCPToolRegistry(
-            db_manager=mock_db_manager,
-            embedding_provider=mock_embedding_provider,
-            settings=mock_settings,
-        )
-        _set_registry(registry)
-        yield registry
-        _set_registry(None)
+def test_get_documents_by_property_wrapper_rejects_include_content() -> None:
+    """Calling get_documents_by_property with include_content raises TypeError."""
+    from obsidian_rag.mcp_server.server import get_documents_by_property
 
-    def test_get_documents_by_tag_wrapper_include_content_true(
-        self, setup_registry
-    ) -> None:
-        """Default include_content=True should be in DocumentTagParams."""
-        from obsidian_rag.mcp_server.server import get_documents_by_tag
+    with pytest.raises(TypeError):
+        get_documents_by_property(include_content=False)
 
+
+def test_get_documents_by_tag_wrapper_omits_include_content_in_params_dict() -> None:
+    """DocumentTagParams dict passed to handler must NOT contain include_content."""
+    from obsidian_rag.mcp_server.server import get_documents_by_tag
+    from obsidian_rag.mcp_server.tool_definitions import (
+        MCPToolRegistry,
+        _set_registry,
+    )
+
+    mock_db_manager = MagicMock()
+    mock_embedding_provider = MagicMock()
+    mock_settings = MagicMock()
+
+    registry = MCPToolRegistry(
+        db_manager=mock_db_manager,
+        embedding_provider=mock_embedding_provider,
+        settings=mock_settings,
+    )
+    _set_registry(registry)
+
+    try:
         with patch(
             "obsidian_rag.mcp_server.server._get_documents_by_tag_handler"
         ) as mock_handler:
@@ -119,16 +125,33 @@ class TestGetDocumentsByTagWrapperIncludeContent:
             assert result["total_count"] == 0
             mock_handler.assert_called_once()
             call_params = mock_handler.call_args[0][1]
-            assert call_params["include_content"] is True
+            assert "include_content" not in call_params
+    finally:
+        _set_registry(None)
 
-    def test_get_documents_by_tag_wrapper_include_content_false(
-        self, setup_registry
-    ) -> None:
-        """Explicit include_content=False should be in DocumentTagParams."""
-        from obsidian_rag.mcp_server.server import get_documents_by_tag
 
+def test_get_documents_by_property_wrapper_omits_include_content_in_call() -> None:
+    """Handler call must NOT pass include_content keyword argument."""
+    from obsidian_rag.mcp_server.server import get_documents_by_property
+    from obsidian_rag.mcp_server.tool_definitions import (
+        MCPToolRegistry,
+        _set_registry,
+    )
+
+    mock_db_manager = MagicMock()
+    mock_embedding_provider = MagicMock()
+    mock_settings = MagicMock()
+
+    registry = MCPToolRegistry(
+        db_manager=mock_db_manager,
+        embedding_provider=mock_embedding_provider,
+        settings=mock_settings,
+    )
+    _set_registry(registry)
+
+    try:
         with patch(
-            "obsidian_rag.mcp_server.server._get_documents_by_tag_handler"
+            "obsidian_rag.mcp_server.server._get_documents_by_property_handler"
         ) as mock_handler:
             mock_handler.return_value = {
                 "results": [],
@@ -137,60 +160,11 @@ class TestGetDocumentsByTagWrapperIncludeContent:
                 "next_offset": None,
             }
 
-            result = get_documents_by_tag(include_content=False)
+            result = get_documents_by_property()
 
             assert result["total_count"] == 0
             mock_handler.assert_called_once()
-            call_params = mock_handler.call_args[0][1]
-            assert call_params["include_content"] is False
-
-
-class TestGetDocumentsByPropertyWrapperIncludeContent:
-    """Tests that get_documents_by_property wrapper correctly passes include_content."""
-
-    @pytest.fixture
-    def setup_registry(self):
-        """Set up mock registry for testing."""
-        from obsidian_rag.mcp_server.tool_definitions import (
-            MCPToolRegistry,
-            _set_registry,
-        )
-
-        mock_db_manager = MagicMock()
-        mock_embedding_provider = MagicMock()
-        mock_settings = MagicMock()
-
-        registry = MCPToolRegistry(
-            db_manager=mock_db_manager,
-            embedding_provider=mock_embedding_provider,
-            settings=mock_settings,
-        )
-        _set_registry(registry)
-        yield registry
+            call_kwargs = mock_handler.call_args.kwargs
+            assert "include_content" not in call_kwargs
+    finally:
         _set_registry(None)
-
-    def test_get_documents_by_property_wrapper_include_content(
-        self, setup_registry
-    ) -> None:
-        """include_content should propagate through PaginationParams."""
-        from obsidian_rag.mcp_server.models import DocumentListResponse
-        from obsidian_rag.mcp_server.server import get_documents_by_property
-
-        with patch(
-            "obsidian_rag.mcp_server.tools.documents.get_documents_by_property"
-        ) as mock_tool:
-            mock_tool.return_value = DocumentListResponse(
-                results=[],
-                total_count=0,
-                has_more=False,
-                next_offset=None,
-            )
-
-            result = get_documents_by_property(include_content=False)
-
-            assert result["total_count"] == 0
-            mock_tool.assert_called_once()
-            call_kwargs = mock_tool.call_args.kwargs
-            pagination = call_kwargs["pagination"]
-            assert pagination.include_content is False
-            assert call_kwargs["include_content"] is False

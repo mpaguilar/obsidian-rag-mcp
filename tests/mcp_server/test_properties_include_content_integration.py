@@ -157,7 +157,6 @@ class TestPropertiesPopulatedInGetDocumentsByTagResponses:
         result = get_documents_by_tag(
             mock_session,
             tag_filter=tag_filter,
-            include_content=True,
         )
 
         assert len(result.results) == 1
@@ -190,11 +189,11 @@ class TestPropertiesPopulatedInGetDocumentsByPropertyResponses:
             mock_session,
             property_filters=property_filters,
             pagination=PaginationParams(limit=20, offset=0),
-            include_content=True,
         )
 
         assert len(result.results) == 1
         assert result.results[0].properties == {"category": "reference", "year": 2025}
+        assert result.results[0].content == ""
 
 
 class TestPropertiesPopulatedInGetDocumentResponse:
@@ -282,7 +281,6 @@ class TestPropertiesPopulatedInListDocumentsResponse:
         result = list_documents(
             mock_session,
             file_name="doc.md",
-            include_content=True,
         )
 
         assert len(result.results) == 1
@@ -402,7 +400,6 @@ class TestIncludeContentFalseInAllDocumentTools:
         result = get_documents_by_tag(
             mock_session,
             tag_filter=TagFilter(include_tags=["work"]),
-            include_content=False,
         )
 
         assert result.results[0].content == ""
@@ -411,11 +408,11 @@ class TestIncludeContentFalseInAllDocumentTools:
     @patch(
         "obsidian_rag.mcp_server.tools.documents.get_documents_by_property_postgresql"
     )
-    def test_get_documents_by_property_include_content_false(
+    def test_get_documents_by_property_returns_empty_content(
         self,
         mock_postgres: MagicMock,
     ) -> None:
-        """get_documents_by_property with include_content=False returns empty content."""
+        """get_documents_by_property always returns empty content (metadata-only)."""
         doc = _create_mock_doc(
             frontmatter_json={"author": "Alice"},
             content="property content",
@@ -431,7 +428,6 @@ class TestIncludeContentFalseInAllDocumentTools:
                 exclude_filters=None,
             ),
             pagination=PaginationParams(limit=20, offset=0),
-            include_content=False,
         )
 
         assert result.results[0].content == ""
@@ -481,7 +477,6 @@ class TestIncludeContentFalseInAllDocumentTools:
         result = list_documents(
             mock_session,
             file_name="doc.md",
-            include_content=False,
         )
 
         assert result.results[0].content == ""

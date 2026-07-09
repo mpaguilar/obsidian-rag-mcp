@@ -215,6 +215,7 @@ def _mock_session_for_tag_query(documents: list[Document]) -> MagicMock:
     """
     mock_session = MagicMock()
     mock_query = MagicMock()
+    mock_query.options.return_value = mock_query
     mock_query.filter.return_value = mock_query
     mock_query.order_by.return_value = mock_query
     mock_query.count.return_value = len(documents)

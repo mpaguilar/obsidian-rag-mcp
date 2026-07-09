@@ -172,7 +172,6 @@ def get_documents_by_tag(
     limit: int = 20,
     offset: int = 0,
     *,
-    include_content: bool = True,
     output_file: str | dict | OutputFileConfig | None = None,
 ) -> dict[str, object]:
     """Query documents filtered by tags with include/exclude semantics.
@@ -189,9 +188,6 @@ def get_documents_by_tag(
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
-        include_content: If True (default), include full document content in
-            responses. When False, the 'content' field is an empty string,
-            reducing payload size.
         output_file: Optional output file configuration. When provided, the
             full result is written to the specified target (local or S3) and
             a compact summary is returned instead. Can be passed as a dict,
@@ -235,7 +231,6 @@ def get_documents_by_tag(
         "vault_name": vault_name,
         "limit": limit,
         "offset": offset,
-        "include_content": include_content,
     }
     result = _get_documents_by_tag_handler(registry.db_manager, params)
     parsed_output_file = _parse_output_file(output_file)
@@ -250,7 +245,6 @@ def get_documents_by_property(
     limit: int = 20,
     offset: int = 0,
     *,
-    include_content: bool = True,
     output_file: str | dict | OutputFileConfig | None = None,
 ) -> dict[str, object]:
     """Query documents filtered by frontmatter properties.
@@ -264,9 +258,6 @@ def get_documents_by_property(
         vault_name: Filter by specific vault name (optional).
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
-        include_content: If True (default), include full document content in
-            responses. When False, the 'content' field is an empty string,
-            reducing payload size.
         output_file: Optional output file configuration. When provided, the
             full result is written to the specified target (local or S3) and
             a compact summary is returned instead. Can be passed as a dict,
@@ -323,7 +314,6 @@ def get_documents_by_property(
         property_filters=property_filter_params,
         tag_filter=tag_filter,
         vault_name=vault_name,
-        include_content=include_content,
         limit=limit,
         offset=offset,
     )
@@ -638,9 +628,9 @@ def get_tasks(
             '[{"path": "vendor", "operator": "equals", "value": "Amazon"}]'
             Inline fields are flat key-value pairs (no dot notation in path).
             Maximum 10 inline filters per query.
-        include_content: If True (default), include the parent document's
-            content in each task response. When False, content fields are
-            empty strings, reducing payload size.
+        include_content: If True (default), include the raw task line text
+            (`raw_text`) in each task response. When False, `raw_text` is an
+            empty string, reducing payload size.
         limit: Maximum number of results (default: 20, max: 10000).
         offset: Number of results to skip (default: 0).
         output_file: Optional output file configuration. When provided, the

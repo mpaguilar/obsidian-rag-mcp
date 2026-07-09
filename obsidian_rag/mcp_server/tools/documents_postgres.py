@@ -7,6 +7,8 @@ Uses native JSONB operators and vector similarity functions.
 import logging
 from typing import TYPE_CHECKING, cast
 
+from sqlalchemy.orm import defer
+
 from obsidian_rag.database.models import Document, Vault
 from obsidian_rag.mcp_server.models import (
     DocumentListResponse,
@@ -147,6 +149,9 @@ def query_documents_postgresql(params: DocumentQueryParams) -> DocumentListRespo
         Document.content_vector.isnot(None),
     )
 
+    if not pagination.include_content:
+        query = query.options(defer(Document.content))
+
     if vault_name is not None:
         _validate_vault_exists(session, vault_name)
         query = query.join(Vault, Document.vault_id == Vault.id)
@@ -224,10 +229,10 @@ def get_documents_by_property_postgresql(
     # Join with Vault if filtering by vault_name
     if vault_name is not None:
         _validate_vault_exists(session, vault_name)
-        query = session.query(Document).join(Vault)
+        query = session.query(Document).join(Vault).options(defer(Document.content))
         query = query.filter(Vault.name == vault_name)
     else:
-        query = session.query(Document)
+        query = session.query(Document).options(defer(Document.content))
 
     if property_filters.include_filters:
         for prop_filter in property_filters.include_filters:

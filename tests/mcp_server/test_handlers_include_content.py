@@ -11,8 +11,8 @@ from obsidian_rag.mcp_server.handlers import (
 from obsidian_rag.mcp_server.tools.tasks_params import GetTasksRequest
 
 
-def test_document_tag_params_has_include_content():
-    """DocumentTagParams TypedDict should include include_content key."""
+def test_document_tag_params_has_no_include_content():
+    """DocumentTagParams TypedDict should NOT include include_content key."""
     params: DocumentTagParams = {
         "include_tags": ["work"],
         "exclude_tags": ["blocked"],
@@ -20,9 +20,8 @@ def test_document_tag_params_has_include_content():
         "vault_name": "Personal",
         "limit": 20,
         "offset": 0,
-        "include_content": False,
     }
-    assert params["include_content"] is False
+    assert "include_content" not in params
 
 
 def test_get_document_handler_params_default_include_content_true():
@@ -39,18 +38,11 @@ def test_get_document_handler_params_include_content_false():
     assert params.include_content is False
 
 
-def test_list_documents_handler_params_default_include_content_true():
-    """ListDocumentsHandlerParams should default include_content to True."""
+def test_list_documents_handler_params_no_include_content_field():
+    """ListDocumentsHandlerParams should NOT have an include_content field."""
     db_manager = MagicMock()
     params = ListDocumentsHandlerParams(db_manager=db_manager)
-    assert params.include_content is True
-
-
-def test_list_documents_handler_params_include_content_false():
-    """ListDocumentsHandlerParams should accept include_content=False."""
-    db_manager = MagicMock()
-    params = ListDocumentsHandlerParams(db_manager=db_manager, include_content=False)
-    assert params.include_content is False
+    assert not hasattr(params, "include_content")
 
 
 def test_get_tasks_request_default_include_content_true():
