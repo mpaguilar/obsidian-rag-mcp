@@ -4,7 +4,6 @@ import logging
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -27,6 +26,12 @@ from obsidian_rag.parsing.tasks import parse_tasks_from_content
 from obsidian_rag.services.ingestion_chunks import create_chunks_with_embeddings
 from obsidian_rag.services.ingestion_cleanup import delete_orphaned_documents
 from obsidian_rag.services.ingestion_integrity import ingest_new_document
+from obsidian_rag.services.ingestion_lock import (
+    check_ingest_heartbeat,
+    release_ingest_lock,
+    try_acquire_ingest_lock,
+)
+from obsidian_rag.services.ingestion_models import IngestionResult, IngestVaultOptions
 from obsidian_rag.services.tag_merging import _merge_tags
 
 if TYPE_CHECKING:
@@ -36,84 +41,28 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class IngestVaultOptions:
-    """Options for ingest_vault method.
+def _build_ingest_message(
+    total: int,
+    stats: dict[str, int],
+    deleted_count: int,
+    *,
+    no_delete: bool,
+) -> str:
+    """Build the human-readable summary message for an ingestion run.
 
-    Attributes:
-        vault: Vault configuration or vault name.
-        dry_run: If True, don't write to database.
-        progress_callback: Optional callback for progress updates.
-        file_infos: Optional pre-scanned file info objects.
-        no_delete: If True, skip deletion of orphaned documents.
-        force: If True, re-ingest all documents regardless of checksums.
-
-    """
-
-    vault: VaultConfig | str
-    dry_run: bool = False
-    progress_callback: Callable[[int, int, int, int], None] | None = None
-    file_infos: list[FileInfo] | None = None
-    no_delete: bool = False
-    force: bool = False
-
-
-@dataclass
-class IngestionResult:
-    """Result of an ingestion operation.
-
-    Attributes:
+    Args:
         total: Total number of files processed.
-        new: Number of new documents created.
-        updated: Number of existing documents updated.
-        unchanged: Number of unchanged documents.
-        errors: Number of files that failed processing.
-        deleted: Number of orphaned documents deleted from database.
-        chunks_created: Number of document chunks created for large documents.
-        empty_documents: Number of empty documents (no content, skipped for embeddings).
-        total_chunks: Total number of chunks across all documents.
-        avg_chunk_tokens: Average token count per chunk.
-        task_chunk_count: Number of chunks containing tasks.
-        content_chunk_count: Number of regular content chunks.
-        processing_time_seconds: Time taken to process all files.
-        message: Human-readable summary message.
+        stats: Dictionary with ingestion statistics.
+        deleted_count: Number of orphaned documents deleted.
+        no_delete: Whether deletion was skipped.
+
+    Returns:
+        Summary message string.
 
     """
-
-    total: int
-    new: int
-    updated: int
-    unchanged: int
-    errors: int
-    deleted: int
-    chunks_created: int
-    empty_documents: int
-    processing_time_seconds: float
-    message: str
-    # New chunk statistics fields
-    total_chunks: int = 0
-    avg_chunk_tokens: int = 0
-    task_chunk_count: int = 0
-    content_chunk_count: int = 0
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert result to dictionary."""
-        return {
-            "total": self.total,
-            "new": self.new,
-            "updated": self.updated,
-            "unchanged": self.unchanged,
-            "errors": self.errors,
-            "deleted": self.deleted,
-            "chunks_created": self.chunks_created,
-            "empty_documents": self.empty_documents,
-            "total_chunks": self.total_chunks,
-            "avg_chunk_tokens": self.avg_chunk_tokens,
-            "task_chunk_count": self.task_chunk_count,
-            "content_chunk_count": self.content_chunk_count,
-            "processing_time_seconds": self.processing_time_seconds,
-            "message": self.message,
-        }
+    if no_delete:
+        return f"Ingested {total} files: {stats['new']} new, {stats['updated']} updated, {stats['unchanged']} unchanged, {stats['errors']} errors, {stats['chunks_created']} chunks created, {stats['empty_documents']} empty, deletion skipped"
+    return f"Ingested {total} files: {stats['new']} new, {stats['updated']} updated, {stats['unchanged']} unchanged, {stats['errors']} errors, {deleted_count} deleted, {stats['chunks_created']} chunks created, {stats['empty_documents']} empty"
 
 
 class IngestionService:
@@ -361,6 +310,20 @@ class IngestionService:
 
         return file_info_list, total
 
+    def _update_stats(
+        self,
+        stats: dict[str, int],
+        result: str,
+        chunks_created: int,
+        *,
+        is_empty: bool,
+    ) -> None:
+        """Update ingestion statistics from a single file result."""
+        stats[result] += 1
+        stats["chunks_created"] += chunks_created
+        if is_empty:
+            stats["empty_documents"] += 1
+
     def _process_files_with_stats(
         self,
         file_info_list: list[FileInfo],
@@ -370,6 +333,8 @@ class IngestionService:
         dry_run: bool,
         progress_callback: Callable[[int, int, int, int], None] | None,
         force: bool = False,
+        heartbeat_interval: int = 0,
+        lock_lost_flag: list[bool] | None = None,
     ) -> dict[str, int]:
         """Process files and collect statistics.
 
@@ -380,6 +345,8 @@ class IngestionService:
             dry_run: If True, don't write to database.
             progress_callback: Optional progress callback.
             force: If True, re-ingest all documents regardless of checksums.
+            heartbeat_interval: Files processed between heartbeat updates.
+            lock_lost_flag: Optional mutable container to flag lock loss.
 
         Returns:
             Dictionary with statistics including chunks_created and empty_documents.
@@ -404,10 +371,7 @@ class IngestionService:
                     dry_run=dry_run,
                     force=force,
                 )
-                stats[result] += 1
-                stats["chunks_created"] += chunks_created
-                if is_empty:
-                    stats["empty_documents"] += 1
+                self._update_stats(stats, result, chunks_created, is_empty=is_empty)
             except Exception as e:
                 _msg = f"Error processing file {file_info.path}: {e}"
                 log.exception(_msg)
@@ -417,7 +381,31 @@ class IngestionService:
                 successes = stats["new"] + stats["updated"] + stats["unchanged"]
                 progress_callback(idx + 1, total, successes, stats["errors"])
 
+            if not check_ingest_heartbeat(
+                self.db_manager, vault_id, idx, heartbeat_interval, lock_lost_flag
+            ):
+                break
+
         return stats
+
+    def _run_deletion_phase(
+        self,
+        filesystem_paths: set[str],
+        *,
+        vault_id: uuid.UUID | None,
+        no_delete: bool,
+        dry_run: bool,
+    ) -> tuple[int, int]:
+        """Delete orphaned documents unless no_delete flag is set."""
+        if not no_delete and vault_id is not None:
+            return self._delete_orphaned_documents(
+                filesystem_paths,
+                vault_id=vault_id,
+                dry_run=dry_run,
+            )
+        _msg = "Deletion phase skipped (no_delete=True or dry_run)"
+        log.info(_msg)
+        return (0, 0)
 
     def ingest_vault(
         self,
@@ -435,6 +423,8 @@ class IngestionService:
 
         Raises:
             ValueError: If vault_path is invalid or files are outside vault.
+            IngestLockError: If another ingest is already in progress for this
+                vault and the policy matrix resolves to fail-fast.
 
         Notes:
             Performs database operations for document and task creation/update.
@@ -442,6 +432,11 @@ class IngestionService:
             Each file is processed in its own database transaction.
             Orphaned documents (in DB but not on filesystem) are deleted by default.
             Files outside the vault container_path are rejected.
+            Acquires a cross-process ingest lock on the vault row before file
+            processing (unless dry_run) and releases it in a finally block.
+            Heartbeats are sent every ingest_lock_heartbeat_interval files to
+            prevent stale-lock reclaim; if a heartbeat detects the lock was
+            lost, the loop breaks early and the lock is not released.
 
         """
         _msg = f"ingest_vault starting for path: {vault_path}"
@@ -453,94 +448,97 @@ class IngestionService:
 
         start_time = time.time()
 
-        file_info_list, total = self._get_file_info_list(
-            vault_path,
-            options.file_infos,
-            options.progress_callback,
+        lock_acquired, skip_result = try_acquire_ingest_lock(
+            self.db_manager, vault_id, options, self.settings, start_time
         )
+        if skip_result is not None:
+            return skip_result
 
-        if total == 0:
-            elapsed = time.time() - start_time
-            return IngestionResult(
-                total=0,
-                new=0,
-                updated=0,
-                unchanged=0,
-                errors=0,
-                deleted=0,
-                chunks_created=0,
-                empty_documents=0,
-                processing_time_seconds=elapsed,
-                message="No markdown files found in directory",
+        lock_lost = False
+        exception_occurred = False
+        try:
+            file_info_list, total = self._get_file_info_list(
+                vault_path,
+                options.file_infos,
+                options.progress_callback,
             )
 
-        # Validate all files are within vault
-        self._validate_files_in_vault(file_info_list, vault_config)
+            if total == 0:
+                elapsed = time.time() - start_time
+                return IngestionResult(
+                    total=0,
+                    new=0,
+                    updated=0,
+                    unchanged=0,
+                    errors=0,
+                    deleted=0,
+                    chunks_created=0,
+                    empty_documents=0,
+                    processing_time_seconds=elapsed,
+                    message="No markdown files found in directory",
+                )
 
-        stats = self._process_files_with_stats(
-            file_info_list,
-            vault_id=vault_id,
-            vault_config=vault_config,
-            dry_run=options.dry_run,
-            progress_callback=options.progress_callback,
-            force=options.force,
-        )
+            # Validate all files are within vault
+            self._validate_files_in_vault(file_info_list, vault_config)
 
-        # Collect filesystem paths for deletion detection (relative paths)
-        filesystem_paths = {
-            self._compute_relative_path(fi.path, vault_config.container_path)
-            for fi in file_info_list
-        }
+            lock_lost_flag = [False]
+            stats = self._process_files_with_stats(
+                file_info_list,
+                vault_id=vault_id,
+                vault_config=vault_config,
+                dry_run=options.dry_run,
+                progress_callback=options.progress_callback,
+                force=options.force,
+                heartbeat_interval=self.settings.ingestion.ingest_lock_heartbeat_interval,
+                lock_lost_flag=lock_lost_flag,
+            )
+            lock_lost = lock_lost_flag[0]
 
-        # Delete orphaned documents unless no_delete flag is set
-        deleted_count = 0
-        deletion_errors = 0
-        if not options.no_delete and vault_id is not None:
-            deleted_count, deletion_errors = self._delete_orphaned_documents(
+            # Collect filesystem paths for deletion detection (relative paths)
+            filesystem_paths = {
+                self._compute_relative_path(fi.path, vault_config.container_path)
+                for fi in file_info_list
+            }
+
+            deleted_count, deletion_errors = self._run_deletion_phase(
                 filesystem_paths,
                 vault_id=vault_id,
+                no_delete=options.no_delete,
                 dry_run=options.dry_run,
             )
-        else:
-            _msg = "Deletion phase skipped (no_delete=True or dry_run)"
+
+            elapsed_time = time.time() - start_time
+            message = _build_ingest_message(
+                total, stats, deleted_count, no_delete=options.no_delete
+            )
+
+            result = IngestionResult(
+                total=total,
+                new=stats["new"],
+                updated=stats["updated"],
+                unchanged=stats["unchanged"],
+                errors=stats["errors"] + deletion_errors,
+                deleted=deleted_count,
+                chunks_created=stats["chunks_created"],
+                empty_documents=stats["empty_documents"],
+                processing_time_seconds=elapsed_time,
+                message=message,
+            )
+
+            _msg = f"ingest_vault completed: {result.message}"
             log.info(_msg)
 
-        elapsed_time = time.time() - start_time
-
-        # Build message based on whether deletion was skipped
-        if options.no_delete:
-            message = (
-                f"Ingested {total} files: {stats['new']} new, "
-                f"{stats['updated']} updated, {stats['unchanged']} unchanged, "
-                f"{stats['errors']} errors, {stats['chunks_created']} chunks created, "
-                f"{stats['empty_documents']} empty, deletion skipped"
-            )
-        else:
-            message = (
-                f"Ingested {total} files: {stats['new']} new, "
-                f"{stats['updated']} updated, {stats['unchanged']} unchanged, "
-                f"{stats['errors']} errors, {deleted_count} deleted, "
-                f"{stats['chunks_created']} chunks created, "
-                f"{stats['empty_documents']} empty"
-            )
-
-        result = IngestionResult(
-            total=total,
-            new=stats["new"],
-            updated=stats["updated"],
-            unchanged=stats["unchanged"],
-            errors=stats["errors"] + deletion_errors,
-            deleted=deleted_count,
-            chunks_created=stats["chunks_created"],
-            empty_documents=stats["empty_documents"],
-            processing_time_seconds=elapsed_time,
-            message=message,
-        )
-
-        _msg = f"ingest_vault completed: {result.message}"
-        log.info(_msg)
-
-        return result
+            return result
+        except Exception:
+            exception_occurred = True
+            raise
+        finally:
+            if lock_acquired and not lock_lost and vault_id is not None:
+                release_ingest_lock(
+                    self.db_manager,
+                    vault_id,
+                    failed=exception_occurred,
+                )
 
     def _ingest_single_file(
         self,

@@ -13,6 +13,7 @@ PGVECTOR_MAX_DIMENSION = 2000
 PORT_MAX = 65535
 CHUNK_SIZE_MIN = 64
 CHUNK_SIZE_MAX = 2048
+INGEST_LOCK_TTL_MIN = 60
 
 
 class EndpointConfig(BaseModel):
@@ -104,13 +105,23 @@ class DatabaseConfig(BaseModel):
 
 
 class IngestionConfig(BaseModel):
-    """Configuration for document ingestion."""
+    """Configuration for document ingestion.
+
+    Attributes:
+        ingest_lock_heartbeat_interval: Files processed between heartbeat
+            UPDATEs to vaults.ingest_started_at (default: 50).
+        ingest_lock_ttl_seconds: Seconds before an in_progress lock is
+            considered stale and reclaimable (default: 300, minimum: 60).
+
+    """
 
     batch_size: int = 100
     max_file_size_mb: int = 10
     progress_interval: int = 10
     max_chunk_chars: int = 24000
     chunk_overlap_chars: int = 800
+    ingest_lock_heartbeat_interval: int = 50
+    ingest_lock_ttl_seconds: int = 300
 
     @field_validator("batch_size")
     @classmethod
@@ -150,6 +161,38 @@ class IngestionConfig(BaseModel):
         """
         if v < 0:
             return 800
+        return v
+
+    @field_validator("ingest_lock_heartbeat_interval")
+    @classmethod
+    def validate_heartbeat_interval(cls, v: int) -> int:
+        """Validate heartbeat interval is positive.
+
+        Args:
+            v: The heartbeat interval value to validate.
+
+        Returns:
+            The validated value, or default (50) if invalid.
+
+        """
+        if v <= 0:
+            return 50
+        return v
+
+    @field_validator("ingest_lock_ttl_seconds")
+    @classmethod
+    def validate_ttl_seconds(cls, v: int) -> int:
+        """Validate TTL seconds is at least 60.
+
+        Args:
+            v: The TTL seconds value to validate.
+
+        Returns:
+            The validated value, or default (300) if below minimum.
+
+        """
+        if v < INGEST_LOCK_TTL_MIN:
+            return 300
         return v
 
 

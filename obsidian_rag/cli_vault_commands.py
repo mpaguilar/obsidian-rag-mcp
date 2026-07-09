@@ -162,6 +162,14 @@ def _format_vault_list_json(results: list) -> str:
             "host_path": vault.host_path,
             "document_count": doc_count,
             "created_at": vault.created_at.isoformat() if vault.created_at else None,
+            "ingest_status": getattr(vault, "ingest_status", "idle"),
+            "ingest_started_at": (
+                vault.ingest_started_at.isoformat()
+                if getattr(vault, "ingest_started_at", None)
+                else None
+            ),
+            "ingest_pid": getattr(vault, "ingest_pid", None),
+            "ingest_force": getattr(vault, "ingest_force", False),
         }
         for vault, doc_count in results
     ]
@@ -170,6 +178,32 @@ def _format_vault_list_json(results: list) -> str:
     _msg = "_format_vault_list_json returning"
     log.debug(_msg)
     return result
+
+
+def _build_ingest_lines(vault: Vault, *, status_label: str = "Ingest") -> list[str]:
+    """Build ingest-status lines for a vault display.
+
+    Args:
+        vault: Vault instance with ingest attributes.
+        status_label: Label prefix for the status line (default: "Ingest").
+
+    Returns:
+        List of formatted strings for ingest state.
+
+    """
+    ingest_lines: list[str] = []
+    _ingest_status = getattr(vault, "ingest_status", "idle")
+    ingest_lines.append(f"{status_label}: {_ingest_status}")
+    _ingest_pid = getattr(vault, "ingest_pid", None)
+    if _ingest_pid is not None:
+        ingest_lines.append(f"Ingest PID: {_ingest_pid}")
+    _ingest_started_at = getattr(vault, "ingest_started_at", None)
+    if _ingest_started_at is not None:
+        ingest_lines.append(f"Ingest Started: {_ingest_started_at.isoformat()}")
+    _ingest_force = getattr(vault, "ingest_force", False)
+    if _ingest_force:
+        ingest_lines.append(f"Ingest Force: {_ingest_force}")
+    return ingest_lines
 
 
 def _format_vault_list_table(results: list) -> str:
@@ -197,6 +231,7 @@ def _format_vault_list_table(results: list) -> str:
         lines.append(
             f"Created: {vault.created_at.isoformat() if vault.created_at else 'N/A'}"
         )
+        lines.extend(_build_ingest_lines(vault))
         lines.append("")
 
     result = "\n".join(lines)
@@ -351,6 +386,7 @@ def _format_vault_details(vault: Vault, doc_count: int) -> str:
     lines.append(
         f"Created: {vault.created_at.isoformat() if vault.created_at else 'N/A'}"
     )
+    lines.extend(_build_ingest_lines(vault, status_label="Ingest Status"))
 
     result = "\n".join(lines)
     _msg = "_format_vault_details returning"

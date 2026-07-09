@@ -16,6 +16,16 @@ if TYPE_CHECKING:
     from obsidian_rag.config import Settings
 
 
+@pytest.fixture(autouse=True)
+def _patch_try_acquire_ingest_lock() -> None:
+    """Patch try_acquire_ingest_lock so vault-level tests don't need real DB setup."""
+    with patch(
+        "obsidian_rag.services.ingestion.try_acquire_ingest_lock",
+        return_value=(True, None),
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_settings() -> "Settings":
     """Create mock settings for testing."""

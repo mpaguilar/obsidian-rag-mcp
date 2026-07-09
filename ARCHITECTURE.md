@@ -34,6 +34,10 @@ The `content_vector` column uses HNSW (Hierarchical Navigable Small World) index
 - `container_path` (TEXT) - path inside container/Docker
 - `host_path` (TEXT) - path on host system
 - `created_at` (TIMESTAMP)
+- `ingest_status` (String(20), not NULL, default 'idle') - `IngestStatus` PyEnum values: 'idle', 'in_progress', 'failed' (stored as String, not native PostgreSQL enum)
+- `ingest_started_at` (TIMESTAMP, nullable) - when the current/last ingest started
+- `ingest_pid` (INTEGER, nullable) - OS PID of the ingest process holding the lock
+- `ingest_force` (BOOLEAN, default False) - whether the running ingest is a force re-ingest
 
 **documents table:**
 - `id` (UUID, PK)
@@ -350,6 +354,62 @@ Handles `UniqueViolation` on `uq_document_vault_path` during document insertion:
 2. `ingest_new_document()` catches `IntegrityError` → delegates to `handle_integrity_error()`
 3. `handle_integrity_error()` checks constraint name → `session.rollback()` → re-query → `_update_document()` + `_update_tasks()` → returns `("updated", chunks_created)`
 4. Back in `_ingest_single_file()`, the result tuple is set and method returns normally
+
+#### Ingest Locking (`services/ingestion_lock.py`)
+
+Vault-level ingest locking prevents concurrent ingestion of the same vault across processes. The four columns on the `vaults` table (`ingest_status`, `ingest_started_at`, `ingest_pid`, `ingest_force`) are the single source of ingest state — durable and cross-process.
+
+**Atomic entry gate:**
+- `acquire_ingest_lock()` issues an atomic `UPDATE vaults SET ingest_status='in_progress', ingest_started_at=now, ingest_pid=pid, ingest_force=:force WHERE id=:vault_id AND ingest_status IN ('idle','failed')`
+- `rowcount==1` means the caller won the lock; any other value means the vault is already locked or in an unexpected state.
+- `failed` is treated as reclaimable (included in the `IN` clause alongside `idle`), so a crashed process that left the vault in `failed` can be recovered immediately.
+
+**Policy matrix (fail-fast vs no-op skip):**
+- `(running_force=True, new_force=True)` → fail-fast
+- `(running_force=True, new_force=False)` → no-op skip (a force re-ingest already in progress; a regular ingest should wait silently)
+- `(running_force=False, new_force=True)` → fail-fast
+- `(running_force=False, new_force=False)` → fail-fast
+
+**Stale lock reclaim:**
+- If a lock holder crashes without releasing, `ingest_started_at` grows stale.
+- `reclaim_stale_lock()` issues an optimistic `UPDATE ... WHERE ingest_status='in_progress' AND ingest_started_at < now() - ttl_seconds`.
+- Only one concurrent reclaimer wins (`rowcount==1`); losers fall through to the normal fail-fast path.
+
+**Heartbeat:**
+- Every `ingest_lock_heartbeat_interval` files (default 50), `heartbeat_ingest_lock()` refreshes `ingest_started_at`.
+- If `rowcount==0` (lock was reclaimed or released by another path), the loop breaks.
+- A `lock_lost` flag is set so that `release_ingest_lock()` in the `finally` block skips releasing someone else's lock.
+
+**Cleanup:**
+- `ingest_vault()` wraps the file-processing body in a `try/finally`.
+- `release_ingest_lock()` is called in `finally` with `failed=exception_occurred`.
+- Release is idempotent: `rowcount==0` (lock already reclaimed) is silently accepted.
+- Short transactions: each lock operation (acquire, heartbeat, release, reclaim) uses its own `db_manager.get_session()`.
+
+**CLI error handling:**
+- `IngestLockError` raised from `ingest_vault()` is caught in the CLI layer, printed to `stderr`, and the command returns a non-zero exit code.
+
+**MCP error handling:**
+- `ingest()` wrapper catches `IngestLockError` BEFORE the generic `except Exception`.
+- Calls `tracker.clear_request(request_id)` (failed lock attempts are NOT cached — they are recoverable).
+- Returns `{"success": False, "error": ..., "total": 0, "skipped": True}`.
+- The no-op skip case (force already running) returns a synthetic `IngestionResult.to_dict()` that passes through unchanged.
+
+**Vault mutation guards:**
+- `delete_vault` and `update_vault` (when `container_path` changes) check `ingest_status='in_progress'` and block with a clear error message until the ingest completes.
+
+**Operator observability:**
+- `VaultResponse` exposes `ingest_status`, `ingest_started_at`, `ingest_pid`, and `ingest_force`.
+- CLI `vault list` and `vault get` display these fields in table and JSON output.
+
+**Configuration:**
+- `ingest_lock_heartbeat_interval` (default 50) — files processed between heartbeat updates.
+- `ingest_lock_ttl_seconds` (default 300) — seconds before an `in_progress` lock is considered stale and eligible for reclaim.
+
+**Relationship to `IngestRequestTracker`:**
+- `IngestRequestTracker` (in-memory, per-session) deduplicates exact duplicate MCP `ingest()` calls within the same process.
+- `ingestion_lock.py` (PostgreSQL-backed) coordinates across processes and hosts.
+- Both coexist: the in-memory dedup catches FastMCP double-invocations; the row lock catches concurrent CLI/MCP/server instances.
 
 ### 8. MCP Server Layer (`mcp_server/`)
 
@@ -694,15 +754,17 @@ File System → Scanner → FrontMatter Parser → Task Parser → Database
 ```
 
 1. Scanner discovers `.md` files
-2. MD5 checksum calculated and compared with database
-3. If changed or new:
+2. Ingest lock acquired on vault row before file processing (atomic `UPDATE` gate; released in `finally`)
+3. MD5 checksum calculated and compared with database
+4. Heartbeat sent every `ingest_lock_heartbeat_interval` files to refresh `ingest_started_at`
+5. If changed or new:
    - FrontMatter extracted and parsed (indentation tabs normalized to spaces before YAML parsing)
    - Tasks extracted from content
     - **Document-level tags merged into task tags** (case-insensitive dedup, lowercased) via `tag_merging.py`
     - **Well-known fields** (`scheduled`, `due`, `completion`, `priority`, `repeat`) stored in both typed columns AND `inline_fields` JSONB dict
     - Vector embeddings generated via LLM provider
     - Document and tasks stored in PostgreSQL
-4. If deleted from filesystem: hard delete from database
+6. If deleted from filesystem: hard delete from database
 
 ### Query Flow
 
@@ -734,6 +796,7 @@ When `output_file` is provided on an MCP query tool:
 | Max File Size | 10MB | Balance capability with memory constraints |
 | Configuration Format | YAML | Human-readable, supports comments |
 | Config Precedence | CLI > Env > Config > Defaults | Industry standard, maximum flexibility |
+| Vault Ingest Lock | PostgreSQL row columns + atomic UPDATE | Cross-process coordination without advisory locks; durable across crashes |
 
 ## Dependencies
 

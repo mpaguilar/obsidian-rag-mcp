@@ -118,6 +118,10 @@ class TestVaultList:
         mock_vault.container_path = "/data/test"
         mock_vault.host_path = "/home/user/test"
         mock_vault.created_at = datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)
+        mock_vault.ingest_status = "idle"
+        mock_vault.ingest_started_at = None
+        mock_vault.ingest_pid = None
+        mock_vault.ingest_force = False
 
         # Mock the query result (vault, document_count)
         mock_result = [(mock_vault, 42)]
@@ -171,6 +175,8 @@ class TestVaultList:
         assert output_data[0]["container_path"] == "/data/test"
         assert output_data[0]["host_path"] == "/home/user/test"
         assert output_data[0]["document_count"] == 42
+        assert output_data[0]["ingest_status"] == "idle"
+        assert output_data[0]["ingest_force"] is False
 
     @patch("obsidian_rag.cli_vault_commands.DatabaseManager")
     def test_vault_list_empty(self, mock_db_manager_class) -> None:

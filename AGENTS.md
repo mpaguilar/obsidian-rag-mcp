@@ -68,10 +68,11 @@ obsidian_rag/                    # Main package
 │   └── tasks.py                 # Task parsing
 └── services/                    # Service layer
     ├── __init__.py
-    ├── ingestion.py             # Document ingestion service
+    ├── ingestion.py             # Document ingestion service (vault-level ingest locking enforced inside ingest_vault() via ingestion_lock.py — cross-process atomic UPDATE gate, heartbeat, TTL-based stale reclaim, fail-fast/no-op-skip policy. See ARCHITECTURE.md 'Ingest Locking')
     ├── ingestion_chunks.py      # Chunk creation service
     ├── ingestion_cleanup.py     # Document deletion operations
     ├── ingestion_integrity.py   # IntegrityError recovery for document ingestion
+    ├── ingestion_lock.py        # Cross-process vault ingest locking (atomic UPDATE gate, heartbeat, stale reclaim)
     └── tag_merging.py           # Document/task tag merging utilities
 ```
 

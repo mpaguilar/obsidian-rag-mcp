@@ -142,6 +142,37 @@ def _handle_vault_not_found(
     return error_response
 
 
+def _handle_ingest_value_error(
+    tracker: "IngestRequestTracker",
+    request_id: str,
+    vault_name: str,
+    error: ValueError,
+) -> dict[str, object]:
+    """Handle ValueError from ingest handler.
+
+    Returns error response dict for vault-not-found errors.
+    Re-raises the error for all other ValueErrors after marking
+    the request as failed in the tracker.
+
+    Args:
+        tracker: The ingest request tracker.
+        request_id: The request ID for tracking.
+        vault_name: Name of the vault being ingested.
+        error: The ValueError raised by the ingest handler.
+
+    Returns:
+        Error response dictionary for vault-not-found errors.
+
+    Raises:
+        ValueError: Re-raises the original error for non-vault-not-found errors.
+
+    """
+    if _is_vault_not_found_error(error):
+        return _handle_vault_not_found(vault_name, str(error), request_id, tracker)
+    asyncio.run(tracker.fail_request(request_id, error))
+    raise error
+
+
 def _check_and_handle_duplicate(
     tracker: "IngestRequestTracker",
     request_id: str,

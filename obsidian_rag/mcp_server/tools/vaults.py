@@ -181,6 +181,21 @@ def _validate_vault_exists(session: "Session", vault_name: str) -> Vault:
     return vault
 
 
+def _is_ingest_in_progress(vault: Vault) -> bool:
+    """Return True if vault.ingest_status == 'in_progress'.
+
+    Args:
+        vault: The vault instance to check.
+
+    Returns:
+        True if an ingest is currently in progress for this vault.
+
+    """
+    _msg = "_is_ingest_in_progress starting"
+    log.debug(_msg)
+    return vault.ingest_status == "in_progress"
+
+
 def _count_vault_documents(session: "Session", vault_id: uuid.UUID) -> int:
     """Count documents in a vault.
 
@@ -543,12 +558,8 @@ def update_vault(
     _msg = "update_vault starting"
     log.debug(_msg)
 
-    # 1. Look up vault by name
-    vault = _lookup_vault_by_name(session, name=params.vault_name)
-    if vault is None:
-        _error_msg = f"Vault '{params.vault_name}' not found"
-        log.error(_error_msg)
-        raise ValueError(_error_msg)
+    # 1. Look up vault by name (raises ValueError if not found)
+    vault = _validate_vault_exists(session, vault_name=params.vault_name)
 
     # 2. Check if any fields to update
     if not _has_vault_changed(vault, params):
@@ -557,32 +568,102 @@ def update_vault(
         doc_count = _count_vault_documents(session, vault_id=vault.id)
         return create_vault_response(vault, doc_count)
 
-    # 3. Check container_path change requirements
+    # 3. Block container_path change if an ingest is in progress
+    ingest_error = _check_ingest_in_progress_for_update(vault, params)
+    if ingest_error is not None:
+        _msg = "update_vault returning (ingest in progress)"
+        log.debug(_msg)
+        return ingest_error
+
+    # 4. Check container_path change requirements
     container_error = _check_container_path_update(params, vault)
     if container_error is not None:
         _msg = "update_vault returning (container_path change without force)"
         log.debug(_msg)
         return container_error
 
-    # 4. Apply updates (handles container_path deletion if needed)
+    # 5. Apply updates (handles container_path deletion if needed)
     _apply_vault_updates(vault, params, session)
 
-    # 5. Try to flush, catch IntegrityError for duplicates
-    integrity_error = _handle_flush_with_integrity_check(
-        session,
-        params.container_path or vault.container_path,
-    )
-    if integrity_error is not None:
-        _msg = "update_vault returning (integrity error)"
-        log.debug(_msg)
-        return integrity_error
+    # 6. Try to flush, catch IntegrityError for duplicates
+    flush_result = _flush_update_session(session, vault, params)
+    if flush_result is not None:
+        return flush_result
 
-    # 6. Get new document count and return response
+    # 7. Get new document count and return response
     new_doc_count = _count_vault_documents(session, vault_id=vault.id)
 
     _msg = "update_vault returning (success)"
     log.debug(_msg)
     return create_vault_response(vault, new_doc_count)
+
+
+def _flush_update_session(
+    session: "Session",
+    vault: Vault,
+    params: VaultUpdateParams,
+) -> dict[str, object] | None:
+    """Flush session and handle integrity errors for vault updates.
+
+    Args:
+        session: Database session.
+        vault: The vault being updated.
+        params: Update parameters.
+
+    Returns:
+        Error dict if integrity error occurs, None on success.
+
+    """
+    _msg = "_flush_update_session starting"
+    log.debug(_msg)
+
+    integrity_error = _handle_flush_with_integrity_check(
+        session,
+        params.container_path or vault.container_path,
+    )
+    if integrity_error is not None:
+        _msg = "_flush_update_session returning (integrity error)"
+        log.debug(_msg)
+        return integrity_error
+
+    _msg = "_flush_update_session returning"
+    log.debug(_msg)
+    return None
+
+
+def _check_ingest_in_progress_for_update(
+    vault: Vault,
+    params: VaultUpdateParams,
+) -> dict[str, object] | None:
+    """Check if container_path update is blocked by an in-progress ingest.
+
+    Args:
+        vault: The current vault instance.
+        params: Update parameters.
+
+    Returns:
+        Error dict if container_path change is blocked by an in-progress ingest,
+        None if allowed.
+
+    """
+    _msg = "_check_ingest_in_progress_for_update starting"
+    log.debug(_msg)
+
+    if _is_container_path_changing(params, vault) and _is_ingest_in_progress(vault):
+        _error_msg = (
+            f"Cannot change container_path of vault '{params.vault_name}': an ingest is "
+            f"currently in progress (started at {vault.ingest_started_at}, PID {vault.ingest_pid}). "
+            f"Wait for it to finish or reclaim the stale lock."
+        )
+        log.warning(_error_msg)
+        return {
+            "success": False,
+            "error": _error_msg,
+        }
+
+    _msg = "_check_ingest_in_progress_for_update returning"
+    log.debug(_msg)
+    return None
 
 
 def _count_vault_cascade_targets(
@@ -670,6 +751,11 @@ def delete_vault(
             "success": False,
             "error": confirmation requirement message
         }
+        Error dict if an ingest is currently in progress:
+        {
+            "success": False,
+            "error": "Cannot delete vault 'X': an ingest is currently in progress ..."
+        }
 
     Raises:
         ValueError: If vault with given name is not found.
@@ -703,21 +789,34 @@ def delete_vault(
         log.error(_error_msg)
         raise ValueError(_error_msg)
 
-    # 3. Count cascade targets before deletion
+    # 3. Block deletion if an ingest is in progress
+    if _is_ingest_in_progress(vault):
+        _error_msg = (
+            f"Cannot delete vault '{vault_name}': an ingest is currently in progress "
+            f"(started at {vault.ingest_started_at}, PID {vault.ingest_pid}). "
+            f"Wait for it to finish or reclaim the stale lock."
+        )
+        log.warning(_error_msg)
+        return {
+            "success": False,
+            "error": _error_msg,
+        }
+
+    # 5. Count cascade targets before deletion
     doc_count, task_count, chunk_count = _count_vault_cascade_targets(
         session,
         vault_id=vault.id,
     )
 
-    # 4. Log warning before deletion
+    # 6. Log warning before deletion
     _warning_msg = f"Deleting vault '{vault_name}' with {doc_count} documents, {task_count} tasks, {chunk_count} chunks"
     log.warning(_warning_msg)
 
-    # 5. Delete the vault (SQLAlchemy cascade handles the rest)
+    # 7. Delete the vault (SQLAlchemy cascade handles the rest)
     session.delete(vault)
     session.flush()
 
-    # 6. Return success response
+    # 8. Return success response
     _msg = "delete_vault returning (success)"
     log.debug(_msg)
     return {

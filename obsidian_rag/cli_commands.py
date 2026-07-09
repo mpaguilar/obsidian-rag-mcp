@@ -38,6 +38,7 @@ from obsidian_rag.parsing.scanner import (
     scan_markdown_files,
 )
 from obsidian_rag.services.ingestion import IngestionService, IngestVaultOptions
+from obsidian_rag.services.ingestion_lock import IngestLockError
 
 log = logging.getLogger(__name__)
 
@@ -282,16 +283,16 @@ def _run_ingestion(
         pool_recycle=settings.database.pool_recycle,
     )
 
-    if options.dry_run:
-        click.echo("DRY RUN: No changes will be written to the database")
-
-    if options.no_delete:
-        click.echo("Deletion phase skipped (--no-delete flag)")
-
-    if options.force:
-        click.echo(
-            "Force re-ingestion enabled: all documents will be re-processed regardless of checksums"
-        )
+    for flag, message in (
+        (options.dry_run, "DRY RUN: No changes will be written to the database"),
+        (options.no_delete, "Deletion phase skipped (--no-delete flag)"),
+        (
+            options.force,
+            "Force re-ingestion enabled: all documents will be re-processed regardless of checksums",
+        ),
+    ):
+        if flag:
+            click.echo(message)
 
     files = _scan_vault(vault_path)
     if not files:
@@ -323,23 +324,27 @@ def _run_ingestion(
         no_delete=options.no_delete,
         force=options.force,
     )
-    result = ingestion_service.ingest_vault(vault_path, ingest_options)
-
-    elapsed_time = time.time() - start_time
-    stats = {
-        "new": result.new,
-        "updated": result.updated,
-        "unchanged": result.unchanged,
-        "errors": result.errors,
-    }
-    _report_ingest_results(
-        result.total,
-        stats,
-        elapsed_time,
-        result.deleted,
-        no_delete=options.no_delete,
-        force=options.force,
-    )
+    try:
+        result = ingestion_service.ingest_vault(vault_path, ingest_options)
+        elapsed_time = time.time() - start_time
+        stats = {
+            "new": result.new,
+            "updated": result.updated,
+            "unchanged": result.unchanged,
+            "errors": result.errors,
+        }
+        _report_ingest_results(
+            result.total,
+            stats,
+            elapsed_time,
+            result.deleted,
+            no_delete=options.no_delete,
+            force=options.force,
+        )
+    except IngestLockError as err:
+        _msg = f"Error: {err}"
+        log.warning(_msg)
+        click.echo(_msg, err=True)
 
 
 def _format_query_results_json(results: list) -> str:

@@ -123,6 +123,10 @@ class VaultResponse(BaseModel):
         host_path: Path on host system for link construction.
         document_count: Number of documents in the vault.
         created_at: Timestamp when the vault was created.
+        ingest_status: Current ingest state ('idle', 'in_progress', or 'failed').
+        ingest_started_at: Timestamp the current ingest started (or None).
+        ingest_pid: OS PID of the ingest process (or None).
+        ingest_force: Whether the running ingest is a force re-ingest.
 
     """
 
@@ -133,6 +137,10 @@ class VaultResponse(BaseModel):
     host_path: str
     document_count: int
     created_at: datetime
+    ingest_status: str = "idle"
+    ingest_started_at: datetime | None = None
+    ingest_pid: int | None = None
+    ingest_force: bool = False
 
 
 class VaultListResponse(BaseModel):
@@ -406,6 +414,10 @@ def create_vault_response(
         host_path=vault.host_path,
         document_count=document_count,
         created_at=vault.created_at,
+        ingest_status=getattr(vault, "ingest_status", "idle"),
+        ingest_started_at=getattr(vault, "ingest_started_at", None),
+        ingest_pid=getattr(vault, "ingest_pid", None),
+        ingest_force=getattr(vault, "ingest_force", False),
     )
     _msg = "create_vault_response returning"
     log.debug(_msg)

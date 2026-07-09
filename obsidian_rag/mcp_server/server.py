@@ -58,6 +58,7 @@ from obsidian_rag.mcp_server.vault_tools import (
     get_vault,
     update_vault,
 )
+from obsidian_rag.services.ingestion_lock import IngestLockError
 
 # Global session manager instance
 _session_manager: SessionManager | None = None
@@ -91,8 +92,8 @@ def _clear_ingest_tracker() -> None:
 
 from obsidian_rag.mcp_server.ingest_helpers import (
     _check_and_handle_duplicate,
-    _create_vault_error_response,
     _generate_request_id,
+    _handle_ingest_value_error,
 )
 
 # Tool Wrappers (access dependencies through registry)
@@ -469,17 +470,15 @@ def ingest(
 
         return result
 
-    except ValueError as e:
-        error_msg = str(e)
-        if "not found in configuration" in error_msg and "Vault" in error_msg:
-            _msg = f"client requested non-existent vault '{vault_name}'"
-            log.warning(_msg)
-            error_response = _create_vault_error_response(error_msg)
-            asyncio.run(tracker.clear_request(request_id))
-            return error_response
+    except IngestLockError as e:
+        # Recoverable: do NOT cache — a retry after the running ingest finishes should succeed
+        asyncio.run(tracker.clear_request(request_id))
+        _msg = f"Request {request_id} skipped due to ingest lock: {e}"
+        log.info(_msg)
+        return {"success": False, "error": str(e), "total": 0, "skipped": True}
 
-        asyncio.run(tracker.fail_request(request_id, e))
-        raise
+    except ValueError as e:
+        return _handle_ingest_value_error(tracker, request_id, vault_name, e)
 
     except Exception as e:
         asyncio.run(tracker.fail_request(request_id, e))

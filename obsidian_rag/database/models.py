@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -96,6 +97,14 @@ class TaskPriority(PyEnum):
     LOWEST = "lowest"
 
 
+class IngestStatus(PyEnum):
+    """Enumeration of possible vault ingest states."""
+
+    IDLE = "idle"
+    IN_PROGRESS = "in_progress"
+    FAILED = "failed"
+
+
 class Vault(Base):
     """Represents an Obsidian vault.
 
@@ -106,6 +115,10 @@ class Vault(Base):
         container_path: Path inside container/Docker for file operations.
         host_path: Path on host system for link construction.
         created_at: When the vault record was created.
+        ingest_status: Current ingest state (idle, in_progress, failed).
+        ingest_started_at: When the current/last ingest started.
+        ingest_pid: Process ID of the running ingest (if any).
+        ingest_force: Whether the current ingest is a force re-ingest.
         documents: Related documents (one-to-many relationship).
 
     """
@@ -130,6 +143,23 @@ class Vault(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
+    )
+    ingest_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=IngestStatus.IDLE.value,
+        server_default="idle",
+    )
+    ingest_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    ingest_pid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ingest_force: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
     )
 
     # Relationships

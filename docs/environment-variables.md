@@ -8,11 +8,11 @@ Complete reference for all environment variables supported by Obsidian RAG.
 |----------|-------|--------|
 | Database | 6 | `OBSIDIAN_RAG_DATABASE_*` |
 | Endpoints | 15 | `OBSIDIAN_RAG_ENDPOINTS_*` |
-| Ingestion | 5 | `OBSIDIAN_RAG_INGESTION_*` |
+| Ingestion | 7 | `OBSIDIAN_RAG_INGESTION_*` |
 | Chunking | 7 | `OBSIDIAN_RAG_CHUNKING_*` |
 | Logging | 2 | `OBSIDIAN_RAG_LOGGING_*` |
 | MCP Server | 11 | `OBSIDIAN_RAG_MCP_*` |
-| **Total** | **46** | `OBSIDIAN_RAG_*` |
+| **Total** | **48** | `OBSIDIAN_RAG_*` |
 
 ## Configuration Precedence
 
@@ -182,6 +182,16 @@ These variables are used but not prefixed with `OBSIDIAN_RAG_`:
 - **Type:** integer
 - **Default:** `800`
 - **Description:** Legacy: Character overlap between chunks
+
+### OBSIDIAN_RAG_INGESTION_INGEST_LOCK_HEARTBEAT_INTERVAL
+- **Type:** integer
+- **Default:** `50`
+- **Description:** Files processed between heartbeat UPDATEs to vaults.ingest_started_at
+
+### OBSIDIAN_RAG_INGESTION_INGEST_LOCK_TTL_SECONDS
+- **Type:** integer
+- **Default:** `300`
+- **Description:** Seconds before an in_progress lock is considered stale and reclaimable
 
 ---
 

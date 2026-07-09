@@ -379,6 +379,7 @@ class TestUpdateVault:
         vault.container_path = "/data/personal"
         vault.host_path = "/home/user/personal"
         vault.created_at = datetime.now(UTC)
+        vault.ingest_status = "idle"
 
         mock_session = MagicMock()
         mock_session.bind.dialect.name = "postgresql"
@@ -430,6 +431,7 @@ class TestUpdateVault:
         vault.container_path = "/data/personal"
         vault.host_path = "/home/user/personal"
         vault.created_at = datetime.now(UTC)
+        vault.ingest_status = "idle"
 
         mock_session = MagicMock()
         mock_session.bind.dialect.name = "postgresql"
@@ -475,6 +477,7 @@ class TestUpdateVault:
         vault.container_path = "/data/personal"
         vault.host_path = "/home/user/personal"
         vault.created_at = datetime.now(UTC)
+        vault.ingest_status = "idle"
 
         mock_session = MagicMock()
         mock_session.bind.dialect.name = "postgresql"
@@ -512,6 +515,7 @@ class TestUpdateVault:
         vault.container_path = "/data/personal"
         vault.host_path = "/home/user/personal"
         vault.created_at = datetime.now(UTC)
+        vault.ingest_status = "idle"
 
         mock_session = MagicMock()
         mock_session.bind.dialect.name = "postgresql"
@@ -571,6 +575,7 @@ class TestUpdateVault:
         vault.container_path = "/data/personal"
         vault.host_path = "/home/user/personal"
         vault.created_at = datetime.now(UTC)
+        vault.ingest_status = "idle"
 
         mock_session = MagicMock()
         mock_session.bind.dialect.name = "postgresql"
@@ -616,6 +621,7 @@ class TestUpdateVault:
         vault.container_path = "/data/personal"
         vault.host_path = "/home/user/personal"
         vault.created_at = datetime.now(UTC)
+        vault.ingest_status = "idle"
 
         mock_session = MagicMock()
         mock_session.bind.dialect.name = "postgresql"
@@ -686,6 +692,7 @@ class TestUpdateVault:
         vault.container_path = "/data/personal"
         vault.host_path = "/home/user/personal"
         vault.created_at = datetime.now(UTC)
+        vault.ingest_status = "idle"
 
         mock_session = MagicMock()
         mock_session.bind.dialect.name = "postgresql"
@@ -735,6 +742,7 @@ class TestUpdateVault:
         vault.container_path = "/data/personal"
         vault.host_path = "/home/user/personal"
         vault.created_at = datetime.now(UTC)
+        vault.ingest_status = "idle"
 
         mock_session = MagicMock()
         mock_session.bind.dialect.name = "postgresql"
