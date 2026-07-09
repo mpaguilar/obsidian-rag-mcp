@@ -393,7 +393,13 @@ Vault-level ingest locking prevents concurrent ingestion of the same vault acros
 - `ingest()` wrapper catches `IngestLockError` BEFORE the generic `except Exception`.
 - Calls `tracker.clear_request(request_id)` (failed lock attempts are NOT cached — they are recoverable).
 - Returns `{"success": False, "error": ..., "total": 0, "skipped": True}`.
-- The no-op skip case (force already running) returns a synthetic `IngestionResult.to_dict()` that passes through unchanged.
+- The no-op skip case (force already running) returns a synthetic `IngestionResult.to_dict()`
+  carrying `skipped=True`. The wrapper detects `result.get("skipped")` and, mirroring the
+  `IngestLockError` recoverable path, calls `tracker.clear_request(request_id)` (NOT
+  `complete_request`) and returns the skip result to the caller without caching. This keeps
+  the in-memory dedup aligned with the durable PostgreSQL lock state: a retry after the
+  running force ingest finishes (or the stale lock auto-reclaims) re-invokes the handler
+  instead of returning a stuck cached "Skipped" result.
 
 **Vault mutation guards:**
 - `delete_vault` and `update_vault` (when `container_path` changes) check `ingest_status='in_progress'` and block with a clear error message until the ingest completes.

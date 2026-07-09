@@ -428,6 +428,7 @@ def try_acquire_ingest_lock(
                 empty_documents=0,
                 processing_time_seconds=time.time() - start_time,
                 message=_msg,
+                skipped=True,  # NEW — mark no-op-skip (REQ-002)
             ),
         )
     return (True, None)

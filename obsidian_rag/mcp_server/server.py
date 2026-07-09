@@ -33,7 +33,10 @@ from obsidian_rag.mcp_server.handlers import (
     _ingest_handler,
     parse_json_str,
 )
-from obsidian_rag.mcp_server.ingest_tracker import IngestRequestTracker
+from obsidian_rag.mcp_server.ingest_tracker import (
+    IngestRequestTracker,
+    _process_ingest_result,
+)
 from obsidian_rag.mcp_server.middleware import SessionLoggingMiddleware
 from obsidian_rag.mcp_server.models import (
     HealthResponse,
@@ -453,12 +456,7 @@ def ingest(
             force=force,
         )
         result = _ingest_handler(params)
-
-        asyncio.run(tracker.complete_request(request_id, result))
-        _msg = f"Request {request_id} completed successfully"
-        log.info(_msg)
-
-        return result
+        return _process_ingest_result(tracker, request_id, result)
 
     except IngestLockError as e:
         # Recoverable: do NOT cache — a retry after the running ingest finishes should succeed

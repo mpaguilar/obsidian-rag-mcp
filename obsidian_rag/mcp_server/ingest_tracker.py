@@ -192,3 +192,52 @@ class IngestRequestTracker:
         self._requests.clear()
         _msg = "All requests cleared"
         log.debug(_msg)
+
+
+def _handle_skip_result(
+    tracker: IngestRequestTracker,
+    request_id: str,
+    result: dict[str, object],
+) -> bool:
+    """Clear the tracker and signal handled when result is a no-op-skip.
+
+    Args:
+        tracker: The per-process ingest request tracker.
+        request_id: Deterministic ID for this ingest request.
+        result: The dict returned by _ingest_handler.
+
+    Returns:
+        True if result is a no-op-skip (caller should return result without
+        caching); False otherwise (caller should proceed to complete_request).
+
+    """
+    if not result.get("skipped"):
+        return False
+    asyncio.run(tracker.clear_request(request_id))
+    _msg = f"Request {request_id} skipped (no-op-skip); not cached"
+    log.info(_msg)
+    return True
+
+
+def _process_ingest_result(
+    tracker: IngestRequestTracker,
+    request_id: str,
+    result: dict[str, object],
+) -> dict[str, object]:
+    """Finalize an ingest result, handling no-op-skip or caching.
+
+    Args:
+        tracker: The per-process ingest request tracker.
+        request_id: Deterministic ID for this ingest request.
+        result: The dict returned by _ingest_handler.
+
+    Returns:
+        The result dict, after clearing tracker (skip) or caching it.
+
+    """
+    if _handle_skip_result(tracker, request_id, result):
+        return result
+    asyncio.run(tracker.complete_request(request_id, result))
+    _msg = f"Request {request_id} completed successfully"
+    log.info(_msg)
+    return result

@@ -284,6 +284,7 @@ def test_ingest_vault_no_op_skip_returns_synthetic_result(
     mock_release.assert_not_called()
     assert result.total == 0
     assert "Skipped" in result.message
+    assert result.skipped is True  # NEW (REQ-002)
 
 
 # ─── heartbeat tests ───

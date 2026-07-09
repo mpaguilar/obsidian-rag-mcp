@@ -416,6 +416,7 @@ def test_try_acquire_ingest_lock_skip_with_str_vault_name() -> None:
     assert skip_result is not None
     assert skip_result.total == 0
     assert "MyVault" in skip_result.message
+    assert skip_result.skipped is True  # NEW (REQ-002)
 
 
 def test_try_acquire_ingest_lock_skip_with_vault_config() -> None:
@@ -441,3 +442,4 @@ def test_try_acquire_ingest_lock_skip_with_vault_config() -> None:
     assert lock_acquired is False
     assert skip_result is not None
     assert "/data/myvault" in skip_result.message
+    assert skip_result.skipped is True  # NEW (REQ-002)

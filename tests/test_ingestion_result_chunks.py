@@ -137,6 +137,7 @@ class TestIngestionResultChunkFields:
             "content_chunk_count",
             "processing_time_seconds",
             "message",
+            "skipped",
         }
 
         assert set(result_dict.keys()) == expected_keys

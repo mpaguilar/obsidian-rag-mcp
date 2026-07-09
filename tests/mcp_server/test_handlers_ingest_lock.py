@@ -253,3 +253,275 @@ def test_ingest_wrapper_normal_path_still_works():
             assert asyncio.run(check_completed()) is True
 
     _clear_ingest_tracker()
+
+
+def test_ingest_wrapper_clears_tracker_on_noop_skip() -> None:
+    """A skipped result dict from _ingest_handler clears the tracker (REQ-001, REQ-003)."""
+    from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
+    from obsidian_rag.mcp_server.server import (
+        _clear_ingest_tracker,
+        _get_ingest_tracker,
+        ingest,
+    )
+
+    _clear_ingest_tracker()
+
+    mock_registry = Mock()
+    mock_registry.settings = Mock()
+    mock_registry.db_manager = Mock()
+    mock_registry.embedding_provider = None
+
+    tracker = _get_ingest_tracker()
+    request_id = _generate_request_id(
+        "test-vault", "/path", no_delete=False, force=False
+    )
+
+    skip_result = {
+        "total": 0,
+        "new": 0,
+        "updated": 0,
+        "unchanged": 0,
+        "errors": 0,
+        "deleted": 0,
+        "chunks_created": 0,
+        "empty_documents": 0,
+        "processing_time_seconds": 0.0,
+        "message": "Skipped: force re-ingest already in progress for vault 'test-vault'",
+        "skipped": True,
+    }
+
+    with patch("obsidian_rag.mcp_server.server._get_registry") as mock_get_registry:
+        mock_get_registry.return_value = mock_registry
+        with patch("obsidian_rag.mcp_server.server._ingest_handler") as mock_handler:
+            mock_handler.return_value = skip_result
+
+            result = ingest("test-vault", "/path", no_delete=False)
+
+            assert result == skip_result
+
+            async def check_cleared():
+                return request_id not in tracker._requests
+
+            assert asyncio.run(check_cleared()) is True
+
+    _clear_ingest_tracker()
+
+
+def test_ingest_wrapper_does_not_cache_noop_skip() -> None:
+    """Skip result is not cached; second identical call re-invokes handler (REQ-001)."""
+    from obsidian_rag.mcp_server.server import _clear_ingest_tracker, ingest
+
+    _clear_ingest_tracker()
+
+    mock_registry = Mock()
+    mock_registry.settings = Mock()
+    mock_registry.db_manager = Mock()
+    mock_registry.embedding_provider = None
+
+    skip_result = {
+        "total": 0,
+        "new": 0,
+        "updated": 0,
+        "unchanged": 0,
+        "errors": 0,
+        "deleted": 0,
+        "chunks_created": 0,
+        "empty_documents": 0,
+        "processing_time_seconds": 0.0,
+        "message": "Skipped: force re-ingest already in progress for vault 'test-vault'",
+        "skipped": True,
+    }
+    success_result = {"total": 10, "message": "Success"}
+
+    with patch("obsidian_rag.mcp_server.server._get_registry") as mock_get_registry:
+        mock_get_registry.return_value = mock_registry
+
+        with patch("obsidian_rag.mcp_server.server._ingest_handler") as mock_handler:
+            mock_handler.side_effect = [skip_result, success_result]
+
+            result1 = ingest("test-vault", "/path", no_delete=False)
+            assert result1 == skip_result
+            assert mock_handler.call_count == 1
+
+            result2 = ingest("test-vault", "/path", no_delete=False)
+            assert result2 == success_result
+            assert mock_handler.call_count == 2
+
+    _clear_ingest_tracker()
+
+
+def test_ingest_wrapper_returns_skip_result_unchanged() -> None:
+    """Skip dict is returned verbatim without success/error wrapping (REQ-003)."""
+    from obsidian_rag.mcp_server.server import _clear_ingest_tracker, ingest
+
+    _clear_ingest_tracker()
+
+    mock_registry = Mock()
+    mock_registry.settings = Mock()
+    mock_registry.db_manager = Mock()
+    mock_registry.embedding_provider = None
+
+    skip_result = {
+        "total": 0,
+        "message": "Skipped: force re-ingest already in progress",
+        "skipped": True,
+    }
+
+    with patch("obsidian_rag.mcp_server.server._get_registry") as mock_get_registry:
+        mock_get_registry.return_value = mock_registry
+        with patch("obsidian_rag.mcp_server.server._ingest_handler") as mock_handler:
+            mock_handler.return_value = skip_result
+
+            result = ingest("test-vault", "/path", no_delete=False)
+            assert result == skip_result
+            assert "success" not in result
+            assert "error" not in result
+
+    _clear_ingest_tracker()
+
+
+def test_handle_skip_result_helper_returns_false_for_non_skip() -> None:
+    """_handle_skip_result returns False when result has no skipped key."""
+    from obsidian_rag.mcp_server.ingest_tracker import _handle_skip_result
+    from obsidian_rag.mcp_server.server import (
+        _clear_ingest_tracker,
+        _get_ingest_tracker,
+    )
+
+    _clear_ingest_tracker()
+    tracker = _get_ingest_tracker()
+    request_id = "test-req-id"
+    tracker._requests[request_id] = Mock()
+
+    result = _handle_skip_result(tracker, request_id, {"total": 1})
+    assert result is False
+    assert request_id in tracker._requests
+
+    _clear_ingest_tracker()
+
+
+def test_handle_skip_result_helper_returns_true_and_clears_for_skip() -> None:
+    """_handle_skip_result returns True and clears tracker when skipped=True."""
+    from obsidian_rag.mcp_server.ingest_tracker import _handle_skip_result
+    from obsidian_rag.mcp_server.server import (
+        _clear_ingest_tracker,
+        _get_ingest_tracker,
+    )
+
+    _clear_ingest_tracker()
+    tracker = _get_ingest_tracker()
+    request_id = "test-req-id"
+    tracker._requests[request_id] = Mock()
+
+    result = _handle_skip_result(tracker, request_id, {"skipped": True})
+    assert result is True
+
+    async def check_cleared():
+        return request_id not in tracker._requests
+
+    assert asyncio.run(check_cleared()) is True
+
+    _clear_ingest_tracker()
+
+
+def test_ingest_wrapper_normal_path_still_caches_when_skipped_absent() -> None:
+    """Result dict without skipped key is still cached (REQ-004 regression)."""
+    from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
+    from obsidian_rag.mcp_server.server import (
+        _clear_ingest_tracker,
+        _get_ingest_tracker,
+        ingest,
+    )
+
+    _clear_ingest_tracker()
+
+    mock_registry = Mock()
+    mock_registry.settings = Mock()
+    mock_registry.db_manager = Mock()
+    mock_registry.embedding_provider = None
+
+    tracker = _get_ingest_tracker()
+    request_id = _generate_request_id(
+        "test-vault", "/path", no_delete=False, force=False
+    )
+
+    expected_result = {
+        "total": 10,
+        "new": 5,
+        "updated": 3,
+        "unchanged": 2,
+        "errors": 0,
+        "deleted": 0,
+        "processing_time_seconds": 1.5,
+        "message": "Ingested 10 files",
+    }
+
+    with patch("obsidian_rag.mcp_server.server._get_registry") as mock_get_registry:
+        mock_get_registry.return_value = mock_registry
+        with patch("obsidian_rag.mcp_server.server._ingest_handler") as mock_handler:
+            mock_handler.return_value = expected_result
+
+            result = ingest("test-vault", "/path", no_delete=False)
+            assert result == expected_result
+
+            async def check_completed():
+                entry = tracker._requests.get(request_id)
+                if entry is None:
+                    return False
+                return entry.status == "complete" and entry.result == expected_result
+
+            assert asyncio.run(check_completed()) is True
+
+    _clear_ingest_tracker()
+
+
+def test_ingest_wrapper_normal_path_still_caches_when_skipped_false() -> None:
+    """Result dict with explicit skipped=False is still cached (REQ-004 regression)."""
+    from obsidian_rag.mcp_server.ingest_helpers import _generate_request_id
+    from obsidian_rag.mcp_server.server import (
+        _clear_ingest_tracker,
+        _get_ingest_tracker,
+        ingest,
+    )
+
+    _clear_ingest_tracker()
+
+    mock_registry = Mock()
+    mock_registry.settings = Mock()
+    mock_registry.db_manager = Mock()
+    mock_registry.embedding_provider = None
+
+    tracker = _get_ingest_tracker()
+    request_id = _generate_request_id(
+        "test-vault", "/path", no_delete=False, force=False
+    )
+
+    expected_result = {
+        "total": 10,
+        "new": 5,
+        "updated": 3,
+        "unchanged": 2,
+        "errors": 0,
+        "deleted": 0,
+        "processing_time_seconds": 1.5,
+        "message": "Ingested 10 files",
+        "skipped": False,
+    }
+
+    with patch("obsidian_rag.mcp_server.server._get_registry") as mock_get_registry:
+        mock_get_registry.return_value = mock_registry
+        with patch("obsidian_rag.mcp_server.server._ingest_handler") as mock_handler:
+            mock_handler.return_value = expected_result
+
+            result = ingest("test-vault", "/path", no_delete=False)
+            assert result == expected_result
+
+            async def check_completed():
+                entry = tracker._requests.get(request_id)
+                if entry is None:
+                    return False
+                return entry.status == "complete" and entry.result == expected_result
+
+            assert asyncio.run(check_completed()) is True
+
+    _clear_ingest_tracker()

@@ -49,6 +49,8 @@ class IngestionResult:
         avg_chunk_tokens: Average token count per chunk.
         task_chunk_count: Number of chunks containing tasks.
         content_chunk_count: Number of regular content chunks.
+        skipped: True only on the synthetic no-op-skip result built when a force
+            re-ingest holds the vault lock; False for all real ingestion results.
         processing_time_seconds: Time taken to process all files.
         message: Human-readable summary message.
 
@@ -69,6 +71,7 @@ class IngestionResult:
     avg_chunk_tokens: int = 0
     task_chunk_count: int = 0
     content_chunk_count: int = 0
+    skipped: bool = False
 
     def to_dict(self) -> dict[str, object]:
         """Convert result to dictionary."""
@@ -87,4 +90,5 @@ class IngestionResult:
             "content_chunk_count": self.content_chunk_count,
             "processing_time_seconds": self.processing_time_seconds,
             "message": self.message,
+            "skipped": self.skipped,
         }
