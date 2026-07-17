@@ -248,6 +248,12 @@ class OutputFileConfig(BaseModel):
             part of the URL path (endpoint/bucket/key); REQUIRED for non-AWS
             S3-compatible services such as Garage and MinIO. Clients targeting
             Garage/MinIO MUST set addressing_style="path".
+        region: Optional SigV4 signing region override. Highest precedence in the
+            region resolution chain: per-call region → app-config default
+            (OBSIDIAN_RAG_MCP_OUTPUT_FILE_S3_REGION) → URL-derived region →
+            GetBucketLocation probe (non-AWS endpoints only) → us-east-1 fallback.
+            Set this for Garage/MinIO/Ceph endpoints whose configured region
+            is not derivable from the hostname (e.g. 'garage', 'eu-west-1').
     """
 
     type: Literal["local", "s3"]
@@ -258,6 +264,17 @@ class OutputFileConfig(BaseModel):
     access_key_id: str | None = None
     secret_access_key: str | None = None
     addressing_style: str | None = "virtual"
+    region: str | None = Field(
+        default=None,
+        description=(
+            "Optional SigV4 signing region override. Highest precedence in the "
+            "region resolution chain: per-call region → app-config default "
+            "(OBSIDIAN_RAG_MCP_OUTPUT_FILE_S3_REGION) → URL-derived region → "
+            "GetBucketLocation probe (non-AWS endpoints only) → us-east-1 fallback. "
+            "Set this for Garage/MinIO/Ceph endpoints whose configured region "
+            "is not derivable from the hostname (e.g. 'garage', 'eu-west-1')."
+        ),
+    )
 
 
 class OutputFileResult(BaseModel):

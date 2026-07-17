@@ -399,6 +399,89 @@ class Settings(BaseSettings):
         log.debug(_msg)
         return data
 
+    @staticmethod
+    def _collect_mcp_env_vars() -> dict[str, object]:
+        """Collect OBSIDIAN_RAG_MCP_* environment variables.
+
+        Returns:
+            Dictionary mapping lowercased field names to env var values.
+
+        """
+        mcp_prefix = "OBSIDIAN_RAG_MCP_"
+        mcp_data: dict[str, object] = {}
+
+        for key, value in os.environ.items():
+            if not key.startswith(mcp_prefix):
+                continue
+
+            field_name = key[len(mcp_prefix) :].lower()
+            mcp_data[field_name] = value
+
+        return mcp_data
+
+    @staticmethod
+    def _merge_mcp_env_vars(
+        mcp_data: dict[str, object],
+        data: dict[str, object],
+    ) -> dict[str, object]:
+        """Merge collected MCP env vars into the data dictionary.
+
+        Args:
+            mcp_data: Collected MCP environment variables.
+            data: The raw data dictionary being validated.
+
+        Returns:
+            The data dictionary with MCP env vars merged in.
+
+        """
+        existing_mcp = data.get("mcp", {})
+        if hasattr(existing_mcp, "model_dump"):
+            existing_mcp = existing_mcp.model_dump()
+
+        if isinstance(existing_mcp, dict):
+            for field_name, field_value in mcp_data.items():
+                if (
+                    field_name not in existing_mcp
+                    or existing_mcp.get(field_name) is None
+                ):
+                    existing_mcp[field_name] = field_value
+            data["mcp"] = existing_mcp
+        else:
+            data["mcp"] = mcp_data
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_mcp_env_vars(cls, data: dict[str, object]) -> dict[str, object]:
+        """Parse MCP environment variables into mcp dict.
+
+        Pydantic settings' env_nested_delimiter only works cleanly when
+        nested field names do not contain underscores. Fields like
+        output_file_s3_region cannot be set via
+        OBSIDIAN_RAG_MCP_OUTPUT_FILE_S3_REGION with a single-underscore
+        delimiter because the field name itself contains underscores.
+        This validator catches OBSIDIAN_RAG_MCP_* variables and maps them
+        directly into the mcp dictionary.
+
+        Args:
+            data: The raw data dictionary being validated.
+
+        Returns:
+            The data dictionary with parsed MCP env vars merged in.
+
+        """
+        _msg = "Parsing MCP environment variables"
+        log.debug(_msg)
+
+        mcp_data = cls._collect_mcp_env_vars()
+        if mcp_data:
+            data = cls._merge_mcp_env_vars(mcp_data, data)
+
+        _msg = "MCP environment variables parsed"
+        log.debug(_msg)
+        return data
+
     @classmethod
     def settings_customise_sources(
         cls,

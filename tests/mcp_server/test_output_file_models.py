@@ -179,6 +179,65 @@ def test_output_file_config_serialization_addressing_style() -> None:
     assert restored.addressing_style == "path"
 
 
+def test_output_file_config_region_default_none() -> None:
+    """Default region is None for both local and s3 types."""
+    config_s3 = OutputFileConfig(
+        type="s3",
+        endpoint="https://s3.example.com",
+        bucket="my-bucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    )
+    assert config_s3.region is None
+    config_local = OutputFileConfig(type="local", path="/tmp/results.json")
+    assert config_local.region is None
+
+
+def test_output_file_config_region_explicit_set() -> None:
+    """Explicit region='garage' round-trips through construction."""
+    config = OutputFileConfig(
+        type="s3",
+        endpoint="http://garage:3900",
+        bucket="my-bucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        region="garage",
+    )
+    assert config.region == "garage"
+
+
+def test_output_file_config_region_serialization() -> None:
+    """Round-trip a config with region='eu-west-1' through model_dump + model_validate."""
+    original = OutputFileConfig(
+        type="s3",
+        endpoint="https://s3.example.com",
+        bucket="my-bucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        region="eu-west-1",
+    )
+    dumped = original.model_dump()
+    restored = OutputFileConfig.model_validate(dumped)
+    assert restored.region == "eu-west-1"
+
+
+def test_output_file_config_region_none_allowed() -> None:
+    """Explicit region=None is permitted."""
+    config = OutputFileConfig(
+        type="s3",
+        endpoint="https://s3.example.com",
+        bucket="my-bucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        region=None,
+    )
+    assert config.region is None
+
+
 def test_output_file_config_invalid_type() -> None:
     """Test OutputFileConfig with invalid type raises ValidationError."""
     with pytest.raises(ValidationError):

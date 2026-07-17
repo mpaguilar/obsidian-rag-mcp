@@ -337,6 +337,17 @@ class MCPConfig(BaseModel):
     rate_limit_per_second: float = 10.0
     rate_limit_window: int = 60
     enable_request_logging: bool = True
+    output_file_s3_region: str | None = Field(
+        default=None,
+        description=(
+            "Deployment-wide default SigV4 signing region for S3 output_file "
+            "uploads. Env var: OBSIDIAN_RAG_MCP_OUTPUT_FILE_S3_REGION. Used as "
+            "the app-config default in the region resolution chain when the "
+            "caller does not supply OutputFileConfig.region. Set this once per "
+            "deployment for Garage/MinIO/Ceph endpoints whose configured region "
+            "is not derivable from the hostname (e.g. 'garage')."
+        ),
+    )
 
     @field_validator("host")
     @classmethod

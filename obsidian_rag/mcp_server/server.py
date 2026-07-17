@@ -137,7 +137,7 @@ def query_documents(
         output_file: Optional output file configuration. When provided, the
             full result is written to the specified target (local or S3) and
             a compact summary is returned instead. Can be passed as a dict,
-            JSON string, or OutputFileConfig object.
+            JSON string, or OutputFileConfig object. S3 output_file config accepts an optional `region` field (SigV4 signing region override); see OutputFileConfig.region.
         vault_name: Optional vault name to scope search results. None means all vaults. Non-existent vault names raise ValueError, caught and returned as error dict.
 
     Returns:
@@ -163,10 +163,7 @@ def query_documents(
         include_content=include_content,
         vault_name=vault_name,
     )
-    parsed_output_file = _parse_output_file(output_file)
-    if parsed_output_file is not None:
-        return write_output_file(result, parsed_output_file)
-    return result
+    return _dispatch_output_file(result, output_file, registry)
 
 
 def get_documents_by_tag(
@@ -194,7 +191,7 @@ def get_documents_by_tag(
         output_file: Optional output file configuration. When provided, the
             full result is written to the specified target (local or S3) and
             a compact summary is returned instead. Can be passed as a dict,
-            JSON string, or OutputFileConfig object.
+            JSON string, or OutputFileConfig object. S3 output_file config accepts an optional `region` field (SigV4 signing region override); see OutputFileConfig.region.
 
     Returns:
         Document list response with pagination and relative paths.
@@ -236,10 +233,7 @@ def get_documents_by_tag(
         "offset": offset,
     }
     result = _get_documents_by_tag_handler(registry.db_manager, params)
-    parsed_output_file = _parse_output_file(output_file)
-    if parsed_output_file is not None:
-        return write_output_file(result, parsed_output_file)
-    return result
+    return _dispatch_output_file(result, output_file, registry)
 
 
 def get_documents_by_property(
@@ -264,7 +258,7 @@ def get_documents_by_property(
         output_file: Optional output file configuration. When provided, the
             full result is written to the specified target (local or S3) and
             a compact summary is returned instead. Can be passed as a dict,
-            JSON string, or OutputFileConfig object.
+            JSON string, or OutputFileConfig object. S3 output_file config accepts an optional `region` field (SigV4 signing region override); see OutputFileConfig.region.
 
     Returns:
         Document list response with pagination and relative paths.
@@ -321,10 +315,7 @@ def get_documents_by_property(
         offset=offset,
     )
 
-    parsed_output_file = _parse_output_file(output_file)
-    if parsed_output_file is not None:
-        return write_output_file(result, parsed_output_file)
-    return result
+    return _dispatch_output_file(result, output_file, registry)
 
 
 def get_all_tags(
@@ -345,7 +336,7 @@ def get_all_tags(
         output_file: Optional output file configuration. When provided, the
             full result is written to the specified target (local or S3) and
             a compact summary is returned instead. Can be passed as a dict,
-            JSON string, or OutputFileConfig object.
+            JSON string, or OutputFileConfig object. S3 output_file config accepts an optional `region` field (SigV4 signing region override); see OutputFileConfig.region.
         vault_name: Optional vault name to scope tag extraction. None means all vaults. Non-existent vault names raise ValueError, caught and returned as error dict.
 
     Returns:
@@ -356,10 +347,7 @@ def get_all_tags(
     result = get_all_tags_tool(
         registry.db_manager, pattern, limit, offset, vault_name=vault_name
     )
-    parsed_output_file = _parse_output_file(output_file)
-    if parsed_output_file is not None:
-        return write_output_file(result, parsed_output_file)
-    return result
+    return _dispatch_output_file(result, output_file, registry)
 
 
 def list_vaults(
@@ -589,6 +577,32 @@ def _parse_output_file(
     return _parse_output_file_str_or_dict(output_file)
 
 
+def _dispatch_output_file(
+    result: dict[str, object],
+    output_file: str | dict | OutputFileConfig | None,
+    registry: MCPToolRegistry,
+) -> dict[str, object]:
+    """Parse output_file and dispatch to write_output_file, else return result.
+
+    Args:
+        result: Full tool result dict.
+        output_file: Output file config (str/dict/model/None) from the tool call.
+        registry: Tool registry providing the app-config default S3 region.
+
+    Returns:
+        Compact summary dict if output_file was provided, else the original result.
+
+    """
+    parsed = _parse_output_file(output_file)
+    if parsed is None:
+        return result
+    return write_output_file(
+        result,
+        parsed,
+        app_default_region=registry.settings.mcp.output_file_s3_region,
+    )
+
+
 def get_tasks(
     status: list[str] | None = None,
     tag_filters: str | dict | TagFilterStrings | None = None,
@@ -634,7 +648,7 @@ def get_tasks(
         output_file: Optional output file configuration. When provided, the
             full result is written to the specified target (local or S3) and
             a compact summary is returned instead. Can be passed as a dict,
-            JSON string, or OutputFileConfig object.
+            JSON string, or OutputFileConfig object. S3 output_file config accepts an optional `region` field (SigV4 signing region override); see OutputFileConfig.region.
         vault_name: Optional vault name to scope task results. None means all vaults. Non-existent vault names raise ValueError, caught and returned as error dict.
 
     Returns:
@@ -671,10 +685,7 @@ def get_tasks(
         db_manager=registry.db_manager,
         request=request,
     )
-    parsed_output_file = _parse_output_file(output_file)
-    if parsed_output_file is not None:
-        return write_output_file(result, parsed_output_file)
-    return result
+    return _dispatch_output_file(result, output_file, registry)
 
 
 async def health_check(_request: Request) -> JSONResponse:

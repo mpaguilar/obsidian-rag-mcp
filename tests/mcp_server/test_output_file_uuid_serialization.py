@@ -21,7 +21,7 @@ from obsidian_rag.mcp_server.output_file import (
 
 _S3_CONFIG: dict[str, str] = {
     "type": "s3",
-    "endpoint": "http://s3.example.com",
+    "endpoint": "http://s3.us-east-1.amazonaws.com",
     "bucket": "mybucket",
     "key": "results.json",
     "access_key_id": "AKIAIOSFODNN7EXAMPLE",

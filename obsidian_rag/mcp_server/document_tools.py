@@ -38,6 +38,14 @@ def get_document(
             full result is written to the specified file and a compact summary
             is returned instead.
 
+            The S3 output_file config now accepts an optional `region` field
+            (SigV4 signing region override). Region resolution precedence:
+            per-call `region` -> OBSIDIAN_RAG_MCP_OUTPUT_FILE_S3_REGION env
+            var -> GetBucketLocation probe (non-AWS endpoints only) ->
+            URL-derived region -> us-east-1 fallback (with WARNING log). Set
+            `region` explicitly for Garage/MinIO/Ceph endpoints whose
+            configured region is not derivable from the hostname.
+
     Returns:
         Document response as dictionary on success, or error dict on failure:
         - Success: {"id": ..., "vault_name": ..., "content": ...}
@@ -63,7 +71,11 @@ def get_document(
 
     parsed_output_file = _parse_output_file_from_wrapper(output_file)
     if parsed_output_file is not None:
-        return write_output_file(result, parsed_output_file)
+        return write_output_file(
+            result,
+            parsed_output_file,
+            app_default_region=registry.settings.mcp.output_file_s3_region,
+        )
 
     _msg = "Tool wrapper get_document returning"
     log.debug(_msg)
@@ -92,6 +104,14 @@ def list_documents(
             full result is written to the specified file and a compact summary
             is returned instead.
 
+            The S3 output_file config now accepts an optional `region` field
+            (SigV4 signing region override). Region resolution precedence:
+            per-call `region` -> OBSIDIAN_RAG_MCP_OUTPUT_FILE_S3_REGION env
+            var -> GetBucketLocation probe (non-AWS endpoints only) ->
+            URL-derived region -> us-east-1 fallback (with WARNING log). Set
+            `region` explicitly for Garage/MinIO/Ceph endpoints whose
+            configured region is not derivable from the hostname.
+
     Returns:
         Document list response with pagination, or error dict if no
         file_name provided.
@@ -116,7 +136,11 @@ def list_documents(
 
     parsed_output_file = _parse_output_file_from_wrapper(output_file)
     if parsed_output_file is not None:
-        return write_output_file(result, parsed_output_file)
+        return write_output_file(
+            result,
+            parsed_output_file,
+            app_default_region=registry.settings.mcp.output_file_s3_region,
+        )
 
     _msg = "Tool wrapper list_documents returning"
     log.debug(_msg)

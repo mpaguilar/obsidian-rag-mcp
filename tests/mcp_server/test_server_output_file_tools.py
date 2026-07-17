@@ -426,3 +426,40 @@ def test_output_file_write_error_returns_error_dict(
             )
 
             assert result == {"success": False, "error": "disk full"}
+
+
+def test_query_documents_threads_app_default_region(
+    setup_registry: MCPToolRegistry,
+) -> None:
+    """app_default_region from registry.settings.mcp.output_file_s3_region is passed to write_output_file."""
+    setup_registry.settings.mcp.output_file_s3_region = "garage"
+
+    with patch("obsidian_rag.mcp_server.server.query_documents_tool") as mock_tool:
+        mock_tool.return_value = {"results": [{"id": "1"}], "total_count": 1}
+
+        with patch("obsidian_rag.mcp_server.server.write_output_file") as mock_write:
+            mock_write.return_value = {
+                "output_file": {
+                    "type": "s3",
+                    "bucket": "mybucket",
+                    "key": "results.json",
+                    "bytes": 100,
+                    "item_count": 1,
+                }
+            }
+
+            query_documents(
+                query="test",
+                output_file={
+                    "type": "s3",
+                    "endpoint": "http://s3.example.com",
+                    "bucket": "mybucket",
+                    "key": "results.json",
+                    "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+                    "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+                },
+            )
+
+            mock_write.assert_called_once()
+            call_kwargs = mock_write.call_args.kwargs
+            assert call_kwargs.get("app_default_region") == "garage"

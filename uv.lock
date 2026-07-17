@@ -1900,7 +1900,7 @@ wheels = [
 
 [[package]]
 name = "obsidian-rag"
-version = "0.53.0"
+version = "0.54.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

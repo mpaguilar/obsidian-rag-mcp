@@ -10,8 +10,12 @@ from obsidian_rag.mcp_server.output_file import (
     OutputFileConfig,
     OutputFileResult,
     _count_items,
+    _derive_region_from_endpoint,
+    _probe_bucket_region,
+    _resolve_s3_region,
     _validate_local_path,
     _validate_s3_config,
+    _warn_fallback_region,
     _write_local,
     _write_s3,
     build_output_file_summary,
@@ -166,6 +170,7 @@ def test_write_s3_success() -> None:
             endpoint_url="http://s3.example.com",
             aws_access_key_id="AKIAIOSFODNN7EXAMPLE",
             aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region_name="us-east-1",
             config=mock_config.return_value,
         )
         mock_config.assert_called_once_with(
@@ -482,3 +487,274 @@ def test_write_output_file_dispatcher_permission_denied_returns_error(tmp_path):
         result = write_output_file({"documents": []}, config)
         assert result["success"] is False
         assert "Permission denied" in result["error"]
+
+
+def test_resolve_region_per_call_wins():
+    """config.region set → returned regardless of other layers."""
+    config = OutputFileConfig(
+        type="s3",
+        region="garage",
+        endpoint="http://garage:3900",
+        bucket="mybucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    )
+    assert _resolve_s3_region(config, "eu-west-1") == "garage"
+
+
+def test_resolve_region_app_default_when_per_call_none():
+    """config.region=None, app_default set → app_default returned."""
+    config = OutputFileConfig(
+        type="s3",
+        region=None,
+        endpoint="http://s3.example.com",
+        bucket="mybucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    )
+    assert _resolve_s3_region(config, "eu-west-1") == "eu-west-1"
+
+
+def test_resolve_region_url_derived_when_both_none():
+    """AWS endpoint, no region → URL-derived."""
+    config = OutputFileConfig(
+        type="s3",
+        region=None,
+        endpoint="https://s3.eu-west-1.amazonaws.com",
+        bucket="mybucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    )
+    assert _resolve_s3_region(config, None) == "eu-west-1"
+
+
+def test_resolve_region_fallback_with_warning(caplog):
+    """Garage endpoint, no region → us-east-1 + WARNING called."""
+    config = OutputFileConfig(
+        type="s3",
+        region=None,
+        endpoint="http://garage:3900",
+        bucket="mybucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    )
+    with (
+        caplog.at_level(logging.WARNING, logger="obsidian_rag.mcp_server.output_file"),
+        patch(
+            "obsidian_rag.mcp_server.output_file._derive_region_from_endpoint",
+            return_value=None,
+        ),
+        patch(
+            "obsidian_rag.mcp_server.output_file._probe_bucket_region",
+            return_value=None,
+        ),
+    ):
+        result = _resolve_s3_region(config, None)
+    assert result == "us-east-1"
+    assert any(
+        "garage:3900" in r.message and "us-east-1" in r.message for r in caplog.records
+    )
+
+
+def test_resolve_region_explicit_overrides_app_default():
+    """Both set → per-call wins."""
+    config = OutputFileConfig(
+        type="s3",
+        region="garage",
+        endpoint="http://garage:3900",
+        bucket="mybucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    )
+    assert _resolve_s3_region(config, "eu-west-1") == "garage"
+
+
+def test_derive_region_aws_hostname_variants():
+    """AWS hostname patterns derive the correct region."""
+    assert (
+        _derive_region_from_endpoint("https://s3.eu-west-1.amazonaws.com")
+        == "eu-west-1"
+    )
+    assert (
+        _derive_region_from_endpoint("https://s3-us-west-2.amazonaws.com")
+        == "us-west-2"
+    )
+    assert (
+        _derive_region_from_endpoint("https://s3-website.ap-southeast-2.amazonaws.com")
+        == "ap-southeast-2"
+    )
+
+
+def test_derive_region_do_spaces_wasabi_b2():
+    """Hosted S3 patterns derive region."""
+    assert _derive_region_from_endpoint("https://nyc3.digitaloceanspaces.com") == "nyc3"
+    assert (
+        _derive_region_from_endpoint("https://s3.us-east-1.wasabisys.com")
+        == "us-east-1"
+    )
+    assert (
+        _derive_region_from_endpoint("https://s3.us-west-1.backblazeb2.com")
+        == "us-west-1"
+    )
+
+
+def test_derive_region_r2_returns_auto():
+    """Cloudflare R2 endpoints resolve to 'auto'."""
+    assert (
+        _derive_region_from_endpoint("https://abc123.r2.cloudflarestorage.com")
+        == "auto"
+    )
+
+
+def test_derive_region_garage_minio_ip_returns_none():
+    """Unrecognized endpoints return None."""
+    assert _derive_region_from_endpoint("http://garage:3900") is None
+    assert _derive_region_from_endpoint("http://192.168.1.5:9000") is None
+
+
+def test_derive_region_bare_s3_returns_us_east_1():
+    """Bare s3.amazonaws.com returns us-east-1 without warning."""
+    assert _derive_region_from_endpoint("https://s3.amazonaws.com") == "us-east-1"
+
+
+def test_warn_fallback_called_for_non_aws(caplog):
+    """Fallback to us-east-1 for non-AWS endpoint emits WARNING."""
+    with caplog.at_level(logging.WARNING, logger="obsidian_rag.mcp_server.output_file"):
+        _warn_fallback_region("http://garage:3900")
+    assert any(
+        "garage:3900" in r.message and "us-east-1" in r.message for r in caplog.records
+    )
+    assert any("OutputFileConfig.region" in r.message for r in caplog.records)
+
+
+def test_warn_fallback_not_called_for_aws(caplog):
+    """AWS hostname → no warning (derived before fallback)."""
+    config = OutputFileConfig(
+        type="s3",
+        region=None,
+        endpoint="https://s3.eu-west-1.amazonaws.com",
+        bucket="mybucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    )
+    with caplog.at_level(logging.WARNING, logger="obsidian_rag.mcp_server.output_file"):
+        result = _resolve_s3_region(config, None)
+    assert result == "eu-west-1"
+    assert not any("us-east-1" in r.message for r in caplog.records)
+
+
+def test_warn_fallback_not_called_with_explicit_region(caplog):
+    """Explicit region → no warning even for Garage."""
+    config = OutputFileConfig(
+        type="s3",
+        region="garage",
+        endpoint="http://garage:3900",
+        bucket="mybucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    )
+    with caplog.at_level(logging.WARNING, logger="obsidian_rag.mcp_server.output_file"):
+        result = _resolve_s3_region(config, None)
+    assert result == "garage"
+    assert not any("us-east-1" in r.message for r in caplog.records)
+
+
+def test_derive_region_empty_endpoint_returns_none():
+    """Empty endpoint string returns None."""
+    assert _derive_region_from_endpoint("") is None
+
+
+def test_resolve_region_probe_bucket_region_success():
+    """Probe bucket region returns valid region when derivation fails."""
+    config = OutputFileConfig(
+        type="s3",
+        region=None,
+        endpoint="http://garage:3900",
+        bucket="mybucket",
+        key="results.json",
+        access_key_id="AKIAIOSFODNN7EXAMPLE",
+        secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    )
+    with (
+        patch(
+            "obsidian_rag.mcp_server.output_file._derive_region_from_endpoint",
+            return_value=None,
+        ),
+        patch(
+            "obsidian_rag.mcp_server.output_file._probe_bucket_region",
+            return_value="eu-west-1",
+        ),
+    ):
+        result = _resolve_s3_region(config, None)
+    assert result == "eu-west-1"
+
+
+def test_probe_bucket_region_success():
+    """Probing returns region when get_bucket_location succeeds."""
+    mock_client = MagicMock()
+    mock_client.get_bucket_location.return_value = {"LocationConstraint": "ap-south-1"}
+    with patch("boto3.client", return_value=mock_client):
+        result = _probe_bucket_region(
+            "http://s3.example.com",
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "virtual",
+            "mybucket",
+        )
+    assert result == "ap-south-1"
+
+
+def test_probe_bucket_region_client_error():
+    """Probing returns None on ClientError."""
+    mock_client = MagicMock()
+    mock_client.get_bucket_location.side_effect = ClientError(
+        {"Error": {"Code": "403", "Message": "Forbidden"}},
+        "GetBucketLocation",
+    )
+    with patch("boto3.client", return_value=mock_client):
+        result = _probe_bucket_region(
+            "http://s3.example.com",
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "virtual",
+            "mybucket",
+        )
+    assert result is None
+
+
+def test_probe_bucket_region_empty_location():
+    """Probing returns None when LocationConstraint is empty/None."""
+    mock_client = MagicMock()
+    mock_client.get_bucket_location.return_value = {"LocationConstraint": None}
+    with patch("boto3.client", return_value=mock_client):
+        result = _probe_bucket_region(
+            "http://s3.example.com",
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "virtual",
+            "mybucket",
+        )
+    assert result is None
+
+
+def test_probe_bucket_region_os_error():
+    """Probing returns None on OSError."""
+    with patch(
+        "boto3.client",
+        side_effect=OSError("network unreachable"),
+    ):
+        result = _probe_bucket_region(
+            "http://s3.example.com",
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "virtual",
+            "mybucket",
+        )
+    assert result is None

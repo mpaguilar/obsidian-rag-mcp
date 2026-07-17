@@ -298,3 +298,48 @@ def test_parse_output_file_from_wrapper_invalid_json_raises() -> None:
     """Invalid JSON string raises JSONDecodeError."""
     with pytest.raises(json.JSONDecodeError):
         _parse_output_file_from_wrapper("not-json")
+
+
+def test_get_document_threads_app_default_region() -> None:
+    """app_default_region from registry.settings.mcp.output_file_s3_region is passed to write_output_file."""
+    mock_registry = MagicMock()
+    mock_registry.settings.mcp.output_file_s3_region = "garage"
+    mock_tool = MagicMock(return_value={"id": "doc-1", "vault_name": "Personal"})
+
+    with (
+        patch(
+            "obsidian_rag.mcp_server.document_tools._get_registry",
+            return_value=mock_registry,
+        ),
+        patch(
+            "obsidian_rag.mcp_server.document_tools.get_document_tool",
+            mock_tool,
+        ),
+        patch("obsidian_rag.mcp_server.document_tools.write_output_file") as mock_write,
+    ):
+        mock_write.return_value = {
+            "output_file": {
+                "type": "s3",
+                "bucket": "mybucket",
+                "key": "results.json",
+                "bytes": 100,
+                "item_count": 1,
+            }
+        }
+
+        get_document(
+            vault_name="Personal",
+            file_path="notes.md",
+            output_file={
+                "type": "s3",
+                "endpoint": "http://s3.example.com",
+                "bucket": "mybucket",
+                "key": "results.json",
+                "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+                "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            },
+        )
+
+        mock_write.assert_called_once()
+        call_kwargs = mock_write.call_args.kwargs
+        assert call_kwargs.get("app_default_region") == "garage"

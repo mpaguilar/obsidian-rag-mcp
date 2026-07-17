@@ -34,7 +34,7 @@ def setup_registry() -> MCPToolRegistry:
 
 _S3_CONFIG: dict[str, str] = {
     "type": "s3",
-    "endpoint": "http://s3.example.com",
+    "endpoint": "http://s3.us-east-1.amazonaws.com",
     "bucket": "mybucket",
     "key": "results.json",
     "access_key_id": "AKIAIOSFODNN7EXAMPLE",
@@ -201,7 +201,9 @@ def test_s3_client_configuration(setup_registry: MCPToolRegistry) -> None:
             mock_boto3.assert_called_once()
             call_args = mock_boto3.call_args
             assert call_args[0][0] == "s3"
-            assert call_args.kwargs["endpoint_url"] == "http://s3.example.com"
+            assert (
+                call_args.kwargs["endpoint_url"] == "http://s3.us-east-1.amazonaws.com"
+            )
             assert call_args.kwargs["aws_access_key_id"] == "AKIAIOSFODNN7EXAMPLE"
             assert (
                 call_args.kwargs["aws_secret_access_key"]

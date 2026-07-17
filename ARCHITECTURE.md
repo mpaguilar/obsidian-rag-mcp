@@ -611,6 +611,21 @@ Seven query tools support an optional `output_file` parameter that writes the fu
 - On success, returns `OutputFileResult` with `type="s3"`, `bucket`, `key`, `bytes`, and `item_count`
 - On upload failure, returns `{"success": False, "error": "..."}` with the error message
 
+**S3 region resolution:** The SigV4 signing region is resolved via a
+5-layer chain: (1) per-call `OutputFileConfig.region`, (2) app-config
+default `MCPConfig.output_file_s3_region` (env var
+`OBSIDIAN_RAG_MCP_OUTPUT_FILE_S3_REGION`), (3) URL-derived region from
+AWS/hosted-S3 hostnames (AWS `s3.<region>.amazonaws.com` /
+`s3-<region>.` / `s3-website.<region>.`, DigitalOcean Spaces, Wasabi,
+Backblaze B2; Cloudflare R2 → `"auto"`; bare `s3.amazonaws.com` →
+`"us-east-1"`), (4) `GetBucketLocation` probe signed with `us-east-1`
+(non-AWS endpoints only — i.e. only when URL-derivation returned None;
+best-effort, silent fall-through on failure), (5) `us-east-1` fallback
+with a WARNING log naming the endpoint and suggesting the `region`
+field / env var. Set `region` explicitly for Garage/MinIO/Ceph endpoints
+whose configured region is not derivable from the hostname (e.g.
+`"garage"`).
+
 **Validation behavior:**
 - Missing or malformed `output_file` fields raise `ValueError` with a descriptive message
 - Invalid local paths (outside `/tmp/`) raise `ValueError`
@@ -654,6 +669,12 @@ Pydantic models for request/response validation:
     S3-compatible services such as Garage and MinIO (bucket in URL path:
     `endpoint/bucket/key`). Clients targeting Garage/MinIO MUST set
     `addressing_style="path"`.
+  - `region`: Optional SigV4 signing region override. Highest precedence in the
+    region resolution chain: per-call `region` → app-config default
+    `OBSIDIAN_RAG_MCP_OUTPUT_FILE_S3_REGION` → URL-derived region →
+    `GetBucketLocation` probe (non-AWS endpoints only) → `us-east-1` fallback.
+    Set this for Garage/MinIO/Ceph endpoints whose configured region is not
+    derivable from the hostname (e.g. `"garage"`, `"eu-west-1"`).
 - `OutputFileResult`: Summary returned when `output_file` is used instead of the full payload. Fields:
   - `type`: `"local"` or `"s3"`
   - `path` / `bucket` / `key`: Location of the written file
@@ -670,7 +691,7 @@ Core write dispatcher for tool results to external destinations, used by MCP que
 
 - **`write_output_file()`**: Main dispatcher that routes to local or S3 writer based on `OutputFileConfig.type`. Both branches call `json.dumps(result, default=str)` — the `default=str` is defense-in-depth: handlers/tools pre-serialize `uuid.UUID`/`datetime`/`date` to strings via `model_dump(mode="json")` (see Handler/Tool serialization below), and `default=str` catches any future regression where a non-serializable object leaks into the result dict.
 - **`_write_local()`**: Writes JSON payload to a local file atomically using a temp file + `os.replace()`; restricted to `/tmp/` and its subdirectories; auto-creates parent directories
-- **`_write_s3()`**: Uploads JSON payload via `boto3` `PutObject`; credentials come from the caller config; optional `endpoint` passed through for S3-compatible services. The boto3 client is constructed with `Config(connect_timeout=10, read_timeout=30)` to fail fast on unreachable S3 endpoints. The `addressing_style` from `OutputFileConfig` is passed to boto3 via `Config(s3={"addressing_style": ...})`; the default `"virtual"` works with AWS S3, while `"path"` is required for Garage/MinIO.
+- **`_write_s3()`**: Uploads JSON payload via `boto3` `PutObject`; credentials come from the caller config; optional `endpoint` passed through for S3-compatible services. The boto3 client is constructed with `Config(connect_timeout=10, read_timeout=30)` to fail fast on unreachable S3 endpoints. The `addressing_style` from `OutputFileConfig` is passed to boto3 via `Config(s3={"addressing_style": ...})`; the default `"virtual"` works with AWS S3, while `"path"` is required for Garage/MinIO. The `region` field is threaded through as `region_name` via `_resolve_s3_region()` which implements the 5-layer resolution chain (per-call config → app-config default → URL-derived region → `GetBucketLocation` probe → `us-east-1` fallback). Helper functions: `_derive_region_from_endpoint()` parses known AWS/hosted-S3 hostname patterns and returns `"auto"` for Cloudflare R2 (and `"us-east-1"` for bare `s3.amazonaws.com`); `_probe_bucket_region()` issues a best-effort `GetBucketLocation` call signed with `us-east-1` for non-AWS endpoints only (normal TLS, no `verify=False`); `_warn_fallback_region()` logs a WARNING naming the endpoint and suggesting the `region` field or env var.
 - **`_validate_local_path()`**: Validates that the local path is within `/tmp/` and has a valid parent directory
 - **`_validate_s3_config()`**: Validates that bucket, key, and both credentials are present
 - **`build_output_file_summary()`**: Builds the compact `OutputFileResult` dict returned to the caller
